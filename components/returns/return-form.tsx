@@ -1,0 +1,248 @@
+"use client"
+
+import { useActionState, useEffect, useMemo, useState } from "react"
+import { useFormStatus } from "react-dom"
+import { useRouter } from "next/navigation"
+import { AlertCircle, LoaderCircle, Minus, Plus } from "lucide-react"
+import { toast } from "sonner"
+
+import { ColourSwatch } from "@/components/settings/colour-swatch"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { formatRs, round2 } from "@/lib/format"
+import { IDLE_STATE } from "@/lib/forms"
+import { createCreditNote } from "@/lib/returns/actions"
+import type { SaleForReturn } from "@/lib/returns/queries"
+import { cn } from "@/lib/utils"
+
+const REFUND_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card" },
+  { value: "juice", label: "Juice" },
+  { value: "myt_money", label: "my.t money" },
+  // No money moves, so it must not reduce the cash expected in the drawer.
+  { value: "exchange", label: "Exchange (no refund)" },
+]
+
+function SubmitButton({ count, amount }: { count: number; amount: number }) {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" className="h-control" disabled={pending || count === 0}>
+      {pending ? (
+        <>
+          <LoaderCircle className="animate-spin" aria-hidden />
+          Raising…
+        </>
+      ) : count === 0 ? (
+        "Pick items to return"
+      ) : (
+        `Refund ${formatRs(amount)}`
+      )}
+    </Button>
+  )
+}
+
+/**
+ * Return screen. Quantities are per line and capped at what is still
+ * returnable, so a customer bringing back one of three shirts gets a credit
+ * note for one. The database enforces the same cap — this is the friendly half.
+ */
+export function ReturnForm({
+  sale,
+  shiftId,
+}: {
+  sale: SaleForReturn
+  shiftId: number | null
+}) {
+  const router = useRouter()
+  const [state, formAction] = useActionState(createCreditNote, IDLE_STATE)
+  const [qty, setQty] = useState<Record<number, number>>({})
+  const [method, setMethod] = useState("cash")
+
+  useEffect(() => {
+    if (state.status === "success") {
+      if (state.message) toast.success(state.message)
+      // Refresh only. The quantities are clamped against what is still
+      // returnable below, so once the refreshed props arrive the picked
+      // amounts collapse to zero on their own — no setState in an effect, and
+      // the selection can never exceed what the database would allow.
+      router.refresh()
+    }
+  }, [state, router])
+
+  const picked = useMemo(
+    () =>
+      sale.lines
+        .map((line) => ({
+          line,
+          qty: Math.min(qty[line.saleItemId] ?? 0, line.qtyReturnable),
+        }))
+        .filter((entry) => entry.qty > 0),
+    [sale.lines, qty],
+  )
+
+  const refundTotal = round2(
+    picked.reduce((sum, e) => sum + e.line.unitPaid * e.qty, 0),
+  )
+
+  const setLineQty = (saleItemId: number, next: number, max: number) => {
+    setQty((current) => ({
+      ...current,
+      [saleItemId]: Math.min(Math.max(0, next), max),
+    }))
+  }
+
+  if (sale.fullyReturned) {
+    return (
+      <Alert>
+        <AlertCircle aria-hidden />
+        <AlertDescription>
+          Every item on this sale has already been returned. Nothing left to
+          credit.
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  return (
+    <form action={formAction} className="space-y-5" noValidate>
+      <input type="hidden" name="saleId" value={sale.id} />
+      {shiftId !== null ? (
+        <input type="hidden" name="shiftId" value={shiftId} />
+      ) : null}
+      <input
+        type="hidden"
+        name="items"
+        value={JSON.stringify(
+          picked.map((e) => ({ saleItemId: e.line.saleItemId, qty: e.qty })),
+        )}
+      />
+
+      {state.error ? (
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {shiftId === null ? (
+        <Alert>
+          <AlertCircle aria-hidden />
+          <AlertDescription>
+            No till is open, so this credit note won&rsquo;t be attached to a
+            shift. A cash refund raised now will not show in any drawer count —
+            open the till first if cash is going back.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <ul className="divide-y rounded-lg border">
+        {sale.lines.map((line) => {
+          const value = Math.min(qty[line.saleItemId] ?? 0, line.qtyReturnable)
+          const exhausted = line.qtyReturnable === 0
+          return (
+            <li
+              key={line.saleItemId}
+              className={cn("flex items-center gap-3 p-3", exhausted && "opacity-50")}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <ColourSwatch hex={line.colourHex} name={line.colourName} />
+                  <span className="truncate font-medium">{line.productName}</span>
+                </div>
+                <div className="text-muted-foreground mt-0.5 text-xs">
+                  {line.sizeLabel} · {line.colourName} · {formatRs(line.unitPaid)}{" "}
+                  each
+                </div>
+                <div className="text-muted-foreground text-xs">
+                  {line.qtySold} sold
+                  {line.qtyReturned > 0 ? ` · ${line.qtyReturned} returned` : ""}
+                  {exhausted ? "" : ` · ${line.qtyReturnable} returnable`}
+                </div>
+              </div>
+
+              {exhausted ? (
+                <span className="text-muted-foreground text-xs">Fully returned</span>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() =>
+                      setLineQty(line.saleItemId, value - 1, line.qtyReturnable)
+                    }
+                    aria-label={`Return one fewer ${line.productName}`}
+                  >
+                    <Minus aria-hidden />
+                  </Button>
+                  <span className="w-8 text-center font-medium tabular-nums">
+                    {value}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() =>
+                      setLineQty(line.saleItemId, value + 1, line.qtyReturnable)
+                    }
+                    aria-label={`Return one more ${line.productName}`}
+                  >
+                    <Plus aria-hidden />
+                  </Button>
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="refund-reason">Reason</Label>
+          <Input
+            id="refund-reason"
+            name="reason"
+            placeholder="e.g. Wrong size, faulty stitching"
+            aria-invalid={Boolean(state.fieldErrors.reason)}
+          />
+          {state.fieldErrors.reason ? (
+            <p className="text-destructive text-sm">{state.fieldErrors.reason}</p>
+          ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="refund-method">Refund by</Label>
+          <select
+            id="refund-method"
+            name="refundMethod"
+            value={method}
+            onChange={(event) => setMethod(event.target.value)}
+            className="border-input h-9 w-full rounded-lg border bg-transparent px-3 text-sm"
+          >
+            {REFUND_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <div className="text-sm">
+          <span className="text-muted-foreground">Refund </span>
+          <span className="text-lg font-semibold tabular-nums">
+            {formatRs(refundTotal)}
+          </span>
+          {method === "exchange" && refundTotal > 0 ? (
+            <span className="text-muted-foreground"> (no money moves)</span>
+          ) : null}
+        </div>
+        <SubmitButton count={picked.length} amount={refundTotal} />
+      </div>
+    </form>
+  )
+}

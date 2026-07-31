@@ -1,0 +1,62 @@
+name: Deploy to Cloudflare Workers
+
+# Deploys on a push to main, or on demand.
+#
+# Built in CI rather than on the shop laptop for two reasons. OpenNext warns
+# that Windows support is not guaranteed — the build does work there today, but
+# "works today" is not something to hang a shop's website on. And the Supabase
+# keys are inlined at build time, so the build environment is what decides
+# whether the deployed site enforces auth; a repository secret is a better place
+# for that than whatever happened to be in someone's shell.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One deploy at a time. Two overlapping `wrangler deploy` runs race to be the
+  # live version, and the winner is whichever finishes last, not whichever is
+  # newer.
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The checks that would otherwise be discovered by a customer. Cheap
+      # enough to run every time, and a broken till is expensive.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # Fails the build when the Supabase keys are absent. Without them the
+      # middleware waves every request through — see scripts/preflight.mjs.
+      - name: Build for Cloudflare
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npm run cf:build
+
+      - name: Deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy

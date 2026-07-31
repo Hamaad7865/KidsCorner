@@ -1,0 +1,153 @@
+package mu.kidscorner.till.data
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Past sales, for looking one up and reprinting its receipt.
+ *
+ * Read straight from the server every time, never cached. A receipt is a claim
+ * about what a customer paid; serving one from a tablet's stale copy — after a
+ * return, a void, or a credit note — would hand somebody a document that
+ * contradicts the shop's own records.
+ */
+
+@Serializable
+data class SaleSummary(
+    val id: Int,
+    val saleNo: String,
+    val saleDate: String,
+    val total: Double,
+    val status: String = "completed",
+    val itemCount: Int = 0,
+    val cashierName: String? = null,
+    val customerName: String? = null,
+)
+
+@Serializable
+data class SalesListResponse(
+    val ok: Boolean = true,
+    val sales: List<SaleSummary> = emptyList(),
+    val error: String? = null,
+)
+
+@Serializable
+data class SaleDetailLine(
+    val id: Int,
+    val productName: String,
+    val sizeLabel: String = "",
+    val colourName: String = "",
+    val colourHex: String? = null,
+    val sku: String = "",
+    val barcode: String? = null,
+    val qty: Int,
+    val unitPrice: Double,
+    val discount: Double = 0.0,
+    val lineTotal: Double,
+    /** How many of this line have already come back on a credit note. */
+    val returnedQty: Int = 0,
+) {
+    /** What is still returnable. Never negative, whatever the server says. */
+    val returnable: Int get() = (qty - returnedQty).coerceAtLeast(0)
+}
+
+@Serializable
+data class SaleDetailPayment(
+    val id: Int,
+    val method: String,
+    val amount: Double,
+    val tendered: Double? = null,
+)
+
+@Serializable
+data class SaleDetailDiscount(
+    val label: String,
+    val kind: String,
+    val value: Double,
+    val amount: Double,
+    /** Null unless a manager actually had to authorise it. */
+    val approvedByName: String? = null,
+)
+
+@Serializable
+data class ReceiptPrint(
+    val id: Int,
+    val printedAt: String,
+    val by: String? = null,
+)
+
+@Serializable
+data class CreditNote(
+    val id: Int,
+    val creditNo: String,
+    val createdAt: String,
+    val total: Double,
+    val reason: String = "",
+    val refundMethod: String = "",
+)
+
+@Serializable
+data class SaleDetail(
+    val id: Int,
+    val saleNo: String,
+    val saleDate: String,
+    val status: String = "completed",
+    val subtotal: Double,
+    val discount: Double = 0.0,
+    val vatAmount: Double = 0.0,
+    val total: Double,
+    val cashierName: String? = null,
+    val customerName: String? = null,
+    val customerId: Int? = null,
+    val lines: List<SaleDetailLine> = emptyList(),
+    val payments: List<SaleDetailPayment> = emptyList(),
+    val discounts: List<SaleDetailDiscount> = emptyList(),
+    val creditNotes: List<CreditNote> = emptyList(),
+    /** Every time this receipt went to a printer, newest first. */
+    val prints: List<ReceiptPrint> = emptyList(),
+)
+
+@Serializable
+data class SaleDetailResponse(
+    val ok: Boolean = true,
+    val sale: SaleDetail? = null,
+    val error: String? = null,
+)
+
+/**
+ * A return, posted against a past sale.
+ *
+ * The till names what is coming back and why; it never names an amount. What
+ * the customer gets is worked out server-side from what they actually paid for
+ * those units, discount included. A till that could state its own refund total
+ * would be a till that could empty the drawer.
+ */
+@Serializable
+data class RefundRequest(
+    val saleId: Int,
+    val shiftId: Int? = null,
+    val reason: String,
+    val refundMethod: String,
+    /** Off means faulty: refunded, but the goods do not rejoin the shelf. */
+    val restock: Boolean = true,
+    val items: List<RefundItem>,
+)
+
+@Serializable
+data class RefundItem(val saleItemId: Int, val qty: Int)
+
+@Serializable
+data class RefundResponse(
+    val ok: Boolean = false,
+    val creditNo: String = "",
+    val total: Double = 0.0,
+    val refundMethod: String = "",
+    val error: String? = null,
+)
+
+@Serializable
+data class PrintResponse(
+    val ok: Boolean,
+    /** How many times this receipt has now been printed, original included. */
+    val printCount: Int? = null,
+    val error: String? = null,
+)

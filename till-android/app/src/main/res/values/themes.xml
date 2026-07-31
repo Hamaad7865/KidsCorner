@@ -1,0 +1,11 @@
+<resources>
+    <!--
+      Only the splash/window theme. Everything drawn after Compose starts comes
+      from Theme.kt, so colours live in one place rather than two.
+    -->
+    <style name="Theme.KidsCornerTill" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/coral_50</item>
+        <item name="android:statusBarColor">@color/coral_600</item>
+        <item name="android:navigationBarColor">@color/coral_600</item>
+    </style>
+</resources>

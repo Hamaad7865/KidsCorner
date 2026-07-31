@@ -1,0 +1,166 @@
+package mu.kidscorner.till.print
+
+import java.io.ByteArrayOutputStream
+
+/**
+ * ESC/POS, the command language nearly every thermal receipt printer speaks.
+ *
+ * Epson defined it and the rest of the market cloned it, so a 58mm no-name
+ * printer off a Mauritian market stall and an Epson TM-T20 both understand
+ * these bytes. That is why this targets ESC/POS rather than a vendor SDK: the
+ * shop's printer is unknown, and this is the one thing it is nearly certain to
+ * accept.
+ *
+ * Rendered from the same `ReceiptLine` list the preview uses, so the two cannot
+ * drift.
+ */
+object EscPos {
+
+    private const val ESC = 0x1B.toByte()
+    private const val GS = 0x1D.toByte()
+    private const val LF = 0x0A.toByte()
+
+    /** ESC @ — reset. Clears whatever state the last job left behind. */
+    val INIT = byteArrayOf(ESC, 0x40)
+
+    /** ESC a n — 0 left, 1 centre, 2 right. */
+    private fun align(n: Int) = byteArrayOf(ESC, 0x61, n.toByte())
+
+    /** ESC E n — emphasis. */
+    private fun bold(on: Boolean) = byteArrayOf(ESC, 0x45, if (on) 1 else 0)
+
+    /**
+     * GS ! n — character size.
+     *
+     * The high nibble is width-1 and the low nibble is height-1, so double both
+     * is 0x11. Worth stating because 0x10 and 0x01 look interchangeable and are
+     * not: one doubles the width and wrecks the column arithmetic.
+     */
+    private fun size(double: Boolean) = byteArrayOf(GS, 0x21, if (double) 0x11 else 0x00)
+
+    /** ESC d n — feed n lines. */
+    private fun feed(n: Int) = byteArrayOf(ESC, 0x64, n.toByte())
+
+    /**
+     * GS V 66 n — feed n and partial cut.
+     *
+     * Partial rather than full: it leaves a small tab holding the receipt on
+     * the roll so it does not drop on the floor behind the counter. The feed is
+     * not optional — without it the cut lands inside the last printed lines,
+     * because the blade sits above the print head.
+     */
+    fun cut(feedLines: Int = 4) = byteArrayOf(GS, 0x56, 66, feedLines.toByte())
+
+    /** ESC t n — code page. 0 is CP437, which every clone implements. */
+    val CODEPAGE_CP437 = byteArrayOf(ESC, 0x74, 0x00)
+
+    /**
+     * GS k m n d… — CODE39, for the sale number.
+     *
+     * CODE39 rather than EAN-13: a sale number like "S260729-60" is
+     * alphanumeric with a hyphen, which EAN-13 cannot express at all. The
+     * printable set is narrow, so anything outside it is dropped rather than
+     * sent — a barcode with an illegal character makes some printers emit
+     * nothing and others hang waiting for more data.
+     */
+    fun barcode(code: String): ByteArray {
+        val allowed = code.uppercase().filter { it in CODE39_CHARS }.take(20)
+        if (allowed.isEmpty()) return ByteArray(0)
+
+        return ByteArrayOutputStream().apply {
+            write(byteArrayOf(GS, 0x68, 60))          // GS h — height in dots
+            write(byteArrayOf(GS, 0x77, 2))           // GS w — module width
+            write(byteArrayOf(GS, 0x48, 2))           // GS H — print the text below
+            write(byteArrayOf(GS, 0x6B, 69))          // GS k 69 — CODE39, length-prefixed
+            write(allowed.length)
+            write(allowed.toByteArray(Charsets.US_ASCII))
+            write(LF.toInt())
+        }.toByteArray()
+    }
+
+    private const val CODE39_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%"
+
+    /**
+     * The whole job: init, the lines, a feed and a cut.
+     *
+     * Text is encoded as CP437 rather than UTF-8. A thermal printer has a byte
+     * per glyph and no notion of multi-byte characters, so a UTF-8 "·" arrives
+     * as two bytes and prints as two pieces of line noise. Anything outside the
+     * code page is replaced by '?' at the encoder rather than sent raw.
+     */
+    fun encode(lines: List<ReceiptLine>, width: PaperWidth): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(INIT)
+        out.write(CODEPAGE_CP437)
+
+        for (line in lines) {
+            when (line) {
+                is ReceiptLine.Barcode -> {
+                    out.write(align(1))
+                    out.write(barcode(line.code))
+                    out.write(align(0))
+                }
+
+                is ReceiptLine.Feed -> out.write(feed(line.lines))
+
+                else -> {
+                    val big = (line as? ReceiptLine.Text)?.big
+                        ?: (line as? ReceiptLine.Columns)?.big
+                        ?: false
+                    val emphasised = (line as? ReceiptLine.Text)?.bold
+                        ?: (line as? ReceiptLine.Columns)?.bold
+                        ?: false
+                    val alignment = when ((line as? ReceiptLine.Text)?.align) {
+                        Align.Centre -> 1
+                        Align.Right -> 2
+                        else -> 0
+                    }
+
+                    if (big) out.write(size(true))
+                    if (emphasised) out.write(bold(true))
+                    // Centring is done by the printer for text lines, so the
+                    // renderer's own padding is trimmed off first — otherwise
+                    // the line gets centred twice and drifts right.
+                    val text = renderLine(line, width.columns)
+                        .let { if (alignment != 0) it.trim() else it }
+                    if (alignment != 0) out.write(align(alignment))
+
+                    out.write(toCp437(text))
+                    out.write(LF.toInt())
+
+                    if (alignment != 0) out.write(align(0))
+                    if (emphasised) out.write(bold(false))
+                    if (big) out.write(size(false))
+                }
+            }
+        }
+
+        out.write(cut())
+        return out.toByteArray()
+    }
+
+    /**
+     * CP437, with the handful of substitutions a receipt actually needs.
+     *
+     * The interpunct and en dash come from the app's own strings, so they are
+     * mapped rather than lost. Everything else outside ASCII becomes '?', which
+     * is ugly but legible — unlike a raw high byte, which prints as a box-
+     * drawing character and looks like a fault.
+     */
+    internal fun toCp437(text: String): ByteArray {
+        val out = ByteArray(text.length)
+        for (i in text.indices) {
+            val c = text[i]
+            out[i] = when {
+                c.code in 0x20..0x7E -> c.code.toByte()
+                c == '·' -> 0xFA.toByte()
+                c == '–' || c == '—' -> '-'.code.toByte()
+                c == '’' || c == '‘' -> '\''.code.toByte()
+                c == '“' || c == '”' -> '"'.code.toByte()
+                c == '…' -> '.'.code.toByte()
+                else -> '?'.code.toByte()
+            }
+        }
+        return out
+    }
+}
