@@ -61,6 +61,11 @@ const PATH_TO_MODULE: { prefix: string; module: ModuleKey }[] = [
   { prefix: "/activity", module: "activity" },
   { prefix: "/customers", module: "customers" },
   { prefix: "/settings", module: "settings" },
+  // The back office's view of the till shares the till's own permission: a
+  // role that cannot see the till has no use for the page about it. (No
+  // ordering hazard against "/pos" below — `matchesPrefix` requires an exact
+  // match or a trailing slash, so "/point-of-sale" never collides with it.)
+  { prefix: "/point-of-sale", module: "pos" },
   { prefix: "/pos", module: "pos" },
 ]
 

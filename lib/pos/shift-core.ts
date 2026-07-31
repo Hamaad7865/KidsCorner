@@ -129,6 +129,8 @@ export type ZTotals = {
   cashTaken: number
   tillMovements: number
   movements: { amount: number; reason: string; at: string }[]
+  /** Refunds handed back in cash, already netted out of `expectedCash`. */
+  cashRefunded: number
   expectedCash: number
   voided: number
   refunded: number
@@ -206,6 +208,7 @@ export function readZTotals(raw: unknown): ZTotals {
       reason: String(m.reason ?? ""),
       at: String(m.at ?? ""),
     })),
+    cashRefunded: num(t.cash_refunded),
     expectedCash: num(t.expected_cash),
     voided: num(t.voided),
     refunded: num(t.refunded),

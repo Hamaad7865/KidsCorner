@@ -21,6 +21,7 @@ export const PUBLIC_PATHS = [LOGIN_PATH] as const
 /** Every top-level path served by the `(admin)` group. Owner/manager only. */
 export const ADMIN_PATHS = [
   "/dashboard",
+  "/point-of-sale",
   "/products",
   "/import",
   "/stock",

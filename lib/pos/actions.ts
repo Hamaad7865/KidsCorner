@@ -275,3 +275,53 @@ export async function completeSale(
   }
   return result
 }
+
+/**
+ * Closes a shift from the BACK OFFICE, not from the till.
+ *
+ * Ported from Carfectionist's "power off". The case is mundane and constant:
+ * the shop shuts, everybody leaves, and nobody pressed Close on the tablet.
+ * Left open, the next day's sales land inside the same shift and the Z covers
+ * two days — which cannot be corrected afterwards, because being frozen is the
+ * whole point of a Z.
+ *
+ * Owner and manager only. Closing a till decides a cash variance that somebody
+ * may be answerable for, and doing that remotely — for a drawer you are not
+ * standing at — is a step further than a cashier's own close. `closeShiftFor`
+ * still recomputes `expected_cash` server-side, so the figure this is judged
+ * against never comes from the browser.
+ */
+export async function closeShiftRemotely(input: {
+  shiftId: number
+  countedCash: number
+  notes: string | null
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) {
+    return { ok: false, error: "Your session has expired. Sign in again." }
+  }
+  if (profile.role !== "owner" && profile.role !== "manager") {
+    return { ok: false, error: "Only an owner or manager can close a till remotely." }
+  }
+
+  if (!Number.isFinite(input.countedCash) || input.countedCash < 0) {
+    return { ok: false, error: "Enter the counted cash." }
+  }
+
+  const result = await closeShiftFor(
+    await createClient(),
+    { id: profile.id, name: profile.fullName },
+    {
+      shiftId: input.shiftId,
+      countedCash: round2(input.countedCash),
+      // Stamped so the trail says this was not closed at the counter.
+      notes: input.notes ?? "Closed from the back office.",
+    },
+  )
+  if (!result.ok) return { ok: false, error: result.error }
+
+  revalidatePath("/point-of-sale")
+  revalidatePath("/pos")
+  revalidatePath("/reports")
+  return { ok: true }
+}

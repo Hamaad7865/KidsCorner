@@ -7,11 +7,14 @@ import {
   LayoutDashboard,
   ReceiptText,
   Settings,
+  Store,
   Shirt,
   Truck,
   Users,
   type LucideIcon,
 } from "lucide-react"
+
+import { moduleForPath } from "@/lib/access/modules"
 
 export type NavItem = {
   href: string
@@ -47,6 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Sales",
     items: [
+      { href: "/point-of-sale", label: "Point of sale", icon: Store },
       { href: "/sales", label: "Sales", icon: ReceiptText },
       { href: "/reports", label: "Reports", icon: ChartColumn },
       { href: "/activity", label: "Activity", icon: History },
@@ -77,8 +81,16 @@ export function visibleSections(allowed: string[] | null): NavSection[] {
   })).filter((section) => section.items.length > 0)
 }
 
-/** `/products` -> `products`, matching the module keys in lib/access. */
+/**
+ * Which module a nav item belongs to.
+ *
+ * Delegated to `moduleForPath` rather than stripping the leading slash. That
+ * shortcut held only while every href happened to equal its module key, and
+ * broke silently the moment one did not: `/point-of-sale` became the key
+ * "point-of-sale", matched nothing, and the item vanished from every role's
+ * nav with no error anywhere.
+ */
 function moduleOf(href: string): string {
-  return href.replace(/^\//, "")
+  return moduleForPath(href) ?? href.replace(/^\//, "")
 }
 
