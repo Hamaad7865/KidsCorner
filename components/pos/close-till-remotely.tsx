@@ -18,7 +18,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { formatRs, round2 } from "@/lib/format"
-import type { OpenTill } from "@/lib/pos/overview"
+import type { TillDrawer } from "@/lib/pos/overview"
 
 /**
  * Carfectionist's "power off" — closing a till from the back office.
@@ -31,7 +31,13 @@ import type { OpenTill } from "@/lib/pos/overview"
  * with an invented figure is worse than one left open — it produces a variance
  * of exactly zero and quietly asserts the drawer was right.
  */
-export function CloseTillRemotely({ till }: { till: OpenTill }) {
+export function CloseTillRemotely({
+  till,
+  deviceName,
+}: {
+  till: TillDrawer
+  deviceName: string
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [entry, setEntry] = useState("")
@@ -76,7 +82,7 @@ export function CloseTillRemotely({ till }: { till: OpenTill }) {
 
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Close the till?</DialogTitle>
+          <DialogTitle>Close {deviceName}?</DialogTitle>
           <DialogDescription>
             Counts the drawer and closes this shift. The sales in it are not
             touched — the Z report is frozen from what the server already has.

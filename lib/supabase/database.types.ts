@@ -360,6 +360,42 @@ export type Database = {
         }
         Relationships: []
       }
+      pos_devices: {
+        Row: {
+          app_version: string | null
+          code: string
+          created_at: string
+          id: number
+          is_active: boolean
+          is_back_office: boolean
+          last_seen_at: string | null
+          model: string | null
+          name: string
+        }
+        Insert: {
+          app_version?: string | null
+          code: string
+          created_at?: string
+          id?: number
+          is_active?: boolean
+          is_back_office?: boolean
+          last_seen_at?: string | null
+          model?: string | null
+          name: string
+        }
+        Update: {
+          app_version?: string | null
+          code?: string
+          created_at?: string
+          id?: number
+          is_active?: boolean
+          is_back_office?: boolean
+          last_seen_at?: string | null
+          model?: string | null
+          name?: string
+        }
+        Relationships: []
+      }
       product_variants: {
         Row: {
           barcode: string | null
@@ -917,6 +953,7 @@ export type Database = {
           closed_at: string | null
           closed_by: string | null
           counted_cash: number | null
+          device_id: number | null
           expected_cash: number | null
           id: number
           notes: string | null
@@ -929,6 +966,7 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           counted_cash?: number | null
+          device_id?: number | null
           expected_cash?: number | null
           id?: number
           notes?: string | null
@@ -941,6 +979,7 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           counted_cash?: number | null
+          device_id?: number | null
           expected_cash?: number | null
           id?: number
           notes?: string | null
@@ -955,6 +994,13 @@ export type Database = {
             columns: ["closed_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "pos_devices"
             referencedColumns: ["id"]
           },
           {
@@ -1457,6 +1503,10 @@ export type Database = {
       }
       register_pin_attempt: {
         Args: { p_ok: boolean; p_profile_id: string }
+        Returns: number
+      }
+      register_pos_device: {
+        Args: { p_app_version?: string; p_code: string; p_model?: string }
         Returns: number
       }
       returned_qty: { Args: { p_sale_item_id: number }; Returns: number }

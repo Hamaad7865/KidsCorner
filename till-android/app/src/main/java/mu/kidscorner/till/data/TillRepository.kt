@@ -45,7 +45,14 @@ class TillRepository(
 
     fun signOut() = store.clear()
 
-    suspend fun bootstrap(): Result<Bootstrap> = authed { api.bootstrap(it) }
+    suspend fun bootstrap(): Result<Bootstrap> = authed {
+        api.bootstrap(
+            it,
+            deviceCode = store.deviceCode,
+            model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
+            appVersion = mu.kidscorner.till.BuildConfig.VERSION_NAME,
+        )
+    }
 
     suspend fun verifyPin(profileId: String, pin: String): Result<PinResult> =
         authed { api.verifyPin(it, profileId, pin) }
@@ -55,8 +62,10 @@ class TillRepository(
 
     suspend fun shift(): Result<ShiftState> = authed { api.shift(it) }
 
-    suspend fun openShift(openingFloat: Double): Result<OpenShiftResponse> =
-        authed { api.openShift(it, openingFloat) }
+    suspend fun openShift(
+        openingFloat: Double,
+        deviceId: Int? = null,
+    ): Result<OpenShiftResponse> = authed { api.openShift(it, openingFloat, deviceId) }
 
     suspend fun closeShift(body: CloseShiftRequest): Result<CloseShiftResponse> =
         authed { api.closeShift(it, body) }

@@ -153,7 +153,17 @@ export async function openShift(
     return fail(null, { openingFloat: "Enter the opening float." })
   }
 
-  const result = await openShiftFor(await createClient(), user, openingFloat)
+  const supabase = await createClient()
+
+  // The web till is always the seeded back-office device — it has no install
+  // to generate an id, and there is only ever one of it.
+  const { data: backOffice } = await supabase
+    .from("pos_devices")
+    .select("id")
+    .eq("code", "back-office")
+    .maybeSingle()
+
+  const result = await openShiftFor(supabase, user, openingFloat, backOffice?.id ?? null)
   if (!result.ok) return fail(result.error)
 
   revalidatePath("/pos")

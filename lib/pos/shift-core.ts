@@ -25,6 +25,13 @@ export async function openShiftFor(
   supabase: TillClient,
   user: TillUser,
   openingFloat: number,
+  /**
+   * Which till this shift runs on. Null when the caller does not know — an
+   * older client, or a shift opened before the device registry existed. The
+   * shift is still valid; it just cannot be attributed to a till, and the back
+   * office shows a dash rather than guessing.
+   */
+  deviceId: number | null = null,
 ): Promise<ShiftResult<{ shiftId: number }>> {
   if (!Number.isFinite(openingFloat) || openingFloat < 0) {
     return fail("The float cannot be negative.")
@@ -43,7 +50,11 @@ export async function openShiftFor(
 
   const { data, error } = await supabase
     .from("shifts")
-    .insert({ opened_by: user.id, opening_float: round2(openingFloat) })
+    .insert({
+      opened_by: user.id,
+      opening_float: round2(openingFloat),
+      device_id: deviceId,
+    })
     .select("id")
     .maybeSingle()
 

@@ -47,7 +47,11 @@ data class ShiftState(
 )
 
 @Serializable
-data class OpenShiftRequest(val openingFloat: Double)
+data class OpenShiftRequest(
+    val openingFloat: Double,
+    /** Which till this shift runs on. Null on a client that has not registered. */
+    val deviceId: Int? = null,
+)
 
 @Serializable
 data class OpenShiftResponse(

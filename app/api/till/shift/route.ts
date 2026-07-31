@@ -20,7 +20,15 @@ export async function GET(request: Request) {
   })
 }
 
-const openSchema = z.object({ openingFloat: z.number() })
+const openSchema = z.object({
+  openingFloat: z.number(),
+  /**
+   * Which till is opening. Optional: an older client that does not send it
+   * still opens a perfectly valid shift, it just cannot be attributed to a
+   * device — which the back office shows as a dash rather than a guess.
+   */
+  deviceId: z.number().int().positive().nullish(),
+})
 
 /**
  * Opens the drawer for the day.
@@ -43,7 +51,12 @@ export async function POST(request: Request) {
   const parsed = openSchema.safeParse(body)
   if (!parsed.success) return apiError("Enter the opening float.", 400)
 
-  const result = await openShiftFor(session.supabase, session.user, parsed.data.openingFloat)
+  const result = await openShiftFor(
+    session.supabase,
+    session.user,
+    parsed.data.openingFloat,
+    parsed.data.deviceId ?? null,
+  )
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error })
 
   const shift = await getOpenShift(session.supabase)

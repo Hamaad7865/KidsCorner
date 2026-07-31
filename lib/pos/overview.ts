@@ -4,51 +4,54 @@ import { readZ } from "@/lib/pos/shift-core"
 import { createClient } from "@/lib/supabase/server"
 
 /**
- * The back office's view of the till.
+ * The back office's view of the tills.
  *
  * Ported from Carfectionist's Point of Sale module, which answers the three
- * questions an owner actually has about a till they are not standing at: is it
- * open, what is in the drawer, and did the last few days reconcile.
+ * questions an owner has about a till they are not standing at: is it open,
+ * what is in the drawer, and did the last few days reconcile.
  *
- * WHAT IS DIFFERENT HERE, AND WHY
- *
- * Carfectionist keeps a `pos_devices` registry — model, code, app version, an
- * online dot from a heartbeat. Kids Corner has no such table, and inventing one
- * for a single shop with a single till would be a schema carrying no
- * information: every field would be a constant.
- *
- * So the unit here is the SHIFT, which Kids Corner already records properly —
- * who opened it, when, the float, and on close the counted cash and variance.
- * That is enough to answer all three questions. If the shop ever runs a second
- * till, this shape extends by grouping on a device column rather than being
- * rewritten.
+ * Keyed on the DEVICE rather than on whoever opened the shift. That is the axis
+ * a shop actually thinks in — "the counter till is short" is actionable in a
+ * way "Priya is short" is not, and it survives two people sharing a till across
+ * a day.
  */
 
-export type OpenTill = {
+/** A till is "online" if it has checked in within this long. */
+const ONLINE_WINDOW_MS = 5 * 60_000
+
+export type TillDrawer = {
   shiftId: number
   openedAt: string
   openedByName: string | null
   openingFloat: number
-  /** Cash taken through the drawer this shift. */
   cashCollected: number
-  /** Signed petty cash: negative means money was taken out. */
   tillMovements: number
-  /** Refunds handed back in cash — already netted out of `expected`. */
   cashRefunded: number
-  /**
-   * What should physically be in the drawer.
-   *
-   * Float + cash sales + movements − cash refunds. Shown with that arithmetic
-   * spelled out, because "collected 5,158 · expected 7,158" reads like a fault
-   * until you remember the float.
-   */
+  /** Float + cash sales + movements − cash refunds. */
   expected: number
   ticketCount: number
   salesTotal: number
 }
 
+export type PosDevice = {
+  id: number
+  code: string
+  name: string
+  model: string | null
+  appVersion: string | null
+  isBackOffice: boolean
+  isActive: boolean
+  lastSeenAt: string | null
+  /** Derived from `lastSeenAt`, never stored — a stored flag is wrong the
+   *  moment a tablet loses power. The web till is always "on". */
+  online: boolean
+  /** The open shift on this till, if any. */
+  drawer: TillDrawer | null
+}
+
 export type CashUp = {
   shiftId: number
+  deviceName: string | null
   openedAt: string
   closedAt: string | null
   openedByName: string | null
@@ -61,59 +64,86 @@ export type CashUp = {
 
 export type PosOverview = {
   shopName: string
-  openTill: OpenTill | null
+  devices: PosDevice[]
   recent: CashUp[]
-  /** Shifts closed in the last 30 days, and how many of those were off. */
   reconciliation: { closed: number; exact: number; short: number; over: number }
 }
 
 export async function getPosOverview(): Promise<PosOverview> {
   const supabase = await createClient()
 
-  const [shopName, { data: open }, { data: closed }] = await Promise.all([
-    getShopName(),
-    supabase
-      .from("shifts")
-      .select("id, opened_at, opening_float, profiles!shifts_opened_by_fkey ( full_name )")
-      .is("closed_at", null)
-      .order("opened_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("shifts")
-      .select(
-        `id, opened_at, closed_at, expected_cash, counted_cash, variance,
-         opener:profiles!shifts_opened_by_fkey ( full_name ),
-         closer:profiles!shifts_closed_by_fkey ( full_name )`,
-      )
-      .not("closed_at", "is", null)
-      .order("closed_at", { ascending: false })
-      .limit(20),
-  ])
+  const [shopName, { data: deviceRows }, { data: openRows }, { data: closedRows }] =
+    await Promise.all([
+      getShopName(),
+      supabase
+        .from("pos_devices")
+        .select("id, code, name, model, app_version, is_back_office, is_active, last_seen_at")
+        .order("is_back_office", { ascending: true })
+        .order("name"),
+      supabase
+        .from("shifts")
+        .select(
+          "id, device_id, opened_at, opening_float, profiles!shifts_opened_by_fkey ( full_name )",
+        )
+        .is("closed_at", null)
+        .order("opened_at", { ascending: false }),
+      supabase
+        .from("shifts")
+        .select(
+          `id, opened_at, closed_at, expected_cash, counted_cash, variance,
+           pos_devices ( name ),
+           opener:profiles!shifts_opened_by_fkey ( full_name ),
+           closer:profiles!shifts_closed_by_fkey ( full_name )`,
+        )
+        .not("closed_at", "is", null)
+        .order("closed_at", { ascending: false })
+        .limit(20),
+    ])
 
-  let openTill: OpenTill | null = null
-
-  if (open) {
-    // The live drawer figures come from `z_totals`, the same function the Z
-    // report is frozen from — so what an owner reads here and what the cashier
-    // is counting against at close cannot drift apart.
-    const z = await readZ(supabase, open.id)
-    openTill = {
-      shiftId: open.id,
-      openedAt: open.opened_at,
-      openedByName: open.profiles?.full_name ?? null,
-      openingFloat: round2(Number(open.opening_float)),
+  // The live drawer figures come from `z_totals`, the same function the Z is
+  // frozen from — so what an owner reads here and what a cashier counts against
+  // at close cannot drift apart. One call per open till, and there are never
+  // many.
+  const drawers = new Map<number, TillDrawer>()
+  for (const shift of openRows ?? []) {
+    const z = await readZ(supabase, shift.id)
+    const drawer: TillDrawer = {
+      shiftId: shift.id,
+      openedAt: shift.opened_at,
+      openedByName: shift.profiles?.full_name ?? null,
+      openingFloat: round2(Number(shift.opening_float)),
       cashCollected: round2(z?.cashTaken ?? 0),
       tillMovements: round2(z?.tillMovements ?? 0),
       cashRefunded: round2(z?.cashRefunded ?? 0),
-      expected: round2(z?.expectedCash ?? Number(open.opening_float)),
+      expected: round2(z?.expectedCash ?? Number(shift.opening_float)),
       ticketCount: z?.tickets ?? 0,
       salesTotal: round2(z?.salesTotal ?? 0),
     }
+    // A shift opened before the registry has no device. It still belongs to
+    // somebody's drawer, so it is attached to the web till rather than lost.
+    drawers.set(shift.device_id ?? -1, drawer)
   }
 
-  const recent = (closed ?? []).map<CashUp>((s) => ({
+  const now = Date.now()
+  const devices = (deviceRows ?? []).map<PosDevice>((d) => ({
+    id: d.id,
+    code: d.code,
+    name: d.name,
+    model: d.model,
+    appVersion: d.app_version,
+    isBackOffice: d.is_back_office,
+    isActive: d.is_active,
+    lastSeenAt: d.last_seen_at,
+    online:
+      d.is_back_office ||
+      (d.last_seen_at !== null &&
+        now - new Date(d.last_seen_at).getTime() < ONLINE_WINDOW_MS),
+    drawer: drawers.get(d.id) ?? (d.is_back_office ? (drawers.get(-1) ?? null) : null),
+  }))
+
+  const recent = (closedRows ?? []).map<CashUp>((s) => ({
     shiftId: s.id,
+    deviceName: s.pos_devices?.name ?? null,
     openedAt: s.opened_at,
     closedAt: s.closed_at,
     openedByName: s.opener?.full_name ?? null,
@@ -125,16 +155,50 @@ export async function getPosOverview(): Promise<PosOverview> {
 
   return {
     shopName,
-    openTill,
+    devices,
     recent,
     reconciliation: {
       closed: recent.length,
-      // Exact is the one worth counting. A drawer that balances to the cent
-      // every day is the signal that the process is working; a run of small
-      // variances is worth a conversation long before a big one appears.
+      // Exact is the figure worth counting. A drawer that balances to the cent
+      // is the signal the process works; a run of small variances is worth a
+      // conversation long before a big one appears.
       exact: recent.filter((r) => r.variance === 0).length,
       short: recent.filter((r) => r.variance < 0).length,
       over: recent.filter((r) => r.variance > 0).length,
     },
   }
+}
+
+/** One till, for its own page. */
+export async function getDevice(code: string): Promise<PosDevice | null> {
+  const overview = await getPosOverview()
+  return overview.devices.find((d) => d.code === code) ?? null
+}
+
+/** Every shift this till has run, newest first. */
+export async function getDeviceSessions(deviceId: number): Promise<CashUp[]> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("shifts")
+    .select(
+      `id, opened_at, closed_at, expected_cash, counted_cash, variance,
+       pos_devices ( name ),
+       opener:profiles!shifts_opened_by_fkey ( full_name ),
+       closer:profiles!shifts_closed_by_fkey ( full_name )`,
+    )
+    .eq("device_id", deviceId)
+    .order("opened_at", { ascending: false })
+    .limit(50)
+
+  return (data ?? []).map<CashUp>((s) => ({
+    shiftId: s.id,
+    deviceName: s.pos_devices?.name ?? null,
+    openedAt: s.opened_at,
+    closedAt: s.closed_at,
+    openedByName: s.opener?.full_name ?? null,
+    closedByName: s.closer?.full_name ?? null,
+    expected: round2(Number(s.expected_cash ?? 0)),
+    counted: round2(Number(s.counted_cash ?? 0)),
+    variance: round2(Number(s.variance ?? 0)),
+  }))
 }

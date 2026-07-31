@@ -23,6 +23,27 @@ export async function GET(request: Request) {
 
   const { supabase, user } = session
 
+  /**
+   * The till announces itself.
+   *
+   * Sent as query parameters rather than a body because this is a GET, and it
+   * is deliberately fire-and-forget: a device that cannot register still gets
+   * its catalogue and can still sell. The registry is for the back office to
+   * look at, and losing a heartbeat must never stop a shop trading.
+   */
+  const params = new URL(request.url).searchParams
+  const deviceCode = params.get("device")?.trim()
+  let deviceId: number | null = null
+
+  if (deviceCode) {
+    const { data } = await supabase.rpc("register_pos_device" as never, {
+      p_code: deviceCode,
+      p_model: params.get("model")?.trim() || null,
+      p_app_version: params.get("version")?.trim() || null,
+    } as never)
+    deviceId = typeof data === "number" ? data : null
+  }
+
   const [shopName, vatRate, paymentMethods, shift, cashiers, identity] = await Promise.all([
     getShopName(supabase),
     getVatRate(supabase),
@@ -39,6 +60,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     device: { id: user.id, name: user.name, role: user.role },
+    // The registry row for this install, so the till can stamp its shifts.
+    deviceId,
     shopName,
     shopAddress: identity.address,
     shopPhone: identity.phone,

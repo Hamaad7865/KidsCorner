@@ -57,6 +57,8 @@ data class OpenShift(
 data class Bootstrap(
     val ok: Boolean = true,
     val device: DeviceInfo,
+    /** This till's row in the shop's device registry. Null if it did not register. */
+    val deviceId: Int? = null,
     val shopName: String,
     /** Receipt header. Null where the shop has not filled the setting in. */
     val shopAddress: String? = null,
@@ -178,8 +180,26 @@ class TillApi(private val http: HttpClient) {
 
     private val origin = BuildConfig.API_ORIGIN
 
-    suspend fun bootstrap(token: String): Bootstrap =
-        http.get("$origin/api/till/bootstrap") { bearer(token) }.decode()
+    /**
+     * Announces this till and fetches everything it needs to draw.
+     *
+     * The device details ride along as query parameters. Fire-and-forget by
+     * design: a till that cannot register still gets its catalogue and can
+     * still sell — the registry is for the back office to look at, and losing
+     * a heartbeat must never stop a shop trading.
+     */
+    suspend fun bootstrap(
+        token: String,
+        deviceCode: String? = null,
+        model: String? = null,
+        appVersion: String? = null,
+    ): Bootstrap =
+        http.get("$origin/api/till/bootstrap") {
+            bearer(token)
+            deviceCode?.let { parameter("device", it) }
+            model?.let { parameter("model", it) }
+            appVersion?.let { parameter("version", it) }
+        }.decode()
 
     suspend fun verifyPin(token: String, profileId: String, pin: String): PinResult =
         http.post("$origin/api/till/pin") {
@@ -201,11 +221,15 @@ class TillApi(private val http: HttpClient) {
     suspend fun shift(token: String): ShiftState =
         http.get("$origin/api/till/shift") { bearer(token) }.decode()
 
-    suspend fun openShift(token: String, openingFloat: Double): OpenShiftResponse =
+    suspend fun openShift(
+        token: String,
+        openingFloat: Double,
+        deviceId: Int? = null,
+    ): OpenShiftResponse =
         http.post("$origin/api/till/shift") {
             bearer(token)
             contentType(ContentType.Application.Json)
-            setBody(OpenShiftRequest(openingFloat))
+            setBody(OpenShiftRequest(openingFloat, deviceId))
         }.decode()
 
     /** Live figures for a trading drawer — an X-read, not a fiscal record. */

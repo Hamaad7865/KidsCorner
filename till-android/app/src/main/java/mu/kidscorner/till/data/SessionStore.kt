@@ -25,6 +25,20 @@ import androidx.security.crypto.MasterKey
 @Suppress("DEPRECATION")
 class SessionStore(context: Context) {
 
+    /**
+     * This install's device code, generated once and kept for good.
+     *
+     * Not the Android ID or the serial: both are either unavailable without
+     * privileged permissions or shared across a factory reset, and neither is
+     * what the shop means by "this till". A UUID minted on first run is stable
+     * for exactly as long as the app is installed, which is the right lifetime
+     * — a wiped tablet is a new till, and should appear as one.
+     */
+    val deviceCode: String
+        get() = prefs.getString(KEY_DEVICE_CODE, null) ?: java.util.UUID.randomUUID()
+            .toString()
+            .also { prefs.edit().putString(KEY_DEVICE_CODE, it).apply() }
+
     private val prefs: SharedPreferences = run {
         val key = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -65,6 +79,7 @@ class SessionStore(context: Context) {
     fun clear() = prefs.edit().clear().apply()
 
     private companion object {
+        const val KEY_DEVICE_CODE = "device_code"
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
         const val KEY_EXPIRES = "expires_at"

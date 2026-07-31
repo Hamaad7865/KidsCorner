@@ -108,6 +108,8 @@ data class SaleOutcome(
 data class TillState(
     val screen: TillScreen = TillScreen.Starting,
     val shop: Bootstrap? = null,
+    /** This till's row in the shop's device registry, from bootstrap. */
+    val deviceId: Int? = null,
     val busy: Boolean = false,
     val error: String? = null,
     /** Seconds left on a PIN lockout, counted down for the keypad. */
@@ -301,7 +303,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         repo.bootstrap()
             .onSuccess { shop ->
                 _state.update {
-                    it.copy(busy = false, shop = shop, screen = TillScreen.Locked, error = null)
+                    it.copy(
+                        busy = false,
+                        shop = shop,
+                        deviceId = shop.deviceId,
+                        screen = TillScreen.Locked,
+                        error = null,
+                    )
                 }
                 refreshCatalog()
             }
@@ -371,7 +379,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val cashier = cashierOf(_state.value.screen) ?: return@launch
         _state.update { it.copy(busy = true, error = null) }
 
-        repo.openShift(openingFloat)
+        repo.openShift(openingFloat, _state.value.deviceId)
             .onSuccess { response ->
                 if (response.ok && response.shift != null) {
                     _state.update {
