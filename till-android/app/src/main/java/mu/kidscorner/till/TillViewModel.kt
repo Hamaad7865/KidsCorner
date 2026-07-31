@@ -1052,12 +1052,38 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         repo.verifyPin(cashier.id, pin)
             .onSuccess { result ->
                 if (result.ok && result.cashier != null) {
+                    /*
+                     * A closed till lands on the float screen, not the sell
+                     * screen.
+                     *
+                     * Selling was the old landing, and it let a cashier scan a
+                     * whole basket before PAY refused it — the till has to be
+                     * open for a sale to have a drawer to go in. Finding that
+                     * out at the end, with a customer waiting, is the worst
+                     * possible moment.
+                     *
+                     * The cached shift is only consulted when it says a shift
+                     * IS open, because that is the common case and a cashier
+                     * switch is meant to take about three seconds. When it says
+                     * closed, the server is asked — the cache was filled at app
+                     * start and the back office or another till may have opened
+                     * one since, and sending somebody to count a float for a
+                     * drawer that is already open is a dead end.
+                     */
+                    val open = _state.value.shop?.shift
+                        ?: repo.shift().getOrNull()?.shift
+
                     _state.update {
                         it.copy(
                             busy = false,
                             error = null,
                             lockedFor = 0,
-                            screen = TillScreen.Selling(result.cashier),
+                            shop = if (open != null) it.shop?.copy(shift = open) else it.shop,
+                            screen = if (open != null) {
+                                TillScreen.Selling(result.cashier)
+                            } else {
+                                TillScreen.OpeningShift(result.cashier)
+                            },
                         )
                     }
                 } else {

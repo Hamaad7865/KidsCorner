@@ -335,3 +335,67 @@ export async function closeShiftRemotely(input: {
   revalidatePath("/reports")
   return { ok: true }
 }
+
+/**
+ * Renames a till, or retires it.
+ *
+ * The name is the whole point of the registry: a device that registered itself
+ * as "Google sdk_gphone64_x86_64" tells an owner nothing, and "the counter
+ * till is short" is only sayable once somebody has called it the counter.
+ *
+ * Retiring rather than deleting. A till's shifts, and their variances, stay
+ * attributable to it forever — a device that can be deleted is a variance that
+ * can be made to belong to nobody.
+ */
+export async function saveDevice(input: {
+  id: number
+  name?: string
+  isActive?: boolean
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) {
+    return { ok: false, error: "Your session has expired. Sign in again." }
+  }
+  if (profile.role !== "owner" && profile.role !== "manager") {
+    return { ok: false, error: "Only an owner or manager can change a till." }
+  }
+
+  const patch: { name?: string; is_active?: boolean } = {}
+
+  if (input.name !== undefined) {
+    const name = input.name.trim()
+    if (name.length < 2) return { ok: false, error: "Give the till a name." }
+    if (name.length > 60) return { ok: false, error: "That name is too long." }
+    patch.name = name
+  }
+
+  if (input.isActive !== undefined) patch.is_active = input.isActive
+
+  if (Object.keys(patch).length === 0) return { ok: true }
+
+  const supabase = await createClient()
+
+  // Refuse to retire a till with money in its drawer: the shift would be
+  // orphaned on a device the back office has stopped listing.
+  if (patch.is_active === false) {
+    const { data: open } = await supabase
+      .from("shifts")
+      .select("id")
+      .eq("device_id", input.id)
+      .is("closed_at", null)
+      .limit(1)
+
+    if (open && open.length > 0) {
+      return {
+        ok: false,
+        error: "That till still has a shift open. Close the day on it first.",
+      }
+    }
+  }
+
+  const { error } = await supabase.from("pos_devices").update(patch).eq("id", input.id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/point-of-sale")
+  return { ok: true }
+}
