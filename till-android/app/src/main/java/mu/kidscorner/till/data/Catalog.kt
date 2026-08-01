@@ -43,6 +43,18 @@ data class CatalogVariant(
     val barcode: String? = null,
     val price: Double = 0.0,
     val qtyOnHand: Int = 0,
+    /**
+     * The product's photograph, where the shop has taken one.
+     *
+     * On the product, not the variant — a garment is photographed once, and the
+     * colour in a customer's hand is already carried by `colourHex`.
+     *
+     * Defaulted so a till running an older build against a newer server, or a
+     * newer build against an older one, simply sees no picture. A missing field
+     * must never be the reason a catalogue fails to parse and the counter
+     * cannot sell.
+     */
+    val imageUrl: String? = null,
 ) {
     /** "Blue · 3-4y", or whichever halves exist. */
     val variantLabel: String
@@ -84,7 +96,7 @@ interface CatalogDao {
 
 @Database(
     entities = [CatalogVariant::class, QueuedSale::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
@@ -117,6 +129,25 @@ abstract class TillDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /**
+         * Adds the product photograph to the cached catalogue.
+         *
+         * Written out rather than dropped and refetched even though the catalog
+         * IS a cache and could afford it. The two tables share a database, and
+         * `fallbackToDestructiveMigration` does not know the difference — it
+         * would take `queued_sales` with it, and that table holds sales the shop
+         * has already been paid for and not yet sent.
+         *
+         * Nullable with no default: a till that migrates before its next fetch
+         * shows no pictures for a few seconds and then has them, which is the
+         * correct behaviour for a cache.
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `imageUrl` TEXT")
             }
         }
     }

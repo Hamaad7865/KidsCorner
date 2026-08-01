@@ -1,5 +1,6 @@
 package mu.kidscorner.till.ui
 
+import coil3.compose.AsyncImage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +64,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -141,6 +143,17 @@ private data class ProductGroup(
     /** Distinct colours, in catalogue order — the swatch row on a tile. */
     val swatches: List<String?>
         get() = variants.map { it.colourHex }.distinct().take(6)
+
+    /**
+     * The photograph, from whichever variant carries one.
+     *
+     * `firstNotNullOfOrNull` rather than `first().imageUrl`: the picture is a
+     * property of the product, so every variant repeats it — but a catalogue
+     * fetched by an older till, or mid-way through a back-office edit, can hand
+     * back a group whose first row is the one without it.
+     */
+    val imageUrl: String?
+        get() = variants.firstNotNullOfOrNull { it.imageUrl?.takeIf(String::isNotBlank) }
 
     /** "3-6 mths – 4-5 yrs", or the single size when there is one. */
     val sizes: String
@@ -606,15 +619,27 @@ private fun TileGrid(groups: List<ProductGroup>, onPick: (ProductGroup) -> Unit)
                     Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(
-                        group.productName,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 18.75.sp,
-                        color = Handoff.Ink,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    // The picture leads and the name takes what is left. The
+                    // name drops from three lines to two to pay for it, which
+                    // costs an ellipsis on the longest names and buys a tile a
+                    // person can recognise from a metre away — the whole reason
+                    // anyone opens Browse instead of scanning.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        ImageSlot(group.productName, group.imageUrl, size = 40, radius = 9)
+                        Text(
+                            group.productName,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 18.75.sp,
+                            color = Handoff.Ink,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             group.swatches.forEach { ColourSwatch(it) }
@@ -701,7 +726,7 @@ private fun ResultRows(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    ImageSlot()
+                    ImageSlot(group.productName, group.imageUrl)
                     Column(Modifier.weight(1f)) {
                         Text(
                             group.productName,
@@ -754,18 +779,47 @@ private fun ResultRows(
     }
 }
 
-/** `48x48; radius:10px; #F1F5F5; 9px 600 #A3B2B5` reading "IMG". */
+/**
+ * The design's `48x48; radius:10px; #F1F5F5` slot, with the garment in it.
+ *
+ * It read "IMG" for as long as there was nothing to put there. Now it shows the
+ * product's photograph, and where the shop has not taken one it shows the
+ * product's INITIALS rather than the word IMG or an empty grey square — most of
+ * a catalogue will have no picture for a long time, and a screen of identical
+ * grey boxes is worse than no slot at all. Initials differ from row to row, so
+ * the eye can still use the column to keep its place.
+ *
+ * The initials come from `TillChrome`'s own helper, the one that puts "MA" on
+ * Marie Appadoo's chip. Same shop, same abbreviation.
+ */
 @Composable
-private fun ImageSlot() {
+private fun ImageSlot(name: String, url: String?, size: Int = 48, radius: Int = 10) {
+    val shape = RoundedCornerShape(radius.dp)
     Box(
         Modifier
-            .size(48.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .size(size.dp)
+            .clip(shape)
             .background(Handoff.Well)
-            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(10.dp)),
+            .border(1.dp, Handoff.LineSoft, shape),
         Alignment.Center,
     ) {
-        Text("IMG", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Handoff.Fainter)
+        if (url != null) {
+            AsyncImage(
+                model = url,
+                // Decorative: the product's name is always beside it, and
+                // hearing it twice helps nobody.
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                initialsOf(name),
+                fontSize = (size * 0.3f).sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Handoff.Fainter,
+            )
+        }
     }
 }
 

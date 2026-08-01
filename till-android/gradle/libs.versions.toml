@@ -12,6 +12,7 @@ securityCrypto = "1.1.0"
 navigation = "2.9.5"
 room = "2.8.1"
 ksp = "2.2.20-2.0.4"
+coil = "3.3.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,11 @@ ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.r
 ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+# Photographs of the stock. The OkHttp fetcher rather than the Ktor one on
+# purpose: OkHttp is already here as Ktor's engine, so this adds a cache and a
+# decoder rather than a second HTTP stack on a tablet at a counter.
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 junit = { group = "junit", name = "junit", version = "4.13.2" }
 
 [plugins]

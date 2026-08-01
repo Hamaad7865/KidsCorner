@@ -231,7 +231,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // migrate — but `queued_sales` holds sales the shop has taken money for
         // and not yet sent. Dropping those to satisfy a version bump would lose
         // real revenue silently.
-        .addMigrations(TillDatabase.MIGRATION_1_2)
+        .addMigrations(TillDatabase.MIGRATION_1_2, TillDatabase.MIGRATION_2_3)
         .build()
 
     private val repo = TillRepository(
