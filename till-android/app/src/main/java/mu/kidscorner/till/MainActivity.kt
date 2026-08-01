@@ -30,7 +30,6 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import mu.kidscorner.till.data.Approval
-import mu.kidscorner.till.data.SalePayment
 import mu.kidscorner.till.print.hasBluetoothPermission
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.ui.ActionsDialog
@@ -111,16 +110,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     val bluetoothPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { }
-
-    /**
-     * Payments held here rather than in the ViewModel.
-     *
-     * They exist only between "Confirm" and the server's answer, and the one
-     * case that needs them again is a manager approval — where the same
-     * payments must be resubmitted verbatim under the same idempotency key.
-     */
-    var pendingPayments by remember { mutableStateOf<List<SalePayment>>(emptyList()) }
-    var pendingChange by remember { mutableStateOf(0.0) }
 
     /** The cart line whose unit price is being set by hand, if any. */
     var overriding by remember { mutableStateOf<Int?>(null) }
@@ -248,15 +237,13 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 error = state.error,
                 frozen = state.settleFrozen,
                 parkable = state.settleParkable,
-                onConfirm = { payments, change ->
-                    pendingPayments = payments
-                    pendingChange = change
-                    vm.confirmSale(payments, change)
-                },
+                // The ViewModel remembers the tender itself, so a retry or an
+                // approval resubmit survives this screen being recreated.
+                onConfirm = { payments, change -> vm.confirmSale(payments, change) },
                 // The same payments as the attempt that froze, so the retry
                 // carries the same idempotency key and replays rather than
                 // ringing up a second sale.
-                onRetry = { vm.confirmSale(pendingPayments, pendingChange) },
+                onRetry = { vm.retryFrozenSale() },
                 onPark = vm::parkFrozenSale,
                 onCancel = vm::cancelPayment,
             )
@@ -471,7 +458,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onApprove = { managerId, pin ->
                 overlay = Overlay.None
                 vm.clearApprovalPrompt()
-                vm.confirmSale(pendingPayments, pendingChange, Approval(managerId, pin))
+                vm.retryFrozenSale(Approval(managerId, pin))
             },
             onDismiss = {
                 overlay = Overlay.None

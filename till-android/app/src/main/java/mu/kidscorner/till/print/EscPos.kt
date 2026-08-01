@@ -147,12 +147,34 @@ object EscPos {
      * is ugly but legible — unlike a raw high byte, which prints as a box-
      * drawing character and looks like a fault.
      */
+    /**
+     * The accented letters CP437 actually encodes.
+     *
+     * These were being replaced with '?' along with everything else non-ASCII,
+     * which mangled a French catalogue on every receipt the shop hands out —
+     * "Robe Bébé" printed as "Robe B?b?". CP437 has had these code points since
+     * 1981; the printer renders them correctly, nothing was asking it to.
+     *
+     * One character still yields one byte, so the column arithmetic that lays
+     * out a receipt is unaffected.
+     */
+    private val CP437_ACCENTS: Map<Char, Int> = mapOf(
+        'ç' to 0x87, 'ü' to 0x81, 'é' to 0x82, 'â' to 0x83, 'ä' to 0x84,
+        'à' to 0x85, 'å' to 0x86, 'ê' to 0x88, 'ë' to 0x89, 'è' to 0x8A,
+        'ï' to 0x8B, 'î' to 0x8C, 'ì' to 0x8D, 'Ä' to 0x8E, 'Å' to 0x8F,
+        'É' to 0x90, 'æ' to 0x91, 'Æ' to 0x92, 'ô' to 0x93, 'ö' to 0x94,
+        'ò' to 0x95, 'û' to 0x96, 'ù' to 0x97, 'ÿ' to 0x98, 'Ö' to 0x99,
+        'Ü' to 0x9A, 'ñ' to 0xA4, 'Ñ' to 0xA5, 'º' to 0xA7, 'ª' to 0xA6,
+        'Ç' to 0x80, 'ß' to 0xE1, 'µ' to 0xE6, '°' to 0xF8,
+    )
+
     internal fun toCp437(text: String): ByteArray {
         val out = ByteArray(text.length)
         for (i in text.indices) {
             val c = text[i]
             out[i] = when {
                 c.code in 0x20..0x7E -> c.code.toByte()
+                CP437_ACCENTS.containsKey(c) -> CP437_ACCENTS.getValue(c).toByte()
                 c == '·' -> 0xFA.toByte()
                 c == '–' || c == '—' -> '-'.code.toByte()
                 c == '’' || c == '‘' -> '\''.code.toByte()

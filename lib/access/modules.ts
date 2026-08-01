@@ -50,6 +50,12 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
  * a shorter accidental match.
  */
 const PATH_TO_MODULE: { prefix: string; module: ModuleKey }[] = [
+  // The CSV exports carry the same data as the pages they come from, so they
+  // answer to the same permission. Without these the matrix hid a module on
+  // screen while its full contents stayed one URL away — the journal and the
+  // margin report, cost prices included, to anyone with a back-office role.
+  { prefix: "/api/reports/daily-summary", module: "reports" },
+  { prefix: "/api/reports", module: "reports" },
   { prefix: "/dashboard", module: "dashboard" },
   { prefix: "/products", module: "products" },
   { prefix: "/import", module: "import" },

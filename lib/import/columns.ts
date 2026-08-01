@@ -127,22 +127,76 @@ export function autoMapColumns(headers: string[]): ColumnMapping {
   return mapping
 }
 
-/** Parses a money value, tolerating "Rs 1,250.00" and blank cells. */
-export function parseMoney(value: string | undefined): number | null {
+/**
+ * A number out of a spreadsheet cell, in either of the conventions a
+ * Mauritian shop actually receives.
+ *
+ * Both are routine here: an English-locale export writes 1 234,50 as
+ * "1,234.50" and a French-locale one writes it as "1 234,50". Stripping every
+ * non-digit and calling Number() — what this used to do — reads the second as
+ * 123450, a HUNDREDFOLD overcharge that reaches the till with nothing
+ * downstream to catch it, because the result is a perfectly finite number and
+ * validation only checks that.
+ *
+ * The rule, which resolves every case a price or a quantity can present:
+ *
+ *   • Both separators → the RIGHTMOST is the decimal point, the other groups
+ *     thousands. "1.234,50" is 1234.50 and "1,234.50" is the same figure.
+ *   • One separator, appearing more than once → it groups thousands.
+ *     "1,234,567" is 1234567.
+ *   • One separator followed by exactly three digits → it groups thousands.
+ *     "1,234" and "1.234" are both 1234. Money here is quoted to two decimals,
+ *     so a three-decimal price is a misread grouping far more often than it is
+ *     a real figure.
+ *   • Otherwise it is the decimal point. "1,50" is 1.50, "1.5" is 1.5.
+ *
+ * Spaces group thousands in the French convention, including the non-breaking
+ * and narrow ones Excel emits, so they are removed before any of this.
+ */
+function parseNumber(value: string | undefined): number | null {
   if (value === undefined) return null
-  const cleaned = value.replace(/[^0-9.\-]/g, "")
-  if (cleaned === "" || cleaned === "-") return null
-  const parsed = Number(cleaned)
-  return Number.isFinite(parsed) ? parsed : null
+
+  // Strip currency, spaces of every stripe, and anything else that is not a
+  // digit, a separator or a leading minus.
+  const trimmed = value.replace(/[\s   ]/g, "")
+  const negative = /^-/.test(trimmed)
+  const body = trimmed.replace(/[^0-9.,]/g, "")
+  if (body === "") return null
+
+  const lastDot = body.lastIndexOf(".")
+  const lastComma = body.lastIndexOf(",")
+
+  let decimalAt = -1
+  if (lastDot >= 0 && lastComma >= 0) {
+    decimalAt = Math.max(lastDot, lastComma)
+  } else if (lastDot >= 0 || lastComma >= 0) {
+    const at = Math.max(lastDot, lastComma)
+    const sep = body[at]!
+    const occurrences = body.split(sep).length - 1
+    const trailing = body.length - at - 1
+    // Repeated, or grouping exactly three digits: a thousands separator.
+    decimalAt = occurrences > 1 || trailing === 3 ? -1 : at
+  }
+
+  const digitsOnly = (s: string) => s.replace(/[^0-9]/g, "")
+  const whole = digitsOnly(decimalAt >= 0 ? body.slice(0, decimalAt) : body)
+  const fraction = decimalAt >= 0 ? digitsOnly(body.slice(decimalAt + 1)) : ""
+  if (whole === "" && fraction === "") return null
+
+  const parsed = Number(`${whole || "0"}.${fraction || "0"}`)
+  if (!Number.isFinite(parsed)) return null
+  return negative ? -parsed : parsed
+}
+
+/** Parses a money value, tolerating "Rs 1,250.00", "1 234,50" and blank cells. */
+export function parseMoney(value: string | undefined): number | null {
+  return parseNumber(value)
 }
 
 /** Parses a whole-number quantity. Returns null when unparseable. */
 export function parseQty(value: string | undefined): number | null {
-  if (value === undefined) return null
-  const cleaned = value.replace(/[^0-9.\-]/g, "")
-  if (cleaned === "" || cleaned === "-") return null
-  const parsed = Number(cleaned)
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : null
+  const parsed = parseNumber(value)
+  return parsed === null ? null : Math.trunc(parsed)
 }
 
 const GENDER_WORDS: Record<string, "boy" | "girl" | "unisex"> = {

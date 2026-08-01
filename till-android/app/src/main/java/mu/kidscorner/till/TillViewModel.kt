@@ -270,6 +270,18 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private var frozenSale: FrozenSale? = null
 
+    /**
+     * What the last settle attempt tendered, so it can be resubmitted.
+     *
+     * Held HERE rather than in the composable that collected it. A ViewModel
+     * outlives an activity recreation and `remember` does not, so a tablet
+     * rotated while a sale was frozen — or while the manager-approval prompt
+     * was open — came back with the payment list emptied underneath a screen
+     * still asking the cashier to retry. The retry then posted nothing and the
+     * server refused it as an underpayment for the full amount.
+     */
+    private var lastTender: Pair<List<SalePayment>, Double>? = null
+
     init {
         start()
         watchForIdle()
@@ -551,7 +563,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val shiftId = _state.value.shop?.shift?.id ?: return@launch
         _state.update { it.copy(busy = true, error = null) }
 
-        repo.closeShift(CloseShiftRequest(shiftId, countedCash, notes?.trim()?.ifBlank { null }))
+        repo.closeShift(
+            CloseShiftRequest(
+                shiftId = shiftId,
+                countedCash = countedCash,
+                notes = notes?.trim()?.ifBlank { null },
+                deviceId = _state.value.deviceId,
+            ),
+        )
             .onSuccess { response ->
                 if (response.ok) {
                     _state.update {
@@ -605,6 +624,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 amount = round2(amount),
                 direction = if (payIn) "in" else "out",
                 reason = reason,
+                // Names this till, so the server can refuse a drawer that
+                // belongs to another one.
+                deviceId = _state.value.deviceId,
             ),
         )
             .onSuccess { response ->
@@ -1525,6 +1547,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (current.lines.isEmpty()) return@launch
 
+        // Remembered before the attempt, so a retry or an approval resubmit
+        // has the tender even if the screen that collected it has been
+        // recreated since.
+        lastTender = payments to change
+
         _state.update { it.copy(busy = true, error = null) }
 
         val request = SaleRequest(
@@ -1687,6 +1714,24 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             }
+    }
+
+    /**
+     * Resubmits the frozen sale, under its original idempotency key.
+     *
+     * Reads the tender from this ViewModel rather than from the screen, so a
+     * retry works even after the activity has been recreated. `saleKey` is
+     * untouched until something succeeds, so this replays the same sale rather
+     * than ringing up a second one.
+     */
+    fun retryFrozenSale(approval: Approval? = null) {
+        val (payments, change) = lastTender ?: run {
+            _state.update {
+                it.copy(error = "This till has lost track of what was tendered. Cancel and ring it up again.")
+            }
+            return
+        }
+        confirmSale(payments, change, approval)
     }
 
     /**

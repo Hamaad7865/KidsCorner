@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache"
 
-import { isAdminRole } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import { round2 } from "@/lib/format"
 import {
@@ -17,6 +16,7 @@ import { PIN_PATTERN, hashPin } from "@/lib/pos/pin"
 import {
   closeShiftFor,
   openShiftFor,
+  assertShiftReachable,
   recordMovementFor,
 } from "@/lib/pos/shift-core"
 import {
@@ -50,13 +50,34 @@ import { createClient } from "@/lib/supabase/server"
  */
 
 async function requireTillUser(): Promise<
-  { id: string; name: string } | FormState
+  { id: string; name: string; role: string } | FormState
 > {
   const profile = await getSessionProfile()
   if (!profile || !profile.isActive) {
     return fail("Your session has expired. Sign in again.")
   }
-  return { id: profile.id, name: profile.fullName }
+  // The role rides along because a till action still has to know whether the
+  // caller may reach a drawer other than their own.
+  return { id: profile.id, name: profile.fullName, role: profile.role }
+}
+
+/**
+ * The seeded web till's device row.
+ *
+ * The back office has no install to generate a code, so it is the one device
+ * looked up by its fixed one. Shared because three call sites — opening a
+ * shift, signing a cashier in, and scoping a movement — must all agree on
+ * which till the browser counts as.
+ */
+async function backOfficeDeviceId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<number | null> {
+  const { data } = await supabase
+    .from("pos_devices")
+    .select("id")
+    .eq("code", "back-office")
+    .maybeSingle()
+  return data?.id ?? null
 }
 
 // --------------------------------------------------------------- cashiers
@@ -86,21 +107,24 @@ export async function switchCashier(
   const supabase = await createClient()
   // This keypad is the web till, so the sign-in is attributed to the
   // back-office device — the same row the shift opener uses.
-  const { data: backOffice } = await supabase
-    .from("pos_devices")
-    .select("id")
-    .eq("code", "back-office")
-    .maybeSingle()
-
-  return authenticateCashier(supabase, profileId, pin, backOffice?.id ?? null)
+  return authenticateCashier(supabase, profileId, pin, await backOfficeDeviceId(supabase))
 }
 
-/** Frees a locked-out cashier without waiting out the clock. Owner/manager. */
+/**
+ * Frees a locked-out cashier without waiting out the clock. Owner only.
+ *
+ * Owner-only because clearing the lockout removes the ONLY brake on guessing a
+ * four-digit PIN: a manager who could call this between attempts could walk the
+ * whole ten-thousand-value space against the owner's own PIN and then sign in
+ * at the till as them. It also matches the settings matrix, which files PINs
+ * under "manage users, roles and PINs" — owner — and `setCashierPin` beside it,
+ * which has always been owner-only.
+ */
 export async function clearPinLock(profileId: string): Promise<FormState> {
   const profile = await getSessionProfile()
   if (!profile || !profile.isActive) return fail("Your session has expired.")
-  if (!isAdminRole(profile.role)) {
-    return fail("Only an owner or manager can unlock a cashier.")
+  if (profile.role !== "owner") {
+    return fail("Only an owner can unlock a cashier.")
   }
 
   const supabase = await createClient()
@@ -167,13 +191,12 @@ export async function openShift(
 
   // The web till is always the seeded back-office device — it has no install
   // to generate an id, and there is only ever one of it.
-  const { data: backOffice } = await supabase
-    .from("pos_devices")
-    .select("id")
-    .eq("code", "back-office")
-    .maybeSingle()
-
-  const result = await openShiftFor(supabase, user, openingFloat, backOffice?.id ?? null)
+  const result = await openShiftFor(
+    supabase,
+    user,
+    openingFloat,
+    await backOfficeDeviceId(supabase),
+  )
   if (!result.ok) return fail(result.error)
 
   revalidatePath("/pos")
@@ -203,8 +226,20 @@ export async function recordTillMovement(
 
   const isPayIn = textOf(formData, "direction") === "in"
 
+  const supabase = await createClient()
+
+  // This screen IS the web till, so the drawer it may touch is the back
+  // office's. A cashier posting another device's shift id gets refused here.
+  const reachable = await assertShiftReachable(
+    supabase,
+    shiftId,
+    await backOfficeDeviceId(supabase),
+    user.role,
+  )
+  if (!reachable.ok) return fail(reachable.error)
+
   const result = await recordMovementFor(
-    await createClient(),
+    supabase,
     shiftId,
     isPayIn ? magnitude : -magnitude,
     textOf(formData, "reason"),
@@ -238,12 +273,24 @@ export async function closeShift(
   const shiftId = idOf(formData, "shiftId")
   if (shiftId === null) return fail("Couldn't tell which shift to close.")
 
+  const supabase = await createClient()
+
+  // Same gate as a movement: closing a drawer freezes a Z that cannot be
+  // reopened, so a cashier may only do it to the till they are standing at.
+  const reachable = await assertShiftReachable(
+    supabase,
+    shiftId,
+    await backOfficeDeviceId(supabase),
+    user.role,
+  )
+  if (!reachable.ok) return fail(reachable.error)
+
   const countedCash = numberOf(formData, "countedCash", NaN)
   if (!Number.isFinite(countedCash)) {
     return fail(null, { countedCash: "Enter the counted cash." })
   }
 
-  const result = await closeShiftFor(await createClient(), user, {
+  const result = await closeShiftFor(supabase, user, {
     shiftId,
     countedCash,
     notes: textOf(formData, "notes").trim() || null,

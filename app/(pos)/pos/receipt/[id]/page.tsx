@@ -70,6 +70,17 @@ export default async function ReceiptPage({
           {sale.customers?.full_name ? <p>Customer: {sale.customers.full_name}</p> : null}
         </header>
 
+        {/* A sale that has been voided or refunded must say so on its own face.
+            The sales list offers a Receipt button on every row, voided ones
+            included, and a reprint that looks like a live receipt is exactly
+            the document someone would use to claim the goods a second time.
+            The till has always printed this banner; this page did not. */}
+        {sale.status !== "completed" ? (
+          <p className="mt-2 text-center text-sm font-bold uppercase">
+            *** {sale.status} ***
+          </p>
+        ) : null}
+
         <hr className="my-2 border-dashed border-black" />
 
         <table className="w-full">
@@ -135,7 +146,11 @@ export default async function ReceiptPage({
         ) : null}
 
         <p className="mt-3 text-center">Thank you!</p>
-        <p className="text-center opacity-70">Exchanges within 14 days with receipt</p>
+        {/* Seven days, matching the till exactly. These two receipts used to
+            promise 14 here and 7 on paper, so two customers buying the same
+            day got contradictory terms in writing depending on which device
+            printed — and the one holding "14 days" is entitled by it. */}
+        <p className="text-center opacity-70">Exchange within 7 days with this receipt</p>
       </article>
     </div>
   )

@@ -74,6 +74,8 @@ data class MovementRequest(
     /** "in" or "out". */
     val direction: String,
     val reason: String,
+    /** This till's registry id. The server refuses a drawer on another till. */
+    val deviceId: Int? = null,
 )
 
 @Serializable
@@ -84,6 +86,8 @@ data class CloseShiftRequest(
     val shiftId: Int,
     val countedCash: Double,
     val notes: String? = null,
+    /** This till's registry id. The server refuses a drawer on another till. */
+    val deviceId: Int? = null,
 )
 
 @Serializable

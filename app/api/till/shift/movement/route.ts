@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
-import { recordMovementFor } from "@/lib/pos/shift-core"
+import { assertShiftReachable, recordMovementFor } from "@/lib/pos/shift-core"
 
 /**
  * A positive figure plus a direction, never a signed amount.
@@ -16,6 +16,8 @@ const bodySchema = z.object({
   amount: z.number().positive("Enter an amount."),
   direction: z.enum(["in", "out"]),
   reason: z.string(),
+  /** Which till is asking, so a drawer can only be reached from its own. */
+  deviceId: z.number().int().positive().nullish(),
 })
 
 export async function POST(request: Request) {
@@ -38,6 +40,17 @@ export async function POST(request: Request) {
   }
 
   const { shiftId, amount, direction, reason } = parsed.data
+
+  // A till may only reach its own drawer. Without this a cashier's token
+  // could post another device's shift id and take cash out of a drawer they
+  // are not standing at — the very act the back office confines to a manager.
+  const reachable = await assertShiftReachable(
+    session.supabase,
+    parsed.data.shiftId,
+    parsed.data.deviceId ?? null,
+    session.user.role,
+  )
+  if (!reachable.ok) return apiError(reachable.error, 403)
 
   const result = await recordMovementFor(
     session.supabase,

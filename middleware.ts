@@ -183,6 +183,11 @@ export async function middleware(request: NextRequest) {
     // Only an explicit `false` blocks. A missing row, or a database that has
     // not had migration 006 applied, leaves behaviour exactly as it was.
     if (access?.can_view === false) {
+      // An export is not a page: bouncing a fetch to the till would download
+      // the till's HTML as a .csv rather than refusing it.
+      if (pathname.startsWith("/api/")) {
+        return new NextResponse("Not authorised", { status: 403 })
+      }
       // Deliberately the till, not the role's landing page: if the blocked
       // module IS the landing page (a manager with dashboard hidden), sending
       // them there would bounce straight back into this same check and loop.

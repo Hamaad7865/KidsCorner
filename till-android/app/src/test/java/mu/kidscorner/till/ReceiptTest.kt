@@ -308,8 +308,27 @@ class ReceiptTest {
     }
 
     @Test
-    fun `an unencodable character becomes a question mark, not a box`() {
-        val bytes = EscPos.toCp437("héllo")
+    fun `an accented letter is encoded, not replaced`() {
+        // CP437 has these; replacing them with '?' printed a French catalogue
+        // as "Robe B?b?" on every receipt the shop hands out.
+        assertEquals(byteArrayOf(0x82.toByte()).toList(), EscPos.toCp437("é").toList())
+        assertEquals(
+            listOf(0x93, 0x87, 0x85, 0x96).map { it.toByte() },
+            EscPos.toCp437("ôçàû").toList(),
+        )
+    }
+
+    @Test
+    fun `an accented name keeps its width, so columns still line up`() {
+        // One character, one byte — the receipt's column arithmetic counts
+        // characters, so an encoding that emitted two would shift every total.
+        assertEquals("Robe Bebe".length, EscPos.toCp437("Robe Bébé").size)
+    }
+
+    @Test
+    fun `a genuinely unencodable character becomes a question mark, not a box`() {
+        // A raw high byte prints as a box-drawing glyph and looks like a fault.
+        val bytes = EscPos.toCp437("h你llo")
         assertEquals("h?llo", String(bytes, Charsets.US_ASCII))
     }
 

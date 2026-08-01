@@ -27,8 +27,12 @@ export type Payment<M extends string = string> = {
  * against a balance captured earlier. Two takes landing in one React batch
  * would otherwise both measure against the same stale figure and between them
  * record more than the sale is worth, which inflates the Z's cash line and
- * leaves the drawer looking short. Nothing downstream catches that:
- * `commitSale` checks for UNDER-payment, not over.
+ * leaves the drawer looking short.
+ *
+ * `commitSale` now refuses an over-payment as well as an under-payment, so
+ * this is no longer the only thing standing between a stray double-press and a
+ * wrong Z — but it is still what keeps the panel's arithmetic right, and the
+ * clamp is what makes the second press a no-op instead of an error.
  *
  * Returns `current` unchanged when the sale is already covered, so a stray
  * second press is a no-op rather than a phantom row.

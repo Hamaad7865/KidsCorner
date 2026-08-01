@@ -65,6 +65,47 @@ export async function openShiftFor(
 }
 
 /**
+ * May this caller move money in, or close, THIS shift?
+ *
+ * Both `record_till_movement` and `close_shift_z` take a shift id and check
+ * only that the shift exists and is open — neither asks who is calling. So a
+ * cashier holding a valid till token could post another till's shift id and
+ * take cash out of a drawer they are not standing at, or close it with an
+ * invented count and freeze a Z that cannot be reopened. Those are exactly the
+ * operations the back office confines to an owner or manager; pointing the
+ * till-level action at another shift skipped that gate entirely.
+ *
+ * The rule: your own till, or a manager's say-so. `deviceId` null means the
+ * caller could not say which till it is — an APK from before the registry — and
+ * such a caller may only touch a shift with no device, which is what those
+ * builds could ever have opened.
+ */
+export async function assertShiftReachable(
+  supabase: TillClient,
+  shiftId: number,
+  deviceId: number | null,
+  role: string,
+): Promise<ShiftResult<null>> {
+  if (role === "owner" || role === "manager") return { ok: true, value: null }
+
+  const { data, error } = await supabase
+    .from("shifts")
+    .select("id, device_id, closed_at")
+    .eq("id", shiftId)
+    .maybeSingle()
+
+  if (error) return fail(error.message)
+  if (!data) return fail("That shift does not exist.")
+  if (data.closed_at !== null) return fail("That till has already been closed.")
+
+  if ((data.device_id ?? null) !== deviceId) {
+    return fail("That drawer belongs to another till. Ask an owner or manager.")
+  }
+
+  return { ok: true, value: null }
+}
+
+/**
  * Petty cash in or out of an open drawer.
  *
  * Forwarded to `record_till_movement`, which is the only write path: it refuses

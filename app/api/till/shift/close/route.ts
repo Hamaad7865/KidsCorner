@@ -2,12 +2,14 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
-import { closeShiftFor } from "@/lib/pos/shift-core"
+import { assertShiftReachable, closeShiftFor } from "@/lib/pos/shift-core"
 
 const bodySchema = z.object({
   shiftId: z.number().int().positive(),
   countedCash: z.number(),
   notes: z.string().trim().max(500).nullish(),
+  /** Which till is asking, so a drawer can only be closed from its own. */
+  deviceId: z.number().int().positive().nullish(),
 })
 
 /**
@@ -33,6 +35,16 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return apiError(parsed.error.issues[0]?.message ?? "Invalid close.", 400)
   }
+
+  // Closing freezes a Z that cannot be reopened, so a till may only close the
+  // drawer it is standing at unless a manager is asking.
+  const reachable = await assertShiftReachable(
+    session.supabase,
+    parsed.data.shiftId,
+    parsed.data.deviceId ?? null,
+    session.user.role,
+  )
+  if (!reachable.ok) return apiError(reachable.error, 403)
 
   const result = await closeShiftFor(session.supabase, session.user, {
     shiftId: parsed.data.shiftId,
