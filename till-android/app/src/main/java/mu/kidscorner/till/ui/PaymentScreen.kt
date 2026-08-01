@@ -83,7 +83,13 @@ fun PaymentScreen(
     busy: Boolean,
     error: String?,
     frozen: Boolean,
+    /** Whether the frozen sale may be parked; see TillState.settleParkable. */
+    parkable: Boolean,
     onConfirm: (List<SalePayment>, Double) -> Unit,
+    /** Resubmits the frozen sale under its original idempotency key. */
+    onRetry: () -> Unit,
+    /** Parks the frozen sale and frees the till for the next customer. */
+    onPark: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -417,6 +423,10 @@ fun PaymentScreen(
                         }
                     }
 
+                    // A frozen basket disables every key on this screen, so the
+                    // way out has to live here. Without these two the cashier's
+                    // only option was to force-kill the app, losing the basket
+                    // and the idempotent retry along with it.
                     if (frozen) {
                         Text(
                             "This sale was sent but the till did not hear back, so it may " +
@@ -425,6 +435,52 @@ fun PaymentScreen(
                             fontSize = 12.sp,
                             color = Handoff.Muted2,
                         )
+
+                        Surface(
+                            onClick = onRetry,
+                            enabled = !busy,
+                            shape = RoundedCornerShape(14.dp),
+                            color = Handoff.AccentSolid,
+                            contentColor = Color.White,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.fillMaxWidth().height(72.dp),
+                        ) {
+                            Row(
+                                Modifier.fillMaxSize().padding(horizontal = 22.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Text(
+                                    if (busy) "Taking it again…" else "Take it again",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+
+                        if (parkable) {
+                            Surface(
+                                onClick = onPark,
+                                enabled = !busy,
+                                shape = RoundedCornerShape(14.dp),
+                                color = Handoff.Surface,
+                                contentColor = Handoff.Ink,
+                                border = BorderStroke(1.dp, Handoff.Line),
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                            ) {
+                                Row(
+                                    Modifier.fillMaxSize().padding(horizontal = 22.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                ) {
+                                    Text(
+                                        "Save it and serve the next customer",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // ── the 72px primary, or the handoff's blocked well ──────

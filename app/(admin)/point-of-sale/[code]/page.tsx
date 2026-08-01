@@ -78,6 +78,9 @@ export default async function DevicePage({
 
   const Icon = device.isBackOffice ? Monitor : TabletSmartphone
   const closed = sessions.filter((s) => s.closedAt)
+  // Only a counted shift can be said to have balanced; the legacy rows closed
+  // with no count at all, and a zero variance there is an absence, not a match.
+  const counted = closed.filter((s) => s.variance !== null)
 
   return (
     <div className="space-y-6">
@@ -195,14 +198,16 @@ export default async function DevicePage({
                   Reconciliation
                 </div>
                 <div className="mt-1 text-xl font-semibold tabular-nums">
-                  {closed.length > 0
-                    ? `${closed.filter((s) => s.variance === 0).length}/${closed.length}`
+                  {counted.length > 0
+                    ? `${counted.filter((s) => s.variance === 0).length}/${counted.length}`
                     : "—"}
                 </div>
                 <div className="text-muted-foreground text-xs">
-                  {closed.length > 0
+                  {counted.length > 0
                     ? "shifts balanced to the cent"
-                    : "No shift closed on this till yet"}
+                    : closed.length > 0
+                      ? "No shift on this till was counted at close"
+                      : "No shift closed on this till yet"}
                 </div>
               </CardContent>
             </Card>
@@ -287,14 +292,14 @@ function SessionTable({
                   {s.closedByName ?? s.openedByName ?? "—"}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {open ? "—" : formatRs(s.expected)}
+                  {s.expected === null ? "—" : formatRs(s.expected)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {open ? "—" : formatRs(s.counted)}
+                  {s.counted === null ? "—" : formatRs(s.counted)}
                 </TableCell>
                 <TableCell
                   className={
-                    open
+                    open || s.variance === null
                       ? "text-muted-foreground text-right"
                       : s.variance === 0
                         ? "text-right font-semibold tabular-nums text-emerald-600"
@@ -303,7 +308,9 @@ function SessionTable({
                           : "text-right font-semibold tabular-nums text-amber-600"
                   }
                 >
-                  {open ? "—" : formatRs(s.variance)}
+                  {/* A shift closed without a count is not a shift that
+                      balanced — it says so rather than showing a green zero. */}
+                  {open ? "—" : s.variance === null ? "Not counted" : formatRs(s.variance)}
                 </TableCell>
               </TableRow>
             )

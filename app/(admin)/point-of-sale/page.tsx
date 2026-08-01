@@ -148,14 +148,17 @@ export default async function PointOfSalePage() {
                       variances as success hides it. */}
                   <TableCell
                     className={
-                      row.variance === 0
-                        ? "text-right font-semibold tabular-nums text-emerald-600"
-                        : row.variance < 0
-                          ? "text-destructive text-right font-semibold tabular-nums"
-                          : "text-right font-semibold tabular-nums text-amber-600"
+                      row.variance === null
+                        ? "text-muted-foreground text-right"
+                        : row.variance === 0
+                          ? "text-right font-semibold tabular-nums text-emerald-600"
+                          : row.variance < 0
+                            ? "text-destructive text-right font-semibold tabular-nums"
+                            : "text-right font-semibold tabular-nums text-amber-600"
                     }
                   >
-                    {formatRs(row.variance)}
+                    {/* Never counted reads as "—", not as a balanced drawer. */}
+                    {row.variance === null ? "Not counted" : formatRs(row.variance)}
                   </TableCell>
                 </TableRow>
               ))}

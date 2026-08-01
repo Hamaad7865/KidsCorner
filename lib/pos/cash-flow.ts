@@ -40,6 +40,18 @@ const SHIFT_WINDOW = 400
  */
 const MAX_FLOW_SHIFTS = 200
 
+/**
+ * How many rows one ledger read returns, fetched one over so a full page is
+ * distinguishable from an exact fit.
+ *
+ * These reads carried no limit at all, which does NOT mean unlimited: PostgREST
+ * applies its own max-rows cap and returns the clipped set with no indication
+ * it did so. A wide period silently lost its oldest payments, the inflow total
+ * came out short, and `truncated` stayed false because it only ever counted
+ * shifts.
+ */
+const FLOW_ROW_CAP = 2000
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export type OutflowType = "Refund" | "Exchange" | "Disbursement" | "Bank deposit"
@@ -267,12 +279,14 @@ export async function getDeviceCashFlow(
            sale_payments ( id, method, amount, created_at )`,
         )
         .in("shift_id", shiftIds)
-        .order("sale_date", { ascending: false }),
+        .order("sale_date", { ascending: false })
+        .limit(FLOW_ROW_CAP + 1),
       supabase
         .from("till_movements")
         .select("id, shift_id, amount, reason, created_at, profiles ( full_name )")
         .in("shift_id", shiftIds)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(FLOW_ROW_CAP + 1),
       // Attributed by the credit note's OWN shift, not the originating sale's.
       // The drawer that pays a refund out is the drawer that is short at close,
       // which may not be the one that took the money days earlier — the same
@@ -285,7 +299,8 @@ export async function getDeviceCashFlow(
            sales ( sale_no )`,
         )
         .in("shift_id", shiftIds)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(FLOW_ROW_CAP + 1),
     ])
 
   type PaymentFact = {
@@ -299,6 +314,13 @@ export async function getDeviceCashFlow(
     saleNo: string
     cashierName: string | null
   }
+
+  // Any ledger hitting the cap makes the period's totals partial, so the
+  // notice on screen has to cover all three, not just the shift count.
+  const clipped =
+    (saleRows?.length ?? 0) > FLOW_ROW_CAP ||
+    (movementRows?.length ?? 0) > FLOW_ROW_CAP ||
+    (creditRows?.length ?? 0) > FLOW_ROW_CAP
 
   const payments: PaymentFact[] = []
   for (const sale of saleRows ?? []) {
@@ -472,5 +494,5 @@ export async function getDeviceCashFlow(
     }
   })
 
-  return { refDate, closures, from, to, inflows, outflows, truncated }
+  return { refDate, closures, from, to, inflows, outflows, truncated: truncated || clipped }
 }

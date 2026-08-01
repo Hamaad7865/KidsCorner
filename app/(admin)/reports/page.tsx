@@ -21,7 +21,7 @@ import {
 } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
 import { getCollectedReport } from "@/lib/reports/collected"
-import { formatDate, formatDateTime, formatRs, shopToday } from "@/lib/format"
+import { formatDate, formatDateTime, formatQty, formatRs, shopToday } from "@/lib/format"
 import { DailySummaryTable } from "@/components/reports/daily-summary-table"
 import { getDailySummary } from "@/lib/reports/daily-summary"
 import {
@@ -123,6 +123,16 @@ export default async function ReportsPage({
           {formatDate(from)} to {formatDate(to)} · {summary.saleCount} sale
           {summary.saleCount === 1 ? "" : "s"} · {formatRs(summary.netTotal)} net
         </p>
+        {/* A clipped read must say so. These totals are computed from the rows
+            that came back, so a silent clip would report a smaller month as
+            though it were the whole one. */}
+        {summary.truncated ? (
+          <p className="text-sm text-amber-600">
+            This period holds more documents than one report reads, so these
+            totals cover only its earliest {formatQty(summary.saleCount)}. Narrow
+            the dates for a complete figure.
+          </p>
+        ) : null}
       </header>
 
       {/* Plain GET form: the range is in the URL, so a report is shareable. */}

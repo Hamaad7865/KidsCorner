@@ -247,11 +247,17 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 busy = state.busy,
                 error = state.error,
                 frozen = state.settleFrozen,
+                parkable = state.settleParkable,
                 onConfirm = { payments, change ->
                     pendingPayments = payments
                     pendingChange = change
                     vm.confirmSale(payments, change)
                 },
+                // The same payments as the attempt that froze, so the retry
+                // carries the same idempotency key and replays rather than
+                // ringing up a second sale.
+                onRetry = { vm.confirmSale(pendingPayments, pendingChange) },
+                onPark = vm::parkFrozenSale,
                 onCancel = vm::cancelPayment,
             )
 

@@ -27,11 +27,13 @@ export async function GET() {
       r.closedAt ?? "",
       r.openedByName ?? "",
       r.closedByName ?? "",
-      r.expected.toFixed(2),
-      r.counted.toFixed(2),
+      // Blank, not "0.00", where a shift closed with no count recorded. A zero
+      // in a variance column is a claim the drawer balanced.
+      r.expected?.toFixed(2) ?? "",
+      r.counted?.toFixed(2) ?? "",
       // Signed, so a short drawer reads as short in a spreadsheet rather than
       // needing the sign inferred from a column of absolute values.
-      r.variance.toFixed(2),
+      r.variance?.toFixed(2) ?? "",
     ]),
   )
 

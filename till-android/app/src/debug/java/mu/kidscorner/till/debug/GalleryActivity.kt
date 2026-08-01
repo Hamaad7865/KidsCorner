@@ -372,7 +372,10 @@ class GalleryActivity : ComponentActivity() {
                             busy = false,
                             error = null,
                             frozen = false,
+                            parkable = false,
                             onConfirm = { _, _ -> },
+                            onRetry = {},
+                            onPark = {},
                             onCancel = {},
                         )
 

@@ -18,6 +18,14 @@ import { createClient } from "@/lib/supabase/server"
 
 const ROW_CAP = 5000
 
+/**
+ * Fetched one over the cap so a full page is distinguishable from an exact
+ * fit. Without it a report that clipped looked identical to one that did not,
+ * and the summary cards silently totalled an arbitrary subset — disagreeing
+ * with the sales journal, which has always reported its own truncation.
+ */
+const OVER_CAP = ROW_CAP + 1
+
 export type SalesSummary = {
   saleCount: number
   grossTotal: number
@@ -31,6 +39,8 @@ export type SalesSummary = {
   byMethod: { method: string; amount: number }[]
   byCashier: { name: string; saleCount: number; total: number }[]
   byDay: { date: string; total: number; saleCount: number }[]
+  /** The period held more documents than one read returns. */
+  truncated: boolean
 }
 
 const SHOP_DAY = new Intl.DateTimeFormat("en-CA", {
@@ -60,19 +70,27 @@ export async function getSalesSummary(
       // Refunded sales still happened: excluding them would understate the day
       // and make the payment breakdown disagree with the drawer.
       .in("status", ["completed", "refunded"])
-      .limit(ROW_CAP),
+      // Ordered so a clipped read is the period's FIRST rows every time. An
+      // unordered clip returns whatever the planner felt like, so two loads of
+      // one report could show two different revenue figures.
+      .order("sale_date", { ascending: true })
+      .limit(OVER_CAP),
     supabase
       .from("credit_notes")
       .select("id, total, created_at")
       .gte("created_at", startOfShopDay(from))
       .lte("created_at", endOfShopDay(to))
-      .limit(ROW_CAP),
+      .order("created_at", { ascending: true })
+      .limit(OVER_CAP),
   ])
 
   if (salesResult.error) throw salesResult.error
 
-  const sales = salesResult.data ?? []
-  const credits = creditResult.data ?? []
+  const salesRows = salesResult.data ?? []
+  const creditRows = creditResult.data ?? []
+  const truncated = salesRows.length > ROW_CAP || creditRows.length > ROW_CAP
+  const sales = salesRows.slice(0, ROW_CAP)
+  const credits = creditRows.slice(0, ROW_CAP)
 
   const methods = new Map<string, number>()
   const cashiers = new Map<string, { saleCount: number; total: number }>()
@@ -122,6 +140,7 @@ export async function getSalesSummary(
     byCashier: [...cashiers.entries()]
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.total - a.total),
+    truncated,
     byDay: [...days.entries()]
       .map(([date, v]) => ({ date, ...v }))
       .sort((a, b) => a.date.localeCompare(b.date)),

@@ -178,6 +178,17 @@ data class TillState(
      */
     val settleFrozen: Boolean = false,
     /**
+     * Whether the frozen sale can be parked and dealt with later.
+     *
+     * True only when the freeze is an UNCERTAIN outcome: the payload is
+     * complete and carries its idempotency key, so parking it is safe — the
+     * drain replays the same sale rather than charging again. False when a
+     * manager's approval was involved (a replay would need the PIN, which is
+     * not written to a shared till's disk) and false when the queue write is
+     * what failed in the first place.
+     */
+    val settleParkable: Boolean = false,
+    /**
      * The server refused the sale until a manager authorises the discount.
      * Set only from the server's answer — the device never decides this itself,
      * because only the rule row knows whether approval is required.
@@ -248,6 +259,17 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      */
     private var saleKey: String = UUID.randomUUID().toString()
 
+    /** A submitted sale whose fate is unknown, kept so it can be parked. */
+    private data class FrozenSale(
+        val request: SaleRequest,
+        val total: Double,
+        val itemCount: Int,
+        val change: Double,
+        val methods: String,
+    )
+
+    private var frozenSale: FrozenSale? = null
+
     init {
         start()
         watchForIdle()
@@ -268,14 +290,37 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(queuedCount = repo.queuedCount()) }
 
         loadShop()
-        drainQueue()
+        startQueuePump()
+    }
 
-        // A heartbeat, because the alternative is a queue that only moves when
-        // the cashier happens to ring something up. A till can sit idle for an
-        // hour with a customer's sale unsent, and the shop would not know.
-        while (isActive) {
-            delay(QUEUE_HEARTBEAT_MS)
+    private var queuePump: Job? = null
+
+    /**
+     * Drains now, then keeps draining on a heartbeat.
+     *
+     * Started from `start()` on a launch that is already signed in, and from
+     * `signIn` for the session right after device setup — which used to get
+     * neither, because `start()` had already returned at the not-signed-in
+     * branch. In that session a parked sale sat there until the cashier
+     * happened to ring up another one, close the day, or restart the app,
+     * making a liar of the "it will send itself when the connection is back"
+     * promise on the saved-to-send screen.
+     *
+     * Idempotent: a second call while one is running is ignored, so signing in
+     * twice cannot leave two heartbeats draining the same queue against each
+     * other.
+     */
+    private fun startQueuePump() {
+        if (queuePump?.isActive == true) return
+        queuePump = viewModelScope.launch {
             drainQueue()
+            // The alternative is a queue that only moves when the cashier
+            // happens to ring something up. A till can sit idle for an hour
+            // with a customer's sale unsent, and the shop would not know.
+            while (isActive) {
+                delay(QUEUE_HEARTBEAT_MS)
+                drainQueue()
+            }
         }
     }
 
@@ -289,7 +334,12 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(busy = true, error = null) }
 
         repo.signIn(email, password)
-            .onSuccess { loadShop() }
+            .onSuccess {
+                loadShop()
+                // This session skipped start()'s pump at the not-signed-in
+                // branch, so it starts here or the queue never drains itself.
+                startQueuePump()
+            }
             .onFailure { cause ->
                 _state.update {
                     it.copy(busy = false, error = cause.message ?: "Could not sign in.")
@@ -1527,6 +1577,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         it.copy(
                             busy = false,
                             settleFrozen = false,
+                            settleParkable = false,
                             lines = emptyList(),
                             totals = CartTotals(),
                             customer = null,
@@ -1545,6 +1596,15 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     // back, so anything parked earlier goes out now.
                     drainQueue()
                 } else {
+                    if (result.uncertain) {
+                        frozenSale = FrozenSale(
+                            request = request,
+                            total = current.totals.total,
+                            itemCount = current.totals.itemCount,
+                            change = change,
+                            methods = payments.map { it.method }.distinct().joinToString(", "),
+                        )
+                    }
                     _state.update {
                         it.copy(
                             busy = false,
@@ -1554,6 +1614,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             // basket so the cashier can only retry it, not edit
                             // and resubmit it under the same key.
                             settleFrozen = result.uncertain,
+                            settleParkable = result.uncertain,
                         )
                     }
                 }
@@ -1571,6 +1632,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         it.copy(
                             busy = false,
                             settleFrozen = true,
+                            settleParkable = false,
                             error = cause.message ?: "Couldn't reach the till server.",
                         )
                     }
@@ -1593,10 +1655,12 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         it.copy(
                             busy = false,
                             settleFrozen = false,
+                            settleParkable = false,
                             lines = emptyList(),
                             totals = CartTotals(),
                             customer = null,
                             discount = null,
+                            note = "",
                             needsApproval = false,
                             queuedCount = it.queuedCount + 1,
                             outcome = SaleOutcome(
@@ -1617,11 +1681,70 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         it.copy(
                             busy = false,
                             settleFrozen = true,
+                            settleParkable = false,
                             error = cause.message ?: "Couldn't reach the till server.",
                         )
                     }
                 }
             }
+    }
+
+    /**
+     * Parks a sale the till could not get an answer about, and frees the till.
+     *
+     * The escape hatch from a frozen settle. Without it a cashier whose line
+     * dropped at exactly the wrong moment had a payment screen with every key
+     * disabled and no way forward but force-killing the app — which loses the
+     * basket AND the idempotent retry for a sale the customer may already have
+     * paid for.
+     *
+     * Only offered when the freeze was an uncertain OUTCOME, never when a
+     * manager's approval is in play: the parked payload would need that PIN
+     * again on replay, and a shared till must not keep one on disk.
+     */
+    fun parkFrozenSale() = viewModelScope.launch {
+        val frozen = frozenSale ?: return@launch
+        if (!_state.value.settleParkable) return@launch
+
+        val parked = repo.enqueueSale(frozen.request, frozen.total, frozen.itemCount)
+        if (!parked) {
+            _state.update {
+                it.copy(error = "This sale could not be saved to send later. Try again.")
+            }
+            return@launch
+        }
+
+        // A new key only now: the parked payload keeps the old one, so the
+        // drain replays that sale rather than ringing up a second.
+        saleKey = UUID.randomUUID().toString()
+        frozenSale = null
+
+        val screen = _state.value.screen
+        val cashier = (screen as? TillScreen.Paying)?.cashier
+        _state.update {
+            it.copy(
+                busy = false,
+                error = null,
+                settleFrozen = false,
+                settleParkable = false,
+                lines = emptyList(),
+                totals = CartTotals(),
+                customer = null,
+                discount = null,
+                note = "",
+                needsApproval = false,
+                queuedCount = it.queuedCount + 1,
+                outcome = SaleOutcome(
+                    saleId = null,
+                    change = frozen.change,
+                    itemCount = frozen.itemCount,
+                    total = frozen.total,
+                    methods = frozen.methods,
+                    queued = true,
+                ),
+                screen = if (cashier != null) TillScreen.Selling(cashier) else it.screen,
+            )
+        }
     }
 
     /**

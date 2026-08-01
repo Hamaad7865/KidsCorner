@@ -56,17 +56,30 @@ export type CashUp = {
   closedAt: string | null
   openedByName: string | null
   closedByName: string | null
-  expected: number
-  counted: number
-  /** counted − expected. Negative is short. */
-  variance: number
+  /**
+   * Null when the shift closed without a recorded count — the legacy rows, and
+   * anything closed outside the app. Kept null rather than coerced to zero: a
+   * shift that was never counted is not a shift that balanced, and the Shifts
+   * report already treats these as absent.
+   */
+  expected: number | null
+  counted: number | null
+  /** counted − expected. Negative is short. Null when never counted. */
+  variance: number | null
 }
 
 export type PosOverview = {
   shopName: string
   devices: PosDevice[]
   recent: CashUp[]
-  reconciliation: { closed: number; exact: number; short: number; over: number }
+  reconciliation: {
+    closed: number
+    exact: number
+    short: number
+    over: number
+    /** Closed with no count recorded — neither balanced nor out. */
+    uncounted: number
+  }
 }
 
 export async function getPosOverview(): Promise<PosOverview> {
@@ -148,9 +161,9 @@ export async function getPosOverview(): Promise<PosOverview> {
     closedAt: s.closed_at,
     openedByName: s.opener?.full_name ?? null,
     closedByName: s.closer?.full_name ?? null,
-    expected: round2(Number(s.expected_cash ?? 0)),
-    counted: round2(Number(s.counted_cash ?? 0)),
-    variance: round2(Number(s.variance ?? 0)),
+    expected: s.expected_cash === null ? null : round2(Number(s.expected_cash)),
+    counted: s.counted_cash === null ? null : round2(Number(s.counted_cash)),
+    variance: s.variance === null ? null : round2(Number(s.variance)),
   }))
 
   return {
@@ -162,9 +175,14 @@ export async function getPosOverview(): Promise<PosOverview> {
       // Exact is the figure worth counting. A drawer that balances to the cent
       // is the signal the process works; a run of small variances is worth a
       // conversation long before a big one appears.
+      //
+      // Which is exactly why an uncounted shift must not land here. Coercing a
+      // null count to zero made every legacy shift read as balanced to the
+      // cent, inflating the one number this strip exists to report.
       exact: recent.filter((r) => r.variance === 0).length,
-      short: recent.filter((r) => r.variance < 0).length,
-      over: recent.filter((r) => r.variance > 0).length,
+      short: recent.filter((r) => r.variance !== null && r.variance < 0).length,
+      over: recent.filter((r) => r.variance !== null && r.variance > 0).length,
+      uncounted: recent.filter((r) => r.variance === null).length,
     },
   }
 }
@@ -226,8 +244,8 @@ export async function getDeviceSessions(device: {
     closedAt: s.closed_at,
     openedByName: s.opener?.full_name ?? null,
     closedByName: s.closer?.full_name ?? null,
-    expected: round2(Number(s.expected_cash ?? 0)),
-    counted: round2(Number(s.counted_cash ?? 0)),
-    variance: round2(Number(s.variance ?? 0)),
+    expected: s.expected_cash === null ? null : round2(Number(s.expected_cash)),
+    counted: s.counted_cash === null ? null : round2(Number(s.counted_cash)),
+    variance: s.variance === null ? null : round2(Number(s.variance)),
   }))
 }
