@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom"
 import { AlertCircle, LoaderCircle } from "lucide-react"
 import { toast } from "sonner"
 
+import { ImageField } from "@/components/products/image-field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -204,22 +205,10 @@ export function ProductForm({
         </Select>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="product-image">Image URL</Label>
-        <Input
-          id="product-image"
-          name="imageUrl"
-          type="url"
-          defaultValue={product?.imageUrl ?? ""}
-          placeholder="https://…"
-          spellCheck={false}
-          aria-invalid={Boolean(state.fieldErrors.imageUrl)}
-          aria-describedby={
-            state.fieldErrors.imageUrl ? "product-image-error" : undefined
-          }
-        />
-        <FieldError id="product-image-error" message={state.fieldErrors.imageUrl} />
-      </div>
+      <ImageField
+        defaultValue={product?.imageUrl ?? null}
+        error={state.fieldErrors.imageUrl}
+      />
 
       <div className="space-y-2">
         <Label htmlFor="product-description">Description</Label>

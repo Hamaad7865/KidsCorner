@@ -141,6 +141,13 @@ export type CatalogVariant = {
   barcode: string | null
   price: number
   qtyOnHand: number
+  /**
+   * The product's photograph, where there is one.
+   *
+   * On the product, not the variant: the shop photographs a garment once, and
+   * the colour a customer is holding is already carried by `colourHex`.
+   */
+  imageUrl: string | null
 }
 
 /** Page size for the catalog load — comfortably under PostgREST's max-rows. */
@@ -164,7 +171,7 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
       .from("product_variants")
       .select(
         `id, sku, barcode, selling_price, qty_on_hand,
-         products!inner ( id, name, is_active, category_id, categories ( name ) ),
+         products!inner ( id, name, is_active, category_id, image_url, categories ( name ) ),
          sizes ( label, sort_order ),
          colours ( name, hex_code )`,
       )
@@ -191,6 +198,7 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
         barcode: row.barcode,
         price: Number(row.selling_price),
         qtyOnHand: row.qty_on_hand,
+        imageUrl: row.products?.image_url ?? null,
       })
     }
 

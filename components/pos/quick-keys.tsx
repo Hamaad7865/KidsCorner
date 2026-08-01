@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { LayoutGrid } from "lucide-react"
 
+import { ProductThumb } from "@/components/products/product-thumb"
 import { Button } from "@/components/ui/button"
 import { formatRs } from "@/lib/format"
 import type { CatalogVariant } from "@/lib/pos/queries"
@@ -18,6 +19,7 @@ export type QuickProduct = {
   stock: number
   minPrice: number
   maxPrice: number
+  imageUrl: string | null
 }
 
 /**
@@ -75,6 +77,7 @@ export function QuickKeys({
           stock: v.qtyOnHand,
           minPrice: v.price,
           maxPrice: v.price,
+          imageUrl: v.imageUrl,
         })
       }
     }
@@ -140,20 +143,30 @@ export function QuickKeys({
                 <button
                   type="button"
                   onClick={() => onPick(product)}
-                  className="hover:border-brand-500 hover:bg-accent bg-card flex min-h-tap w-full flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors"
+                  className="hover:border-brand-500 hover:bg-accent bg-card flex min-h-tap w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors"
                 >
-                  <span className="line-clamp-2 font-medium">
-                    {product.productName}
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {product.variants.length} variant
-                    {product.variants.length === 1 ? "" : "s"} · {product.stock} in
-                    stock
-                  </span>
-                  <span className="text-brand-700 font-medium tabular-nums">
-                    {product.minPrice === product.maxPrice
-                      ? formatRs(product.minPrice)
-                      : `${formatRs(product.minPrice)} – ${formatRs(product.maxPrice)}`}
+                  {/* Leading, not on top: the tile is a row, and a picture
+                      that pushed the price down the card would cost every
+                      tile the height of a photo for the sake of one. */}
+                  <ProductThumb
+                    src={product.imageUrl}
+                    name={product.productName}
+                    size={48}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                    <span className="line-clamp-2 font-medium">
+                      {product.productName}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {product.variants.length} variant
+                      {product.variants.length === 1 ? "" : "s"} · {product.stock} in
+                      stock
+                    </span>
+                    <span className="text-brand-700 font-medium tabular-nums">
+                      {product.minPrice === product.maxPrice
+                        ? formatRs(product.minPrice)
+                        : `${formatRs(product.minPrice)} – ${formatRs(product.maxPrice)}`}
+                    </span>
                   </span>
                 </button>
               </li>

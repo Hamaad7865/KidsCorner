@@ -6,6 +6,7 @@ import { ArrowLeft, Printer } from "lucide-react"
 import { GenerateBarcodesDialog } from "@/components/barcodes/generate-barcodes-dialog"
 import { GenerateVariantsDialog } from "@/components/products/generate-variants-dialog"
 import { ProductForm } from "@/components/products/product-form"
+import { ProductThumb } from "@/components/products/product-thumb"
 import { VariantMatrix } from "@/components/products/variant-matrix"
 import { ActiveBadge } from "@/components/settings/master-data-panel"
 import { Button } from "@/components/ui/button"
@@ -90,15 +91,23 @@ export default async function ProductDetailPage({
         </Button>
 
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <h1 className="font-heading text-xl font-semibold">{product.name}</h1>
-              <ActiveBadge isActive={product.isActive} />
+          <div className="flex items-start gap-3.5">
+            <ProductThumb
+              src={product.imageUrl}
+              name={product.name}
+              size={64}
+              className="rounded-lg"
+            />
+            <div className="space-y-1">
+              <div className="flex items-center gap-3">
+                <h1 className="font-heading text-xl font-semibold">{product.name}</h1>
+                <ActiveBadge isActive={product.isActive} />
+              </div>
+              <p className="text-muted-foreground text-sm">
+                {[product.categoryName, product.brandName].filter(Boolean).join(" · ") ||
+                  "Uncategorised"}
+              </p>
             </div>
-            <p className="text-muted-foreground text-sm">
-              {[product.categoryName, product.brandName].filter(Boolean).join(" · ") ||
-                "Uncategorised"}
-            </p>
           </div>
 
         </div>

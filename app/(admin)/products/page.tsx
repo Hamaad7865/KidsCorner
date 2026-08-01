@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Package, Plus } from "lucide-react"
 
 import { ProductFilters } from "@/components/products/product-filters"
+import { ProductThumb } from "@/components/products/product-thumb"
 import { ActiveBadge } from "@/components/settings/master-data-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -113,6 +114,9 @@ export default async function ProductsPage({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-14">
+                  <span className="sr-only">Photo</span>
+                </TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead className="w-36">Category</TableHead>
                 <TableHead className="w-32">Brand</TableHead>
@@ -127,6 +131,9 @@ export default async function ProductsPage({
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
+                  <TableCell className="py-1.5">
+                    <ProductThumb src={product.imageUrl} name={product.name} />
+                  </TableCell>
                   <TableCell>
                     <Link
                       href={`/products/${product.id}`}
