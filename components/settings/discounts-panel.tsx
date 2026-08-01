@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useEffect, useState, useTransition } from "react"
 import { useFormStatus } from "react-dom"
 import { AlertCircle, LoaderCircle, Pencil, Plus, Tag } from "lucide-react"
 import { toast } from "sonner"
@@ -20,7 +20,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { saveDiscount } from "@/lib/discounts/actions"
+import { saveDiscount, setDiscountActive } from "@/lib/discounts/actions"
 import type { DiscountRule } from "@/lib/discounts/rules"
 import { formatRs } from "@/lib/format"
 import { IDLE_STATE } from "@/lib/forms"
@@ -107,15 +107,22 @@ export function DiscountsPanel({
                     : ""}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={!canManage}
-                onClick={() => setEditing({ rule })}
-                aria-label={`Edit ${rule.name}`}
-              >
-                <Pencil aria-hidden />
-              </Button>
+              <div className="flex items-center gap-1.5">
+                {/* Switching a rule off is the urgent case — "stop the staff
+                    discount now" — and it used to mean opening the dialog,
+                    finding a switch and saving. The action behind this has
+                    existed all along with nothing calling it. */}
+                <ActiveToggle rule={rule} canManage={canManage} />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={!canManage}
+                  onClick={() => setEditing({ rule })}
+                  aria-label={`Edit ${rule.name}`}
+                >
+                  <Pencil aria-hidden />
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -367,5 +374,51 @@ function DiscountForm({
         <SaveButton />
       </DialogFooter>
     </form>
+  )
+}
+
+/**
+ * One click to pause or resume a rule.
+ *
+ * `setDiscountActive` was written for exactly this and had no caller anywhere
+ * in the app, so the only way to stop a discount was to open its dialog, find
+ * the switch and save — three steps for the one thing an owner does in a hurry.
+ *
+ * Retiring a rule writes `discount.deleted` to the audit trail rather than
+ * `discount.changed`. Switching one off IS how this app removes a discount —
+ * the row stays so old sales keep their reason — and the trail should say what
+ * happened, not merely that something did.
+ */
+function ActiveToggle({
+  rule,
+  canManage,
+}: {
+  rule: DiscountRule
+  canManage: boolean
+}) {
+  const [pending, startTransition] = useTransition()
+
+  return (
+    <Switch
+      checked={rule.isActive}
+      disabled={!canManage || pending}
+      aria-label={`${rule.isActive ? "Pause" : "Resume"} ${rule.name}`}
+      onCheckedChange={(next) =>
+        startTransition(async () => {
+          const data = new FormData()
+          data.set("id", String(rule.id))
+          // The switch's checkboxes elsewhere post "on"; this action reads the
+          // value through `boolOf`, so it is spelled out rather than implied.
+          if (next) data.set("isActive", "true")
+
+          const result = await setDiscountActive(IDLE_STATE, data)
+          if (result.status === "success") {
+            toast.success(`${rule.name} ${next ? "is live again" : "is paused"}.`)
+          } else if (result.error) {
+            toast.error(result.error)
+          }
+        })
+      }
+    />
   )
 }
