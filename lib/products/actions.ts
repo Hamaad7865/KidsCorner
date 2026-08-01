@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
+import { logAudits, moneyChange } from "@/lib/activity/audit"
 import { allocateBarcodes } from "@/lib/barcodes/settings"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
@@ -161,6 +162,16 @@ export async function updateVariant(
   const productId = idOf(formData, "productId")
 
   const supabase = await createClient()
+
+  // Read first, purely so the trail can say what the price WAS. A line reading
+  // "Price changed" without a figure tells nobody anything, and a price edit
+  // leaves no other record anywhere — the row is simply different afterwards.
+  const { data: before } = await supabase
+    .from("product_variants")
+    .select("sku, cost_price, selling_price")
+    .eq("id", id)
+    .maybeSingle()
+
   const { data, error } = await supabase
     .from("product_variants")
     .update({
@@ -181,6 +192,33 @@ export async function updateVariant(
   if (error) return fail(describeDbError(error))
   if (data.length === 0) {
     return fail("That variant no longer exists. Refresh and try again.")
+  }
+
+  if (before) {
+    const sku = before.sku ?? String(id)
+    const sold = moneyChange(before.selling_price, round2(sellingPrice))
+    const cost = moneyChange(before.cost_price, round2(costPrice))
+
+    await logAudits(supabase, [
+      ...(sold
+        ? [{
+            type: "price.changed",
+            refType: "variant",
+            refId: id,
+            summary: `${sku} · ${sold.summary}`,
+            detail: { sku, before: sold.before, after: sold.after },
+          }]
+        : []),
+      ...(cost
+        ? [{
+            type: "cost.changed",
+            refType: "variant",
+            refId: id,
+            summary: `${sku} · ${cost.summary}`,
+            detail: { sku, before: cost.before, after: cost.after },
+          }]
+        : []),
+    ])
   }
 
   revalidatePath("/products")

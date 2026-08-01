@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import { changedFields, logAudit } from "@/lib/activity/audit"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
+import { formatRs } from "@/lib/format"
 import {
   boolOf,
   fieldErrorsOf,
@@ -106,6 +108,25 @@ export async function saveDiscount(
   }
 
   const supabase = await createClient()
+
+  // What it was, so an edit can say what moved. A discount rule is the one
+  // catalogue setting that gives money away, and changing it leaves no other
+  // record anywhere.
+  //
+  // Every column in `values` is read back, not a subset. `changedFields` walks
+  // the keys of the NEW row, so a column missing from this select reads as
+  // absent-before and is reported as changed on every save — which would have
+  // made "code, starts_on, ends_on changed" the summary of an edit that only
+  // touched the percentage.
+  const { data: before } =
+    d.id === null
+      ? { data: null }
+      : await supabase
+          .from("discounts")
+          .select(Object.keys(values).join(", "))
+          .eq("id", d.id)
+          .maybeSingle<Record<string, unknown>>()
+
   const { data, error } =
     d.id === null
       ? await supabase.from("discounts").insert(values).select("id")
@@ -119,6 +140,30 @@ export async function saveDiscount(
   }
   if (data.length === 0) {
     return fail("That discount no longer exists. Refresh and try again.")
+  }
+
+  const amount = d.kind === "percent" ? `${d.value}%` : formatRs(d.value)
+
+  if (d.id === null) {
+    await logAudit(supabase, {
+      type: "discount.created",
+      refType: "discount",
+      refId: data[0].id,
+      summary: `${d.name} · ${amount}${d.requiresManager ? " · needs a manager" : ""}`,
+      detail: values,
+    })
+  } else if (before) {
+    const changes = changedFields(before, values)
+    // A save that touched nothing is not an event. See lib/activity/audit.ts.
+    if (changes.length > 0) {
+      await logAudit(supabase, {
+        type: "discount.changed",
+        refType: "discount",
+        refId: d.id,
+        summary: `${d.name} · ${changes.map((c) => c.field).join(", ")}`,
+        detail: { changes },
+      })
+    }
   }
 
   revalidatePath("/settings")
@@ -139,15 +184,27 @@ export async function setDiscountActive(
   const id = idOf(formData, "id")
   if (id === null) return fail("Couldn't tell which discount to update.")
 
+  const isActive = boolOf(formData, "isActive")
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("discounts")
-    .update({ is_active: boolOf(formData, "isActive") })
+    .update({ is_active: isActive })
     .eq("id", id)
-    .select("id")
+    .select("id, name")
 
   if (error) return fail(error.message)
   if (data.length === 0) return fail("That discount no longer exists.")
+
+  // Retiring a rule is the closest thing this app has to deleting one — the row
+  // stays so old sales keep their reason, and the trail names it as a removal
+  // rather than as one more edit.
+  await logAudit(supabase, {
+    type: isActive ? "discount.changed" : "discount.deleted",
+    refType: "discount",
+    refId: id,
+    summary: `${data[0].name} ${isActive ? "switched on" : "retired"}`,
+    detail: { isActive },
+  })
 
   revalidatePath("/settings")
   revalidatePath("/pos")

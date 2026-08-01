@@ -36,6 +36,10 @@ import {
   getShiftReports,
 } from "@/lib/reports/queries"
 import { getSalesJournal } from "@/lib/reports/sales-journal"
+import { getVatReport } from "@/lib/reports/vat"
+import { getPnlReport } from "@/lib/reports/pnl"
+import { VatReturn } from "@/components/reports/vat-return"
+import { PnlStatement } from "@/components/reports/pnl-statement"
 import { cn } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Reports" }
@@ -44,6 +48,8 @@ const REPORTS = [
   { key: "summary", label: "Summary" },
   { key: "daily", label: "Daily summary" },
   { key: "methods", label: "Collected by method" },
+  { key: "vat", label: "VAT return" },
+  { key: "pnl", label: "Simple P&L" },
   { key: "cashiers", label: "By cashier" },
   { key: "bestsellers", label: "Best sellers" },
   { key: "margin", label: "Margin" },
@@ -96,7 +102,7 @@ export default async function ReportsPage({
       ? await getDailySummary(from, to)
       : { from, to, rows: [], methods: [], taxes: [], sellers: [], categories: [] }
 
-  const [bestSellers, margin, discounts, shifts, journal, collected] =
+  const [bestSellers, margin, discounts, shifts, journal, collected, vat, pnl] =
     await Promise.all([
       active === "bestsellers" ? getBestSellers(from, to) : Promise.resolve([]),
       active === "margin" ? getMarginReport(from, to) : Promise.resolve([]),
@@ -110,6 +116,8 @@ export default async function ReportsPage({
       active === "methods"
         ? getCollectedReport(from, to, method)
         : Promise.resolve(null),
+      active === "vat" ? getVatReport(from, to) : Promise.resolve(null),
+      active === "pnl" ? getPnlReport(from, to) : Promise.resolve(null),
     ])
 
   const link = (key: string) =>
@@ -452,6 +460,10 @@ export default async function ReportsPage({
           </div>
         </div>
       ) : null}
+
+      {active === "vat" && vat ? <VatReturn report={vat} /> : null}
+
+      {active === "pnl" && pnl ? <PnlStatement report={pnl} /> : null}
 
       {active === "cashiers" ? (
         <SimpleTable

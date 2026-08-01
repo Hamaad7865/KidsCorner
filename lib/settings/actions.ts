@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import { logAudits } from "@/lib/activity/audit"
 import { getSessionProfile } from "@/lib/auth/session"
 import { PAYMENT_METHODS } from "@/lib/db-enums"
 import {
@@ -42,6 +43,28 @@ const shopSettingsSchema = z.object({
     .min(1, "The till needs at least one payment method."),
 })
 
+const SETTING_LABELS: Record<string, string> = {
+  shop_name: "Shop name",
+  vat_rate: "VAT rate",
+  payment_methods: "Payment methods",
+}
+
+/**
+ * A settings value as a person would say it.
+ *
+ * The VAT rate is stored as 0.15 and read as 15%; the payment methods are a
+ * JSON array and read as a list. Without this the trail would say
+ * `vat_rate: 0.15 → 0.2`, which is the database's phrasing, not the shop's.
+ */
+function describe(key: string, value: unknown): string {
+  if (key === "vat_rate") {
+    const rate = Number(value)
+    return Number.isFinite(rate) ? `${(rate * 100).toFixed(2).replace(/\.?0+$/, "")}%` : "—"
+  }
+  if (Array.isArray(value)) return value.join(", ") || "none"
+  return value === null || value === undefined || value === "" ? "—" : String(value)
+}
+
 export async function saveShopSettings(
   _prev: FormState,
   formData: FormData,
@@ -75,7 +98,21 @@ export async function saveShopSettings(
     { key: "payment_methods", value: paymentMethods },
   ]
 
+  // Read the current values first, so the trail can name what moved. Changing
+  // the VAT rate silently re-prices every future sale and leaves no other
+  // record anywhere — the settings row is simply different afterwards.
+  const { data: existing } = await supabase.from("settings").select("key, value")
+  const previous = new Map(
+    (existing ?? []).map((row) => [row.key, JSON.stringify(row.value)]),
+  )
+  const changed: { key: string; before: unknown; after: unknown }[] = []
+
   for (const row of rows) {
+    if (previous.get(row.key) !== JSON.stringify(row.value)) {
+      const raw = (existing ?? []).find((r) => r.key === row.key)?.value
+      changed.push({ key: row.key, before: raw ?? null, after: row.value })
+    }
+
     const { data, error } = await supabase
       .from("settings")
       .update({ value: row.value })
@@ -96,6 +133,17 @@ export async function saveShopSettings(
       }
     }
   }
+
+  await logAudits(
+    supabase,
+    changed.map((c) => ({
+      type: "setting.changed",
+      refType: "setting",
+      refId: c.key,
+      summary: `${SETTING_LABELS[c.key] ?? c.key}: ${describe(c.key, c.before)} → ${describe(c.key, c.after)}`,
+      detail: { key: c.key, before: c.before, after: c.after },
+    })),
+  )
 
   // The VAT rate reaches the till and every money figure, so refresh broadly.
   revalidatePath("/settings")

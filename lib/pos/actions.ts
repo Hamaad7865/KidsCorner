@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { logAudit } from "@/lib/activity/audit"
 import { getSessionProfile } from "@/lib/auth/session"
 import { round2 } from "@/lib/format"
 import {
@@ -162,12 +163,23 @@ export async function setCashierPin(
     .from("profiles")
     .update({ pin_code: clearing ? null : await hashPin(pin) })
     .eq("id", profileId)
-    .select("id")
+    .select("id, full_name")
 
   if (error) return fail(error.message)
   if (data.length === 0) {
     return fail("That staff member could not be updated — check you are the owner.")
   }
+
+  // A PIN is what lets somebody take money at the till, so who changed whose,
+  // and when, is worth a line. The PIN itself never goes near the trail — only
+  // the fact that it moved.
+  await logAudit(supabase, {
+    type: "staff.pin_changed",
+    refType: "profile",
+    refId: profileId,
+    summary: `${data[0].full_name}'s till PIN was ${clearing ? "cleared" : "set"}`,
+    detail: { cleared: clearing },
+  })
 
   revalidatePath("/settings")
   return formOk(clearing ? "PIN cleared." : "PIN set.")

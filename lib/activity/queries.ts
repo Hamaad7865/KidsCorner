@@ -345,6 +345,9 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
       profiles?: { full_name?: string } | null
     }
     const isPrice = audit.event_type.startsWith("price.") || audit.event_type.startsWith("cost.")
+    // A discount approved at the till is money given away, so it reads as money
+    // rather than as one more administrative note.
+    const isMoney = isPrice || audit.event_type === "discount_approved"
     events.push({
       id: `audit-${audit.id}`,
       at: audit.at,
@@ -356,7 +359,7 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
       detail: audit.summary,
       amount: null,
       href: null,
-      tone: audit.event_type.startsWith("sale.") ? "warn" : isPrice ? "money" : "admin",
+      tone: audit.event_type.startsWith("sale.") ? "warn" : isMoney ? "money" : "admin",
     })
   }
 
@@ -425,7 +428,20 @@ const TITLES: Record<string, string> = {
   "setting.changed": "Setting changed",
   "discount.created": "Discount created",
   "discount.changed": "Discount changed",
-  "discount.deleted": "Discount deleted",
+  "discount.deleted": "Discount retired",
   "sale.void": "Sale voided",
   "sale.refunded": "Sale refunded",
+
+  // Events the TILL writes. This feed reads every audit row, so without these
+  // an owner was shown the raw type — `terminal_started` — as the title of the
+  // only kind of event the shop had actually recorded. The wording matches the
+  // Traceability tab exactly: the same event named two ways on two screens is
+  // how a person stops believing either.
+  till_registered: "Till registered",
+  terminal_started: "Terminal started",
+  app_version_changed: "App version changed",
+  operator_signed_in: "Operator signed in",
+  till_retired: "Till retired",
+  till_restored: "Till brought back",
+  discount_approved: "Discount approved",
 }

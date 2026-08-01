@@ -8,8 +8,12 @@ import { defineConfig } from "vitest/config"
  * rather than a layout glitch, and where a mistake stays invisible until a
  * customer is standing at the counter.
  *
- * No jsdom and no React plugin: nothing here renders. Component tests would
- * need both and would be testing a different risk.
+ * Still no jsdom and no React plugin. The report panels under `components/` are
+ * covered, but only through `renderToStaticMarkup`, which needs neither: it
+ * answers "does this crash, and is the right figure in the output" for the
+ * awkward shapes — an empty period, a month ladder with no rows — and stops
+ * there. Anything that needs a click or a layout is a different kind of test
+ * and would need a different runner.
  *
  * `.mts` because the config is ESM and the package is not — the alternative,
  * `"type": "module"` in package.json, changes how every other tool in this
@@ -22,7 +26,7 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "components/**/*.test.ts"],
     // `next build` already type-checks, so the suite stays fast enough to run
     // on every save.
     typecheck: { enabled: false },

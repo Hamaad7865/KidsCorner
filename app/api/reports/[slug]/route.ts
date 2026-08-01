@@ -14,6 +14,8 @@ import {
 } from "@/lib/reports/queries"
 import { toCsv } from "@/lib/reports/csv"
 import { getSalesJournal } from "@/lib/reports/sales-journal"
+import { getVatReport } from "@/lib/reports/vat"
+import { getPnlReport } from "@/lib/reports/pnl"
 
 /**
  * CSV export for each report, mirroring the Carfectionist module's
@@ -144,6 +146,56 @@ export async function GET(
           ...(report.truncated
             ? [["", "", "", "", "TRUNCATED", "narrow the dates"]]
             : []),
+        ],
+      )
+      break
+    }
+    // The VAT return, month by month — the shape the MRA form is typed from,
+    // with the period total on the foot so the file reconciles on its own.
+    case "vat": {
+      const v = await getVatReport(from, to)
+      csv = toCsv(
+        ["Month", "Output VAT", "Input VAT", "Net payable"],
+        [
+          ...v.months.map((m) => [
+            m.label,
+            m.output.toFixed(2),
+            m.input.toFixed(2),
+            m.net.toFixed(2),
+          ]),
+          [
+            "TOTAL",
+            v.output.toFixed(2),
+            v.input.toFixed(2),
+            v.net.toFixed(2),
+          ],
+          // Carried into the file, not left on the screen: whoever opens this
+          // in Excel to fill in a return needs to know input VAT is derived.
+          [
+            `Input VAT derived at ${(v.rate * 100).toFixed(1)}% from ${v.counts.purchases} received purchase(s) — check against supplier invoices before filing`,
+            "",
+            "",
+            v.truncated ? "TRUNCATED — narrow the dates" : "",
+          ],
+        ],
+      )
+      break
+    }
+    case "pnl": {
+      const p = await getPnlReport(from, to)
+      csv = toCsv(
+        ["Line", "Detail", "Amount"],
+        [
+          ["Revenue", "Sales less credit notes, VAT taken out", p.revenue.toFixed(2)],
+          ["Cost of goods sold", "At today's cost price", (-p.cost).toFixed(2)],
+          ["Gross profit", `${p.grossPct.toFixed(1)}% of revenue`, p.gross.toFixed(2)],
+          ...p.expenseRows.map((e) => [
+            "Paid out",
+            e.count > 1 ? `${e.reason} (×${e.count})` : e.reason,
+            (-e.amount).toFixed(2),
+          ]),
+          ["Cash paid out of the till", `${p.counts.payouts} pay-out(s)`, (-p.expenses).toFixed(2)],
+          ["Net profit", p.truncated ? "TRUNCATED — narrow the dates" : "", p.net.toFixed(2)],
         ],
       )
       break
