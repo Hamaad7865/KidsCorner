@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { shopDayOf } from "./format"
+import { shopDayOf, shopTimeOf } from "./format"
 
 describe("shopDayOf", () => {
   it("files a late-night sale under the shop's day, not UTC's", () => {
@@ -28,5 +28,24 @@ describe("shopDayOf", () => {
 
   it("returns an empty string for something unparseable rather than throwing", () => {
     expect(shopDayOf("not a date")).toBe("")
+  })
+})
+
+describe("shopTimeOf", () => {
+  it("gives the shop's wall clock, not UTC's", () => {
+    // 21:14 UTC is 01:14 in Mauritius. The journal CSV used to slice the ISO
+    // string and print 21:14 — the day and the time both wrong on the one
+    // document an accountant reads.
+    expect(shopTimeOf("2026-07-29T21:14:09.488744+00:00")).toBe("01:14")
+  })
+
+  it("agrees with shopDayOf about which side of midnight an instant is", () => {
+    const at = "2026-07-29T20:00:00.000Z"
+    expect(shopDayOf(at)).toBe("2026-07-30")
+    expect(shopTimeOf(at)).toBe("00:00")
+  })
+
+  it("returns an empty string for garbage rather than throwing", () => {
+    expect(shopTimeOf("not a date")).toBe("")
   })
 })

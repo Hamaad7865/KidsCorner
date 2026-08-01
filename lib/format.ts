@@ -147,6 +147,25 @@ export function shopDayOf(value: string | Date): string {
   return Number.isNaN(date.getTime()) ? "" : SHOP_DAY_FORMAT.format(date)
 }
 
+const SHOP_TIME_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  timeZone: SHOP_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+})
+
+/**
+ * The wall-clock time of an instant in the shop, as `HH:mm`.
+ *
+ * For exports that carry a bare time column. Slicing characters 11–16 out of
+ * the ISO string gives the UTC time — four hours early, and on the wrong side
+ * of midnight for anything sold before 4am.
+ */
+export function shopTimeOf(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value
+  return Number.isNaN(date.getTime()) ? "" : SHOP_TIME_FORMAT.format(date)
+}
+
 const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",

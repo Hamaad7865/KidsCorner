@@ -4,7 +4,7 @@ import { getSessionProfile } from "@/lib/auth/session"
 import { isAdminRole } from "@/lib/auth/roles"
 import { isPaymentMethod } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
-import { formatDateTime, shopToday } from "@/lib/format"
+import { formatDateTime, shopDayOf, shopTimeOf, shopToday } from "@/lib/format"
 import { getCollectedReport } from "@/lib/reports/collected"
 import {
   getBestSellers,
@@ -75,8 +75,11 @@ export async function GET(
         ],
         [
           ...j.rows.map((r) => [
-            r.at.slice(0, 10),
-            r.at.slice(11, 16),
+            // The shop's day and clock, not UTC's — slicing the ISO string
+            // put a 01:14 sale on the previous day, four hours early, and
+            // made the export disagree with the screen it sits next to.
+            shopDayOf(r.at),
+            shopTimeOf(r.at),
             r.kind === "credit" ? "Credit note" : "Sale",
             r.reference,
             r.againstReference ?? "",

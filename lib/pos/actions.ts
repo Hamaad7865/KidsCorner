@@ -442,6 +442,19 @@ export async function saveDevice(input: {
   // Refuse to retire a till with money in its drawer: the shift would be
   // orphaned on a device the back office has stopped listing.
   if (patch.is_active === false) {
+    // The web till cannot be retired at all. The UI never offers it, but the
+    // action is callable on its own, and a hidden back-office row would strand
+    // every legacy shift the overview files under it.
+    const { data: target } = await supabase
+      .from("pos_devices")
+      .select("is_back_office")
+      .eq("id", input.id)
+      .maybeSingle()
+
+    if (target?.is_back_office) {
+      return { ok: false, error: "The web till is the back office itself — it cannot be retired." }
+    }
+
     const { data: open } = await supabase
       .from("shifts")
       .select("id")
