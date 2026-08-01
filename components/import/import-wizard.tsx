@@ -106,6 +106,8 @@ export function ImportWizard({ master }: { master: MasterData }) {
   const [rows, setRows] = useState<string[][]>([])
   const [mapping, setMapping] = useState<ColumnMapping>({})
   const [existingBarcodes, setExistingBarcodes] = useState<Set<string>>(new Set())
+  /** Set when the duplicate-barcode check could not complete. */
+  const [barcodeCheckError, setBarcodeCheckError] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [isParsing, startParsing] = useTransition()
 
@@ -166,8 +168,17 @@ export function ImportWizard({ master }: { master: MasterData }) {
   useEffect(() => {
     if (fileBarcodes.length === 0) return
     let cancelled = false
-    findExistingBarcodes(fileBarcodes).then((taken) => {
-      if (!cancelled) setExistingBarcodes(new Set(taken))
+    findExistingBarcodes(fileBarcodes).then((result) => {
+      if (cancelled) return
+      if (result.ok) {
+        setExistingBarcodes(new Set(result.taken))
+        setBarcodeCheckError(null)
+      } else {
+        // Not treated as "none taken": that reads as a clean file and lets
+        // duplicate barcodes through to the merge step.
+        setExistingBarcodes(new Set())
+        setBarcodeCheckError(result.error)
+      }
     })
     return () => {
       cancelled = true
@@ -393,6 +404,18 @@ export function ImportWizard({ master }: { master: MasterData }) {
           </Alert>
         ) : null}
 
+        {barcodeCheckError ? (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden />
+            <AlertTitle>Barcodes could not be checked</AlertTitle>
+            <AlertDescription>
+              {barcodeCheckError} Importing is held until this succeeds — a file
+              whose barcodes have not been checked can attach its stock to the
+              wrong product.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <ColumnMapper headers={headers} mapping={mapping} onChange={setMapping} />
 
         <SummaryBar
@@ -436,7 +459,15 @@ export function ImportWizard({ master }: { master: MasterData }) {
             ) : null}
             <Button
               onClick={runImport}
-              disabled={isImporting || readyCount === 0 || missingRequired.length > 0}
+              // Blocked while the duplicate check is unresolved: importing on
+              // an unchecked file is how a barcode already in use gets merged
+              // into the wrong product.
+              disabled={
+                isImporting ||
+                readyCount === 0 ||
+                missingRequired.length > 0 ||
+                barcodeCheckError !== null
+              }
             >
               {isImporting ? (
                 <>

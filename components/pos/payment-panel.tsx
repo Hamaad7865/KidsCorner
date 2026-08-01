@@ -78,16 +78,17 @@ export function PaymentPanel({
   /** Non-null while a manager PIN is being asked for; holds the server's reason. */
   const [approvalReason, setApprovalReason] = useState<string | null>(null)
   /**
-   * Names this sale attempt. Minted once per payment panel and kept across
-   * every retry, which is the whole point: pressing Confirm again after a
-   * failure must reach the server as the SAME attempt, so a sale that
-   * committed without answering is replayed rather than rung up twice.
+   * Names this sale attempt, and lives in the CART, not in this panel.
    *
-   * A lazy initialiser, not a plain useState value — `crypto.randomUUID()` in
-   * the argument position would run on every render and mint a fresh key each
-   * time, which is exactly the bug this is here to prevent.
+   * Pressing Confirm again after a failure must reach the server as the SAME
+   * attempt, so a sale that committed without answering is replayed rather
+   * than rung up twice. A key held in panel state only survives as long as the
+   * panel: a manager could freeze a sale, step to the back office to see
+   * whether it had landed, come back, and get a fresh panel with a fresh key —
+   * so the button promising "this cannot charge twice" charged twice. The
+   * freeze flag was already in the cart for the mirror-image reason.
    */
-  const [saleKey] = useState(() => crypto.randomUUID())
+  const saleKey = useCart((s) => s.saleKey)
   /**
    * Read from the cart rather than kept locally. They are the same fact — "a
    * submitted sale is unresolved" — and holding it in two places means it can

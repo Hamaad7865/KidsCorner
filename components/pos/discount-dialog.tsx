@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Percent, Tag, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,10 +18,11 @@ import {
   applyRule,
   checkEligibility,
   discountAmountFor,
+  discountBaseFor,
   manualDiscount,
   type DiscountRule,
 } from "@/lib/discounts/rules"
-import { formatRs } from "@/lib/format"
+import { formatRs, round2 } from "@/lib/format"
 import { useCart } from "@/lib/pos/cart-store"
 import { cn } from "@/lib/utils"
 
@@ -39,7 +40,8 @@ export function DiscountDialog({
   today,
 }: {
   rules: DiscountRule[]
-  /** Basket before any sale-level discount — the base every rule works against. */
+  /** Basket before any sale-level discount. The base a given rule works
+   *  against is narrower when the rule names a category — see `baseFor`. */
   basketTotal: number
   /** Shop calendar day, passed in so the timezone is the shop's, not the device's. */
   today: string
@@ -52,6 +54,31 @@ export function DiscountDialog({
   const removeDiscount = useCart((s) => s.removeDiscount)
 
   const manualAmount = Number(manual) || 0
+
+  const lines = useCart((s) => s.lines)
+
+  /**
+   * What each rule is actually measured against.
+   *
+   * `discountBaseFor` is the server's own function: a category-scoped rule is
+   * worth a percentage of THAT CATEGORY's lines, not of the basket. The dialog
+   * used to quote every rule against the whole basket, so "20% off shoes" on a
+   * basket of Rs 1,000 clothes and Rs 300 shoes showed −Rs 260 and the cashier
+   * collected Rs 1,040 — then the server settled it at Rs 60 and refused the
+   * sale as underpaid, with the money already in the drawer.
+   */
+  const byCategory = useMemo(() => {
+    const totals = new Map<number, number>()
+    for (const line of lines) {
+      if (line.categoryId === null) continue
+      const lineTotal = round2(line.unitPrice * line.qty - line.discount)
+      totals.set(line.categoryId, round2((totals.get(line.categoryId) ?? 0) + lineTotal))
+    }
+    return totals
+  }, [lines])
+
+  const baseFor = (rule: DiscountRule) =>
+    discountBaseFor(rule, basketTotal, byCategory) ?? 0
 
   return (
     <>
@@ -117,15 +144,20 @@ export function DiscountDialog({
               </p>
             ) : (
               rules.map((rule) => {
+                // Eligibility (min spend, dates) is a question about the
+                // BASKET; the money is a question about the rule's own base.
                 const eligibility = checkEligibility(rule, basketTotal, today)
                 const already = applied.some((d) => d.discountId === rule.id)
+                const base = baseFor(rule)
                 const amount = discountAmountFor(
                   rule.kind,
                   rule.value,
-                  basketTotal,
+                  base,
                   rule.maxAmount,
                 )
-                const blocked = !eligibility.eligible || already
+                // A rule that matches nothing in this basket is worth nothing,
+                // and the server refuses it outright — so it is not offered.
+                const blocked = !eligibility.eligible || already || base <= 0
 
                 return (
                   <button
@@ -133,7 +165,7 @@ export function DiscountDialog({
                     type="button"
                     disabled={blocked}
                     onClick={() => {
-                      applyDiscount(applyRule(rule, basketTotal))
+                      applyDiscount(applyRule(rule, base))
                       setOpen(false)
                     }}
                     className={cn(

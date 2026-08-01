@@ -94,10 +94,20 @@ export async function createCreditNote(
     p_cashier_id: profile.id,
     p_reason: reason,
     p_refund_method: refundMethod,
-    p_items: items.map((i) => ({
-      sale_item_id: i.saleItemId,
-      qty: i.qty,
-    })) as Json,
+    // Merged by sale item, exactly as the till API does. The RPC's
+    // already-returned check reads only COMMITTED credit notes and does not
+    // accumulate within a call, so two entries naming one line each compare
+    // against zero and both pass — refunding the line twice and restocking it
+    // twice. The till route has always merged for this reason; this one did
+    // not, and it is the route a manager uses from the back office.
+    p_items: [
+      ...items
+        .reduce(
+          (merged, i) => merged.set(i.saleItemId, (merged.get(i.saleItemId) ?? 0) + i.qty),
+          new Map<number, number>(),
+        )
+        .entries(),
+    ].map(([saleItemId, qty]) => ({ sale_item_id: saleItemId, qty })) as Json,
   } as unknown as Database["public"]["Functions"]["create_credit_note"]["Args"]
 
   const { data, error } = await supabase.rpc("create_credit_note", args)

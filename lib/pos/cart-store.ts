@@ -25,6 +25,12 @@ export type CartLine = {
   /** Money off this line, not a percentage. */
   discount: number
   qtyOnHand: number
+  /**
+   * The product's category, carried so a category-scoped discount can be
+   * quoted against the right base. Without it the till priced "20% off shoes"
+   * against the whole basket and asked the customer for the wrong money.
+   */
+  categoryId: number | null
 }
 
 export type CartTotals = {
@@ -77,6 +83,20 @@ type CartState = {
    * resolved one way or the other.
    */
   settleFrozen: boolean
+  /**
+   * Names the attempt in flight, so a retry replays it instead of charging
+   * again.
+   *
+   * Lives HERE, beside `settleFrozen`, because they are one fact and the panel
+   * unmounts. It used to be `useState` inside PaymentPanel: a manager who
+   * froze a sale, stepped to the back office to see whether it had landed, and
+   * came back got a fresh panel with a fresh key — so the button promising
+   * "this cannot charge twice" carried a key the server had never seen, and
+   * charged twice.
+   *
+   * Rotated only when an attempt resolves, never on a render.
+   */
+  saleKey: string
   /** PIN-selected cashier; null means the session user owns the sale. */
   cashierId: string | null
   cashierName: string | null
@@ -91,6 +111,8 @@ type CartState = {
   freezeForSettle: () => void
   /** Called when the attempt resolves — completed, or explicitly abandoned. */
   thawSettle: () => void
+  /** A new key for a new sale. Called once an attempt is genuinely finished. */
+  newSaleKey: () => void
   applyDiscount: (discount: AppliedDiscount) => void
   removeDiscount: (index: number) => void
   addVariant: (variant: CatalogVariant) => void
@@ -116,9 +138,11 @@ export const useCart = create<CartState>((set) => ({
   held: [],
   appliedDiscounts: [],
   settleFrozen: false,
+  saleKey: crypto.randomUUID(),
 
   freezeForSettle: () => set({ settleFrozen: true }),
   thawSettle: () => set({ settleFrozen: false }),
+  newSaleKey: () => set({ saleKey: crypto.randomUUID() }),
 
   setCashier: (cashierId, cashierName) => set({ cashierId, cashierName }),
 
@@ -242,6 +266,7 @@ export const useCart = create<CartState>((set) => ({
             qty: 1,
             discount: 0,
             qtyOnHand: variant.qtyOnHand,
+            categoryId: variant.categoryId,
           },
         ],
       }
@@ -311,6 +336,10 @@ export const useCart = create<CartState>((set) => ({
       customerId: null,
       customerName: null,
       settleFrozen: false,
+      // An emptied basket is a finished attempt, so the next sale gets its own
+      // name. Carrying the old key forward would make the first sale of the
+      // next basket replay the last one.
+      saleKey: crypto.randomUUID(),
     }),
 }))
 

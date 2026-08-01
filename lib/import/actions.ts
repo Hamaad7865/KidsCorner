@@ -75,25 +75,35 @@ async function guard(): Promise<string | null> {
  * rather than selecting the whole column, so it stays exact regardless of
  * catalog size (PostgREST silently caps an unfiltered select at max-rows).
  */
-export async function findExistingBarcodes(barcodes: string[]): Promise<string[]> {
-  if (barcodes.length === 0) return []
+export async function findExistingBarcodes(
+  barcodes: string[],
+): Promise<{ ok: true; taken: string[] } | { ok: false; error: string }> {
+  if (barcodes.length === 0) return { ok: true, taken: [] }
   const denied = await guard()
-  if (denied) return []
+  if (denied) return { ok: false, error: "You do not have access to the catalogue." }
 
   const supabase = await createClient()
   const found: string[] = []
 
   // Chunked: a few thousand barcodes in one `in()` would blow the URL length.
+  //
+  // A failed chunk is reported, never swallowed. This answer decides which
+  // rows the wizard marks as duplicates, and a partial one reads as "those
+  // barcodes are free" — the rows then import, and the merge-by-barcode
+  // fallback downstream attaches them to whatever variant already holds the
+  // code. Better to tell the user the check did not finish.
   for (let i = 0; i < barcodes.length; i += 200) {
     const slice = barcodes.slice(i, i + 200)
     const { data, error } = await supabase
       .from("product_variants")
       .select("barcode")
       .in("barcode", slice)
-    if (error) break
+    if (error) {
+      return { ok: false, error: "Existing barcodes could not be checked. Try again." }
+    }
     for (const row of data ?? []) if (row.barcode) found.push(row.barcode)
   }
-  return found
+  return { ok: true, taken: found }
 }
 
 /**
@@ -281,12 +291,35 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
     if (byCell && byCell.length > 0) variantId = byCell[0].id
 
     if (variantId === null && row.barcode) {
+      // Scoped to THIS product. Unscoped, a barcode that already belongs to a
+      // different product matched its variant, and the import then overwrote
+      // that variant's prices and added this row's stock to it — repricing an
+      // unrelated product and never creating the one the file described.
       const { data: byBarcode } = await supabase
         .from("product_variants")
         .select("id")
         .eq("barcode", row.barcode)
+        .eq("product_id", productId)
         .limit(1)
-      if (byBarcode && byBarcode.length > 0) variantId = byBarcode[0].id
+      if (byBarcode && byBarcode.length > 0) {
+        variantId = byBarcode[0].id
+      } else {
+        // Taken by another product. The barcode is unique shop-wide, so this
+        // row cannot be imported as it stands — said plainly rather than
+        // quietly merged into somebody else's stock.
+        const { data: elsewhere } = await supabase
+          .from("product_variants")
+          .select("id")
+          .eq("barcode", row.barcode)
+          .limit(1)
+        if (elsewhere && elsewhere.length > 0) {
+          result.skipped.push({
+            rowNumber: row.rowNumber,
+            reason: `Barcode ${row.barcode} already belongs to another product.`,
+          })
+          continue
+        }
+      }
     }
 
     if (variantId === null) {

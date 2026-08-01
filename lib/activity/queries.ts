@@ -98,7 +98,7 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
     return q as unknown as Result
   }
 
-  const [sales, movements, tills, shifts, audits, prints, credits] = await Promise.all([
+  const [sales, movements, tills, shifts, closes, audits, prints, credits] = await Promise.all([
     range(
       "sale_date",
       supabase
@@ -126,6 +126,14 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
         .order("created_at", { ascending: false })
         .limit(PER_SOURCE),
     ),
+    // Twice, on two different columns.
+    //
+    // A shift is two events at two moments, and this feed is filtered by
+    // instant. Ranging the one query on `opened_at` meant a shift opened
+    // yesterday and cashed up this morning fell outside today's window
+    // entirely — so today's "Till closed, short by Rs X", the warning this
+    // page exists to surface, never appeared; while a shift opened at 23:50
+    // put its closing event on tomorrow into today's view.
     range(
       "opened_at",
       supabase
@@ -136,6 +144,19 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
             " closer:profiles!shifts_closed_by_fkey ( full_name )",
         )
         .order("opened_at", { ascending: false })
+        .limit(PER_SOURCE),
+    ),
+    range(
+      "closed_at",
+      supabase
+        .from("shifts")
+        .select(
+          "id, opened_at, closed_at, variance, opening_float," +
+            " opener:profiles!shifts_opened_by_fkey ( full_name )," +
+            " closer:profiles!shifts_closed_by_fkey ( full_name )",
+        )
+        .not("closed_at", "is", null)
+        .order("closed_at", { ascending: false })
         .limit(PER_SOURCE),
     ),
     range(
@@ -276,25 +297,43 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
       tone: "cash",
     })
 
-    if (shift.closed_at) {
-      const variance = Number(shift.variance ?? 0)
-      events.push({
-        id: `shift-close-${shift.id}`,
-        at: shift.closed_at,
-        actorName: shift.closer?.full_name ?? "—",
-        category: "cash",
-        title: "Till closed",
-        detail:
-          variance === 0
-            ? "Balanced"
-            : `${variance > 0 ? "Over" : "Short"} by ${formatRs(Math.abs(variance))}`,
-        amount: null,
-        href: `/reports?report=shifts`,
-        // A drawer that did not balance is the thing on this page most worth
-        // noticing, so it is toned as a warning rather than as routine cash.
-        tone: variance === 0 ? "cash" : "warn",
-      })
+  }
+
+  // Closings come from their own query, ranged on `closed_at`, so a shift that
+  // spans midnight lands each end on the day it actually happened.
+  for (const row of rows(closes)) {
+    const shift = row as unknown as {
+      id: number
+      closed_at: string | null
+      variance: number | null
+      closer?: { full_name?: string } | null
     }
+    if (!shift.closed_at) continue
+
+    // Null variance means the drawer was never counted, which is not the same
+    // as counting it and finding it right. Coercing it to zero reported every
+    // uncounted shift as "Balanced" in the shop's own activity log.
+    const counted = shift.variance !== null
+    const variance = Number(shift.variance ?? 0)
+
+    events.push({
+      id: `shift-close-${shift.id}`,
+      at: shift.closed_at,
+      actorName: shift.closer?.full_name ?? "—",
+      category: "cash",
+      title: "Till closed",
+      detail: !counted
+        ? "Closed without a count"
+        : variance === 0
+          ? "Balanced"
+          : `${variance > 0 ? "Over" : "Short"} by ${formatRs(Math.abs(variance))}`,
+      amount: null,
+      href: `/reports?report=shifts`,
+      // A drawer that did not balance is the thing on this page most worth
+      // noticing, so it is toned as a warning rather than as routine cash —
+      // and one that was never counted is worth noticing just as much.
+      tone: counted && variance === 0 ? "cash" : "warn",
+    })
   }
 
   for (const a of rows(audits)) {

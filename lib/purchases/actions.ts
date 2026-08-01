@@ -249,12 +249,21 @@ export async function savePurchase(
       return fail("This purchase has already been received and can't be edited.")
     }
 
-    const { error } = await supabase
+    // The result is checked, not assumed. A receipt landing between the read
+    // above and this write makes the guard match no row — and the line-clearing
+    // DELETE below would then fire against a purchase that has already booked
+    // stock in. (The database refuses that too, since migration 030, but this
+    // says so in words the buyer can act on.)
+    const { data: updated, error } = await supabase
       .from("purchases")
       .update(header)
       .eq("id", purchaseId)
       .eq("status", "draft")
+      .select("id")
     if (error) return fail(describeDbError(error))
+    if (!updated || updated.length === 0) {
+      return fail("This purchase was received while you were editing it, so nothing was changed.")
+    }
 
     // Replace the lines wholesale — simpler and safer than diffing, and the
     // rows carry no history of their own while the purchase is still a draft.
