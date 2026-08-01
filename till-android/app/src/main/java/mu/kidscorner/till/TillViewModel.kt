@@ -1358,7 +1358,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val label = current.customer?.fullName
-            ?: "${current.totals.itemCount} items · ${round2(current.totals.total)}"
+            ?: "${current.totals.itemCount} items · ${formatRs(current.totals.total)}"
 
         val sale = HeldSale(
             id = UUID.randomUUID().toString(),
@@ -1531,6 +1531,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             totals = CartTotals(),
                             customer = null,
                             discount = null,
+                            // Cleared with the cart, or it attaches itself to
+                            // whatever the next customer buys.
+                            note = "",
                             needsApproval = false,
                             outcome = outcome,
                             screen = TillScreen.Selling(screen.cashier),

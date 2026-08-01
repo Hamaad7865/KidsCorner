@@ -779,6 +779,29 @@ export async function commitSale(
   }
 
   /**
+   * Over-payment is refused too, not just under-payment.
+   *
+   * `amount` is what the drawer or the rail actually receives; cash handed over
+   * beyond the price is `tendered`, and the change comes back out of it. A
+   * payload putting the tendered figure in `amount` — Rs 500 recorded against a
+   * Rs 50 sale — was accepted verbatim, so `expected_cash` rose by 500 while
+   * the drawer held 50 and the cashier came up 450 short at close. The web
+   * till's own clamp never protected this path: `/api/till/sale` does not go
+   * through it.
+   *
+   * A cent of slack, matching the under-payment side, so a legitimate rounding
+   * difference is not treated as tampering.
+   */
+  if (paid > total + 0.001) {
+    return {
+      ok: false,
+      error:
+        `Payments total ${paid.toFixed(2)} but the sale is ${total.toFixed(2)}. ` +
+        `Cash over the price belongs in the tendered figure, not the amount.`,
+    }
+  }
+
+  /**
    * The generated types declare `p_customer_id` and `p_shift_id` as plain
    * numbers because `supabase gen types` cannot see that the SQL parameters are
    * nullable. A walk-in sale genuinely passes NULL for the customer. Casting
