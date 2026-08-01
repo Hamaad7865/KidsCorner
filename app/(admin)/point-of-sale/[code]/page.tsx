@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, Monitor, TabletSmartphone } from "lucide-react"
 
+import { CashFlowTab } from "@/components/pos/cash-flow-tab"
 import { CloseTillRemotely } from "@/components/pos/close-till-remotely"
 import { DeviceSettings } from "@/components/pos/device-settings"
 import { Badge } from "@/components/ui/badge"
@@ -18,33 +19,34 @@ import {
 } from "@/components/ui/table"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { cn } from "@/lib/utils"
-import { formatDateTime, formatQty, formatRs } from "@/lib/format"
+import { formatDateTime, formatQty, formatRs, shopToday } from "@/lib/format"
+import { getDeviceCashFlow } from "@/lib/pos/cash-flow"
 import { getDevice, getDeviceSessions } from "@/lib/pos/overview"
 
 export const metadata: Metadata = { title: "Till" }
 
 const TABS = [
   { key: "general", label: "General" },
-  { key: "sessions", label: "Sessions" },
   { key: "settings", label: "Settings" },
+  { key: "cashflow", label: "Cash flow" },
+  { key: "sessions", label: "Sessions" },
 ] as const
 
 /**
- * One till.
+ * One till — General, Settings, Cash flow, Sessions.
  *
- * Carfectionist splits this four ways — General, Settings, Cash flow,
- * Traceability. Two of those are not ported: its Cash flow tab is a
- * date-ranged view of payments per device, and Kids Corner reports cash by
- * shift on the Z rather than by device; and its Traceability tab reads a
- * per-device event stream this app does not keep. Building either as an empty
- * shell would be worse than leaving them out.
+ * The first three are Carfectionist's Point of Sale module tab for tab.
+ * Sessions stands in for its Traceability tab: Carfectionist keys an event
+ * stream on the device, and Kids Corner's `audit_events` records what changed
+ * (a price, a PIN, a role) without recording which till it happened at, so a
+ * per-device feed cannot yet be built from it honestly.
  */
 export default async function DevicePage({
   params,
   searchParams,
 }: {
   params: Promise<{ code: string }>
-  searchParams: Promise<{ tab?: string }>
+  searchParams: Promise<{ tab?: string; ref?: string; from?: string; to?: string }>
 }) {
   const profile = await requireAdminProfile()
   const { code } = await params
@@ -54,8 +56,18 @@ export default async function DevicePage({
   if (!device) notFound()
 
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "general"
-  const sessions = await getDeviceSessions(device.id)
+  const sessions = await getDeviceSessions(device)
   const canClose = profile.role === "owner" || profile.role === "manager"
+
+  // Only read on the tab that shows it — this is several joins over a period,
+  // and General has no use for it.
+  const flow =
+    tab === "cashflow"
+      ? await getDeviceCashFlow(device, { ref: sp.ref, from: sp.from, to: sp.to })
+      : null
+
+  const basePath = `/point-of-sale/${encodeURIComponent(device.code)}`
+  const today = shopToday()
 
   const Icon = device.isBackOffice ? Monitor : TabletSmartphone
   const closed = sessions.filter((s) => s.closedAt)
@@ -100,7 +112,14 @@ export default async function DevicePage({
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={`/point-of-sale/${encodeURIComponent(device.code)}?tab=${t.key}`}
+            // Cash flow is driven by its pickers, so the tab arrives with them
+            // filled — today to today, the way Carfectionist opens it. Landing
+            // on empty pickers reads as "no movements", not "pick a date".
+            href={
+              t.key === "cashflow"
+                ? `${basePath}?tab=cashflow&ref=${today}&from=${today}&to=${today}`
+                : `${basePath}?tab=${t.key}`
+            }
             aria-current={tab === t.key ? "page" : undefined}
             className={cn(
               "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
@@ -189,6 +208,14 @@ export default async function DevicePage({
       {tab === "sessions" ? <SessionTable sessions={sessions} /> : null}
 
       {tab === "settings" ? <DeviceSettings device={device} /> : null}
+
+      {tab === "cashflow" && flow ? (
+        <CashFlowTab
+          flow={flow}
+          basePath={basePath}
+          params={{ tab: "cashflow", ref: flow.refDate, from: flow.from, to: flow.to }}
+        />
+      ) : null}
     </div>
   )
 }

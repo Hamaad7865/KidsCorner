@@ -175,10 +175,21 @@ export async function getDevice(code: string): Promise<PosDevice | null> {
   return overview.devices.find((d) => d.code === code) ?? null
 }
 
-/** Every shift this till has run, newest first. */
-export async function getDeviceSessions(deviceId: number): Promise<CashUp[]> {
+/**
+ * Every shift this till has run, newest first.
+ *
+ * The web till also answers for shifts with no device at all. Every shift
+ * opened before the registry existed carries `device_id NULL`, and the overview
+ * above already shows their drawer on the back-office card — so listing them
+ * here is what stops that card reading "Rs 3,000 in the drawer" above a table
+ * that says the till has never opened a shift.
+ */
+export async function getDeviceSessions(device: {
+  id: number
+  isBackOffice: boolean
+}): Promise<CashUp[]> {
   const supabase = await createClient()
-  const { data } = await supabase
+  const query = supabase
     .from("shifts")
     .select(
       `id, opened_at, closed_at, expected_cash, counted_cash, variance,
@@ -186,9 +197,12 @@ export async function getDeviceSessions(deviceId: number): Promise<CashUp[]> {
        opener:profiles!shifts_opened_by_fkey ( full_name ),
        closer:profiles!shifts_closed_by_fkey ( full_name )`,
     )
-    .eq("device_id", deviceId)
     .order("opened_at", { ascending: false })
     .limit(50)
+
+  const { data } = await (device.isBackOffice
+    ? query.or(`device_id.eq.${device.id},device_id.is.null`)
+    : query.eq("device_id", device.id))
 
   return (data ?? []).map<CashUp>((s) => ({
     shiftId: s.id,
