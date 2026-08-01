@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { settleDiscounts, type TillClient } from "./sale-core"
+import { hashPin } from "./pin"
 
 /**
  * `settleDiscounts` — how much comes off a sale, and who has to authorise it.
@@ -20,20 +21,51 @@ import { settleDiscounts, type TillClient } from "./sale-core"
 
 type Row = Record<string, unknown>
 
-/** Just enough client to answer the one query `settleDiscounts` makes. */
-function stubClient(rules: Row[]): TillClient {
+const MANAGER_ID = "11111111-1111-4111-8111-111111111111"
+
+/**
+ * Just enough client for the two queries `settleDiscounts` can make: the rules
+ * it settles against, and — when something needs authorising — the manager
+ * whose PIN is being checked.
+ *
+ * `managerPinHash` is passed in rather than hashed here so the tests stay
+ * synchronous about it; `verifyPin` does the real PBKDF2 comparison.
+ */
+function stubClient(rules: Row[], managerPinHash: string | null = null): TillClient {
   return {
     from(table: string) {
-      if (table !== "discounts") throw new Error(`unexpected table ${table}`)
-      return {
-        select: () => ({
-          in: (_column: string, ids: number[]) => ({
-            data: rules.filter((r) => ids.includes(r.id as number)),
-            error: null,
+      if (table === "discounts") {
+        return {
+          select: () => ({
+            in: (_column: string, ids: number[]) => ({
+              data: rules.filter((r) => ids.includes(r.id as number)),
+              error: null,
+            }),
           }),
-        }),
+        }
       }
+      if (table === "profiles") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () => ({
+                data: {
+                  id: MANAGER_ID,
+                  role: "manager",
+                  is_active: true,
+                  pin_code: managerPinHash,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        }
+      }
+      throw new Error(`unexpected table ${table}`)
     },
+    // The lockout counter and its advance. Neither is what these tests are
+    // about, so both answer "no wait".
+    rpc: () => ({ data: 0, error: null }),
   } as unknown as TillClient
 }
 
@@ -89,7 +121,45 @@ const posted = (over: Record<string, unknown> = {}) => ({
 describe("settleDiscounts", () => {
   it("does nothing when there is nothing to settle", async () => {
     const result = await settleDiscounts(stubClient([]), [], [line()], null)
-    expect(result).toEqual({ applied: [], total: 0 })
+    expect(result).toEqual({
+      applied: [],
+      total: 0,
+      // No approval was needed, so there is nobody to record.
+      approvedBy: null,
+      approvalReasons: [],
+    })
+  })
+
+  it("reports who authorised a line discount, and what for", async () => {
+    // A line discount produces no `sale_discounts` row, so this is the ONLY
+    // thing that can name the manager who allowed it. Without it the shop
+    // demanded a PIN and then kept no record that anyone had given one.
+    const result = await settleDiscounts(
+      stubClient([], await hashPin("1234")),
+      [],
+      [line({ discount: 200, lineTotal: 800 })],
+      { managerId: MANAGER_ID, pin: "1234" },
+    )
+
+    expect("error" in result).toBe(false)
+    if ("error" in result) return
+    expect(result.applied).toEqual([])
+    expect(result.approvedBy).toBe(MANAGER_ID)
+    expect(result.approvalReasons).toEqual(["money off a line"])
+  })
+
+  it("reports a custom item as needing authorisation too", async () => {
+    const result = await settleDiscounts(
+      stubClient([], await hashPin("1234")),
+      [],
+      [line({ variantId: null })],
+      { managerId: MANAGER_ID, pin: "1234" },
+    )
+
+    expect("error" in result).toBe(false)
+    if ("error" in result) return
+    expect(result.approvedBy).toBe(MANAGER_ID)
+    expect(result.approvalReasons).toEqual(["a custom item"])
   })
 
   it("recomputes from the rule, ignoring what the client claimed", async () => {

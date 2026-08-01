@@ -29,6 +29,9 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type TillClient = SupabaseClient<Database>
 
+/** "Rs 200.00" for an audit summary. Local so this module stays UI-free. */
+const formatMoney = (value: number) => `Rs ${round2(value).toFixed(2)}`
+
 /** The signed-in device/user a sale is committed on behalf of. */
 export type TillUser = { id: string; name: string }
 
@@ -428,7 +431,15 @@ export async function settleDiscounts(
   lines: PricedLine[],
   approval: { managerId: string; pin: string } | null | undefined,
 ): Promise<
-  { applied: AppliedDiscountInput[]; total: number } | { error: string; needsApproval?: boolean }
+  | {
+      applied: AppliedDiscountInput[]
+      total: number
+      /** The manager who authorised, when one was required. */
+      approvedBy: string | null
+      /** What needed authorising, in words, for the audit trail. */
+      approvalReasons: string[]
+    }
+  | { error: string; needsApproval?: boolean }
 > {
   const basket = round2(lines.reduce((sum, l) => sum + l.lineTotal, 0))
 
@@ -441,7 +452,7 @@ export async function settleDiscounts(
   const hasCustomLine = lines.some((l) => l.variantId === null)
 
   if (posted.length === 0 && !hasLineDiscount && !hasCustomLine) {
-    return { applied: [], total: 0 }
+    return { applied: [], total: 0, approvedBy: null, approvalReasons: [] }
   }
 
   const byCategory = new Map<number, number>()
@@ -587,7 +598,23 @@ export async function settleDiscounts(
     spentOn.set(rule.categoryId, round2((spentOn.get(rule.categoryId) ?? 0) + amount))
   }
 
-  return { applied, total: round2(Math.min(running, basket)) }
+  return {
+    applied,
+    total: round2(Math.min(running, basket)),
+    // Carried out so the sale can record WHO authorised it. A line discount or
+    // a custom line demands a manager's PIN but produces no `sale_discounts`
+    // row to hang the approver on, so without this the shop made a manager
+    // authorise money off and then kept no record that they had.
+    approvedBy,
+    approvalReasons: [
+      hasLineDiscount ? "money off a line" : null,
+      hasCustomLine ? "a custom item" : null,
+      posted.some((d) => d.discountId === null) ? "a manual discount" : null,
+      posted.some((d) => d.discountId !== null && rules.get(d.discountId)?.requiresManager)
+        ? "a rule needing approval"
+        : null,
+    ].filter((r): r is string => r !== null),
+  }
 }
 
 // ------------------------------------------------------------ the envelope
@@ -892,6 +919,39 @@ export async function commitSale(
   }
   if (typeof data !== "number") {
     return { ok: false, error: "The sale did not return an id. Please retry." }
+  }
+
+  /**
+   * Who authorised, against the sale that resulted.
+   *
+   * A named discount carries its approver in `sale_discounts.approved_by`, but
+   * money off a LINE and a CUSTOM ITEM produce no such row — and both demand a
+   * manager's PIN. So the shop was making a manager authorise a price and then
+   * keeping no record anywhere that they had. This is that record.
+   *
+   * After the commit and never allowed to fail it: the sale is already the
+   * customer's, and an audit write that hiccupped must not turn a completed
+   * sale into an error on screen.
+   */
+  if (settled.approvedBy) {
+    const off = round2(
+      priced.lines.reduce((sum, l) => sum + l.discount, 0) + settled.total,
+    )
+    await supabase
+      .rpc("log_audit" as never, {
+        p_event_type: "discount_approved",
+        p_ref_type: "sale",
+        p_ref_id: String(data),
+        p_summary: `${formatMoney(off)} authorised on a sale — ${settled.approvalReasons.join(", ")}`,
+        p_detail: {
+          sale_id: data,
+          approved_by: settled.approvedBy,
+          amount: off,
+          reasons: settled.approvalReasons,
+        },
+        p_device_id: null,
+      } as never)
+      .then(() => undefined, () => undefined)
   }
 
   return { ok: true, saleId: data }
