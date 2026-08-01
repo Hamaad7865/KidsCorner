@@ -21,7 +21,13 @@ import {
 } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
 import { getCollectedReport } from "@/lib/reports/collected"
-import { formatDate, formatDateTime, formatQty, formatRs, shopToday } from "@/lib/format"
+import {
+  formatDate,
+  formatDateTime,
+  formatQty,
+  formatRs,
+  shopToday,
+} from "@/lib/format"
 import { DailySummaryTable } from "@/components/reports/daily-summary-table"
 import { getDailySummary } from "@/lib/reports/daily-summary"
 import {
@@ -38,6 +44,7 @@ import {
 import { getSalesJournal } from "@/lib/reports/sales-journal"
 import { getVatReport } from "@/lib/reports/vat"
 import { getPnlReport } from "@/lib/reports/pnl"
+import { ShiftsTable } from "@/components/reports/shifts-table"
 import { VatReturn } from "@/components/reports/vat-return"
 import { PnlStatement } from "@/components/reports/pnl-statement"
 import { cn } from "@/lib/utils"
@@ -666,97 +673,7 @@ export default async function ReportsPage({
         </div>
       ) : null}
 
-      {active === "shifts" ? (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-44">Opened</TableHead>
-                <TableHead className="w-28">Z</TableHead>
-                <TableHead className="w-36">By</TableHead>
-                <TableHead className="w-28 text-right">Float</TableHead>
-                <TableHead className="w-28 text-right">Expected</TableHead>
-                <TableHead className="w-28 text-right">Counted</TableHead>
-                <TableHead className="w-28 text-right">Variance</TableHead>
-                <TableHead>Notes</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shifts.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-muted-foreground py-8 text-center">
-                    No shifts opened in this range.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                shifts.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {formatDateTime(s.openedAt)}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {s.zNo ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="font-medium tabular-nums">{s.zNo}</span>
-                          {/* Money the frozen slip does not account for. Flagged
-                              rather than quietly folded in: the paper in the
-                              shop's file is short by this much, and only a
-                              person can decide what to do about it. */}
-                          {s.unreported !== 0 ? (
-                            <Badge variant="outline" className="text-warning-foreground">
-                              +{formatRs(s.unreported)} after
-                            </Badge>
-                          ) : null}
-                        </span>
-                      ) : s.closedAt === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className="text-muted-foreground" title="Closed before Z reports existed">
-                          none
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {s.openedBy ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatRs(s.openingFloat)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {s.expectedCash === null ? "—" : formatRs(s.expectedCash)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {s.countedCash === null ? "—" : formatRs(s.countedCash)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {s.closedAt === null ? (
-                        <Badge variant="outline">Open</Badge>
-                      ) : s.variance === null ? (
-                        "—"
-                      ) : (
-                        <span
-                          className={cn(
-                            "font-medium",
-                            s.variance === 0
-                              ? "text-success"
-                              : "text-warning-foreground",
-                          )}
-                        >
-                          {s.variance > 0 ? "+" : ""}
-                          {formatRs(s.variance)}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground truncate text-xs">
-                      {s.notes ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      ) : null}
+      {active === "shifts" ? <ShiftsTable shifts={shifts} /> : null}
     </div>
   )
 }

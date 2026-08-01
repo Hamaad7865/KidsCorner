@@ -26,6 +26,15 @@ const ROW_CAP = 5000
  */
 const OVER_CAP = ROW_CAP + 1
 
+/**
+ * How many late sales one Shifts view will list.
+ *
+ * These are a note under a table row, not a report. A Z frozen early on a busy
+ * Saturday could strand a long tail; the count in the badge is always the true
+ * one, and the list says so when it is showing fewer.
+ */
+const LATE_SALE_CAP = 200
+
 export type SalesSummary = {
   saleCount: number
   grossTotal: number
@@ -218,6 +227,25 @@ export type ShiftReport = {
    */
   unreported: number
   lateCount: number
+  /**
+   * WHICH sales landed after the Z, newest first.
+   *
+   * The badge saying "+Rs 500 after" has always been the alarm; this is the
+   * thing it is an alarm about. Without it an owner is told the paper in their
+   * file is short by an amount and given no way to find out short of what —
+   * which is the same as not being told, except more worrying.
+   *
+   * Empty on every healthy close, which is almost all of them.
+   */
+  lateSales: LateSale[]
+}
+
+export type LateSale = {
+  saleId: number
+  saleNo: string
+  /** ISO instant the sale was rung up. */
+  at: string
+  total: number
 }
 
 /** Closed shifts in the range — the Z-report list. */
@@ -249,7 +277,13 @@ export async function getShiftReports(
   // relationship to follow.
   const zByShift = new Map<
     number,
-    { zNo: string; zId: number; unreported: number; lateCount: number }
+    {
+      zNo: string
+      zId: number
+      unreported: number
+      lateCount: number
+      lateSales: LateSale[]
+    }
   >()
 
   if (shiftIds.length > 0) {
@@ -266,6 +300,38 @@ export async function getShiftReports(
       .in("shift_id", shiftIds)
       .returns<{ shift_id: number; unreported: string | number; late_count: number }[]>()
 
+    // The sales behind the "+Rs X after" badge. Another FK-less view, so
+    // fetched the same way — and capped, because a shift whose Z froze early on
+    // a busy Saturday could have a long tail, and this is a note under a table
+    // row rather than a report of its own.
+    const { data: lates } = await loose
+      .from("late_sales")
+      .select("sale_id, sale_no, shift_id, total, sale_date")
+      .in("shift_id", shiftIds)
+      .order("sale_date", { ascending: false })
+      .limit(LATE_SALE_CAP)
+      .returns<
+        {
+          sale_id: number
+          sale_no: string
+          shift_id: number
+          total: string | number
+          sale_date: string
+        }[]
+      >()
+
+    const lateByShift = new Map<number, LateSale[]>()
+    for (const late of lates ?? []) {
+      const list = lateByShift.get(late.shift_id) ?? []
+      list.push({
+        saleId: late.sale_id,
+        saleNo: late.sale_no,
+        at: late.sale_date,
+        total: Number(late.total),
+      })
+      lateByShift.set(late.shift_id, list)
+    }
+
     const varByShift = new Map(
       (variances ?? []).map((v) => [v.shift_id, v]),
     )
@@ -277,6 +343,7 @@ export async function getShiftReports(
         zId: z.id,
         unreported: Number(v?.unreported ?? 0),
         lateCount: v?.late_count ?? 0,
+        lateSales: lateByShift.get(z.shift_id) ?? [],
       })
     }
   }
@@ -298,6 +365,7 @@ export async function getShiftReports(
       zId: z?.zId ?? null,
       unreported: z?.unreported ?? 0,
       lateCount: z?.lateCount ?? 0,
+      lateSales: z?.lateSales ?? [],
     }
   })
 }
