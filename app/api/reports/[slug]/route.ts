@@ -2,8 +2,10 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { getSessionProfile } from "@/lib/auth/session"
 import { isAdminRole } from "@/lib/auth/roles"
+import { isPaymentMethod } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
-import { shopToday } from "@/lib/format"
+import { formatDateTime, shopToday } from "@/lib/format"
+import { getCollectedReport } from "@/lib/reports/collected"
 import {
   getBestSellers,
   getMarginReport,
@@ -112,11 +114,34 @@ export async function GET(
       )
       break
     }
+    // Collected by method: the payments list plus a per-method summary, so the
+    // file reconciles on its own the way the screen does. `m` narrows both.
     case "methods": {
-      const s = await getSalesSummary(from, to)
+      const m = search.get("m")
+      const report = await getCollectedReport(
+        from,
+        to,
+        m && isPaymentMethod(m) ? m : undefined,
+      )
       csv = toCsv(
-        ["Method", "Taken"],
-        s.byMethod.map((m) => [m.method, m.amount.toFixed(2)]),
+        ["Date", "Type", "Document", "Customer", "Method", "Amount"],
+        [
+          // The shop's clock, matching the screen — the raw ISO instant is UTC,
+          // which files a 01:14 sale under the previous day.
+          ...report.rows.map((r) => [
+            formatDateTime(r.at),
+            r.kind === "refund" ? "Refund" : "Payment",
+            r.reference,
+            r.customerName ?? "Walk-in",
+            r.method,
+            r.amount.toFixed(2),
+          ]),
+          ["", "", "", "", "COLLECTED", report.collected.toFixed(2)],
+          ...report.byMethod.map((x) => ["", "", "", "", x.method, x.amount.toFixed(2)]),
+          ...(report.truncated
+            ? [["", "", "", "", "TRUNCATED", "narrow the dates"]]
+            : []),
+        ],
       )
       break
     }

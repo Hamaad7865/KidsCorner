@@ -14,8 +14,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { requireAdminProfile } from "@/lib/auth/session"
-import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  isPaymentMethod,
+} from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
+import { getCollectedReport } from "@/lib/reports/collected"
 import { formatDate, formatDateTime, formatRs, shopToday } from "@/lib/format"
 import { DailySummaryTable } from "@/components/reports/daily-summary-table"
 import { getDailySummary } from "@/lib/reports/daily-summary"
@@ -38,7 +43,7 @@ export const metadata: Metadata = { title: "Reports" }
 const REPORTS = [
   { key: "summary", label: "Summary" },
   { key: "daily", label: "Daily summary" },
-  { key: "methods", label: "By payment method" },
+  { key: "methods", label: "Collected by method" },
   { key: "cashiers", label: "By cashier" },
   { key: "bestsellers", label: "Best sellers" },
   { key: "margin", label: "Margin" },
@@ -79,6 +84,8 @@ export default async function ReportsPage({
   const to = isoDate(first(params.to)) ?? fallback.to
   const active = (REPORTS.find((r) => r.key === first(params.report))?.key ??
     "summary") as ReportKey
+  const methodParam = first(params.m)
+  const method = isPaymentMethod(methodParam) ? methodParam : undefined
 
   // Only the selected report is fetched — the summary is always needed for the
   // header figures, but nothing else runs unless it is on screen.
@@ -89,17 +96,21 @@ export default async function ReportsPage({
       ? await getDailySummary(from, to)
       : { from, to, rows: [], methods: [], taxes: [], sellers: [], categories: [] }
 
-  const [bestSellers, margin, discounts, shifts, journal] = await Promise.all([
-    active === "bestsellers" ? getBestSellers(from, to) : Promise.resolve([]),
-    active === "margin" ? getMarginReport(from, to) : Promise.resolve([]),
-    active === "discounts"
-      ? getDiscountReport(`${from}T00:00:00+04:00`, `${to}T23:59:59.999+04:00`)
-      : Promise.resolve([]),
-    active === "shifts" ? getShiftReports(from, to) : Promise.resolve([]),
-    active === "journal"
-      ? getSalesJournal(from, to)
-      : Promise.resolve(null),
-  ])
+  const [bestSellers, margin, discounts, shifts, journal, collected] =
+    await Promise.all([
+      active === "bestsellers" ? getBestSellers(from, to) : Promise.resolve([]),
+      active === "margin" ? getMarginReport(from, to) : Promise.resolve([]),
+      active === "discounts"
+        ? getDiscountReport(`${from}T00:00:00+04:00`, `${to}T23:59:59.999+04:00`)
+        : Promise.resolve([]),
+      active === "shifts" ? getShiftReports(from, to) : Promise.resolve([]),
+      active === "journal"
+        ? getSalesJournal(from, to)
+        : Promise.resolve(null),
+      active === "methods"
+        ? getCollectedReport(from, to, method)
+        : Promise.resolve(null),
+    ])
 
   const link = (key: string) =>
     `/reports?report=${key}&from=${from}&to=${to}`
@@ -117,6 +128,7 @@ export default async function ReportsPage({
       {/* Plain GET form: the range is in the URL, so a report is shareable. */}
       <form method="get" className="flex flex-wrap items-end gap-3">
         <input type="hidden" name="report" value={active} />
+        {method ? <input type="hidden" name="m" value={method} /> : null}
         <div className="space-y-2">
           <label htmlFor="from" className="text-sm font-medium">
             From
@@ -151,7 +163,9 @@ export default async function ReportsPage({
               href={
                 active === "daily"
                   ? `/api/reports/daily-summary?from=${from}&to=${to}&sec=${[...sections].join(",") || "none"}`
-                  : `/api/reports/${active}?from=${from}&to=${to}`
+                  : `/api/reports/${active}?from=${from}&to=${to}${
+                      active === "methods" && method ? `&m=${method}` : ""
+                    }`
               }
               download
             />
@@ -232,15 +246,201 @@ export default async function ReportsPage({
         />
       ) : null}
 
-      {active === "methods" ? (
-        <SimpleTable
-          head={["Method", "Taken"]}
-          rows={summary.byMethod.map((m) => [
-            isPaymentMethod(m.method) ? PAYMENT_METHOD_LABELS[m.method] : m.method,
-            formatRs(m.amount),
-          ])}
-          empty="Nothing taken in this range."
-        />
+      {active === "methods" && collected ? (
+        <div className="space-y-4">
+          {/* Method chips — the whole report narrows to one rail. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-muted-foreground mr-1 text-xs font-semibold tracking-wide uppercase">
+              Method
+            </span>
+            {[undefined, ...PAYMENT_METHODS].map((m) => {
+              const on = method === m
+              return (
+                <Link
+                  key={m ?? "all"}
+                  href={`/reports?report=methods&from=${from}&to=${to}${m ? `&m=${m}` : ""}`}
+                  aria-current={on ? "page" : undefined}
+                  className={cn(
+                    "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                    on
+                      ? "border-brand-600 bg-brand-50 text-brand-700"
+                      : "text-muted-foreground hover:text-foreground bg-card",
+                  )}
+                >
+                  {m ? PAYMENT_METHOD_LABELS[m] : "All"}
+                </Link>
+              )
+            })}
+          </div>
+
+          {/* The three figures the report keeps apart. */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Card className="border-brand-200 from-brand-50 bg-gradient-to-br to-white">
+              <CardContent className="py-4">
+                <div className="text-brand-800 text-sm font-medium">
+                  Cash received · {formatDate(from)} to {formatDate(to)}
+                </div>
+                <div className="text-brand-900 mt-1 text-3xl font-semibold tabular-nums">
+                  {formatRs(collected.collected)}
+                </div>
+                {method ? (
+                  <div className="text-brand-800 mt-1 text-xs">
+                    {PAYMENT_METHOD_LABELS[method]} only
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+            <Stat
+              label="Revenue invoiced"
+              value={formatRs(collected.invoiced)}
+              hint="Basis for VAT & P&L"
+            />
+            <Stat
+              label="Not yet collected"
+              value={formatRs(collected.outstanding)}
+              hint={
+                collected.outstanding === 0
+                  ? "No account sales — every ticket is paid at the till"
+                  : "Sales and payments disagree — worth investigating"
+              }
+            />
+          </div>
+
+          {collected.outstanding !== 0 ? (
+            <p className="text-warning-foreground text-sm">
+              The period&rsquo;s sales total and its payments differ by{" "}
+              {formatRs(collected.outstanding)}. Kids Corner takes full payment
+              at the till, so this figure should always be zero — check the
+              period&rsquo;s sales against their payments.
+            </p>
+          ) : null}
+
+          {/* By method — proportional bars on the brand ramp, biggest first. */}
+          <Card>
+            <CardContent className="space-y-3.5 py-4">
+              <h2 className="font-heading text-base font-semibold">By method</h2>
+              {collected.byMethod.length === 0 ? (
+                <p className="text-muted-foreground py-2 text-sm">
+                  No payments in range.
+                </p>
+              ) : (
+                collected.byMethod.map((m, rank) => {
+                  const peak = Math.max(
+                    1,
+                    ...collected.byMethod.map((x) => Math.abs(x.amount)),
+                  )
+                  const ramp = ["bg-brand-700", "bg-brand-500", "bg-brand-300", "bg-brand-200"]
+                  const bar = m.amount < 0 ? "bg-destructive" : (ramp[rank] ?? "bg-brand-200")
+                  return (
+                    <div key={m.method}>
+                      <div className="flex items-center gap-2.5">
+                        <span className={cn("size-2.5 rounded-[3px]", bar)} />
+                        <span className="flex-1 text-sm font-medium">
+                          {isPaymentMethod(m.method)
+                            ? PAYMENT_METHOD_LABELS[m.method]
+                            : m.method}
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums">
+                          {formatRs(m.amount)}
+                        </span>
+                      </div>
+                      <div className="bg-muted mt-1.5 h-[7px] overflow-hidden rounded">
+                        <div
+                          className={cn("h-full rounded", bar)}
+                          style={{
+                            width: `${Math.round((Math.abs(m.amount) / peak) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          {collected.truncated ? (
+            <p className="text-destructive text-sm">
+              More documents than this report reads. Narrow the dates — a
+              truncated total does not reconcile.
+            </p>
+          ) : null}
+
+          {/* Every payment, newest first. Refunds are the negative rows. */}
+          <div className="overflow-x-auto rounded-lg border">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <span className="font-heading text-base font-semibold">
+                Payments received
+              </span>
+              <Badge variant="secondary">
+                {collected.counts.payments} payment
+                {collected.counts.payments === 1 ? "" : "s"}
+                {collected.counts.refunds > 0
+                  ? ` · ${collected.counts.refunds} refund${collected.counts.refunds === 1 ? "" : "s"}`
+                  : ""}
+              </Badge>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-40">Date</TableHead>
+                  <TableHead className="w-32">Document</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead className="w-32">Method</TableHead>
+                  <TableHead className="w-32 text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {collected.rows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-muted-foreground py-10 text-center"
+                    >
+                      No payments in this range.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+                {collected.rows.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {formatDateTime(row.at)}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/sales/${row.saleId}`}
+                        className={cn(
+                          "font-mono text-xs font-medium hover:underline",
+                          row.kind === "refund"
+                            ? "text-destructive"
+                            : "text-brand-700",
+                        )}
+                      >
+                        {row.reference}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {row.customerName ?? "Walk-in"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {isPaymentMethod(row.method)
+                        ? PAYMENT_METHOD_LABELS[row.method]
+                        : row.method}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right font-medium tabular-nums",
+                        row.kind === "refund" && "text-destructive",
+                      )}
+                    >
+                      {formatRs(row.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       ) : null}
 
       {active === "cashiers" ? (
