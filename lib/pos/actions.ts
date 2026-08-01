@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { logAudit } from "@/lib/activity/audit"
+import { isAdminRole } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import { round2 } from "@/lib/format"
 import {
@@ -88,6 +89,60 @@ export async function listCashiers(): Promise<Cashier[]> {
   const user = await requireTillUser()
   if ("status" in user) return []
   return listCashiersCore(await createClient())
+}
+
+export type StaffPinState = Cashier & {
+  /** When the lockout expires, or null when they are not locked out. */
+  lockedUntil: string | null
+  /** Consecutive wrong PINs. Three are free; after that the wait doubles. */
+  failedAttempts: number
+  /** Last successful PIN, or null if it has never been used. */
+  lastUsedAt: string | null
+}
+
+/**
+ * Staff for the Settings screen, with their lockout state.
+ *
+ * Separate from `listCashiers` rather than widening it. That one feeds the
+ * till's cashier switcher, where a lockout is discovered by trying and the
+ * extra columns would ride along on every catalogue sync for nothing.
+ *
+ * This exists because `clearPinLock` — the owner's way to free somebody who has
+ * fumbled their PIN — had no caller anywhere in the app. The action was
+ * written and no button was ever wired to it, so a cashier locked out mid-shift
+ * could only wait out a backoff that doubles, and the owner could not even see
+ * that it had happened.
+ */
+export async function listStaffPinState(): Promise<StaffPinState[]> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive || !isAdminRole(profile.role)) return []
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, pin_code, pin_locked_until, pin_failed_count, pin_last_used_at")
+    .eq("is_active", true)
+    .order("full_name")
+
+  if (error) return []
+
+  const now = Date.now()
+  return (data ?? []).map((row) => {
+    const until = row.pin_locked_until
+    // A lock in the past is not a lock. The column keeps its last value after
+    // the wait expires, so comparing instants here is what stops the screen
+    // showing a stale "Locked" badge on somebody who can sign in perfectly well.
+    const active = until !== null && Date.parse(until) > now
+    return {
+      id: row.id,
+      fullName: row.full_name,
+      role: row.role,
+      hasPin: Boolean(row.pin_code),
+      lockedUntil: active ? until : null,
+      failedAttempts: row.pin_failed_count ?? 0,
+      lastUsedAt: row.pin_last_used_at,
+    }
+  })
 }
 
 /** Seconds a profile must wait before it may try a PIN again. 0 means now. */

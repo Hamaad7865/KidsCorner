@@ -16,7 +16,7 @@ import { StaffPins } from "@/components/settings/staff-pins"
 import { getPaymentMethods, getShopName, getVatRate } from "@/lib/pos/queries"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { listDiscounts } from "@/lib/discounts/queries"
-import { listCashiers } from "@/lib/pos/actions"
+import { listStaffPinState } from "@/lib/pos/actions"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { getMasterData } from "@/lib/master-data/queries"
 
@@ -37,7 +37,7 @@ export default async function SettingsPage() {
     barcodesMissing,
   ] = await Promise.all([
     getMasterData(),
-    listCashiers(),
+    listStaffPinState(),
     listDiscounts(),
     getShopName(),
     getVatRate(),

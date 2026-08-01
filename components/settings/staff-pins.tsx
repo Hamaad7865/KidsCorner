@@ -1,8 +1,8 @@
 "use client"
 
-import { useActionState, useEffect, useState } from "react"
+import { useActionState, useEffect, useState, useTransition } from "react"
 import { useFormStatus } from "react-dom"
-import { AlertCircle, KeyRound, LoaderCircle } from "lucide-react"
+import { AlertCircle, KeyRound, LoaderCircle, Lock, LockOpen } from "lucide-react"
 import { toast } from "sonner"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -20,7 +20,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { IDLE_STATE } from "@/lib/forms"
-import { setCashierPin } from "@/lib/pos/actions"
+import { clearPinLock, setCashierPin } from "@/lib/pos/actions"
+import type { StaffPinState } from "@/lib/pos/actions"
 import type { Cashier } from "@/lib/pos/sale-core"
 
 /**
@@ -33,7 +34,7 @@ export function StaffPins({
   staff,
   canManage,
 }: {
-  staff: Cashier[]
+  staff: StaffPinState[]
   canManage: boolean
 }) {
   const [editing, setEditing] = useState<Cashier | null>(null)
@@ -57,11 +58,27 @@ export function StaffPins({
           >
             <div className="min-w-0">
               <div className="truncate font-medium">{person.fullName}</div>
-              <div className="text-muted-foreground text-xs capitalize">
-                {person.role}
+              <div className="text-muted-foreground text-xs">
+                <span className="capitalize">{person.role}</span>
+                {person.failedAttempts > 0 ? (
+                  <span className="text-warning-foreground">
+                    {" · "}
+                    {person.failedAttempts} wrong{" "}
+                    {person.failedAttempts === 1 ? "try" : "tries"}
+                  </span>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* A lockout is the one thing here that stops somebody working.
+                  It leads, and it says how long is left — "Locked" on its own
+                  invites the owner to wait an unknown amount of time. */}
+              {person.lockedUntil ? (
+                <Badge variant="outline" className="text-destructive">
+                  <Lock aria-hidden className="size-3" />
+                  Locked · {waitLeft(person.lockedUntil)}
+                </Badge>
+              ) : null}
               {person.hasPin ? (
                 <Badge variant="secondary">PIN set</Badge>
               ) : (
@@ -69,6 +86,9 @@ export function StaffPins({
                   No PIN
                 </Badge>
               )}
+              {person.lockedUntil ? (
+                <UnlockButton person={person} canManage={canManage} />
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
@@ -173,5 +193,65 @@ function PinForm({ person, onSaved }: { person: Cashier; onSaved: () => void }) 
         <SaveButton />
       </DialogFooter>
     </form>
+  )
+}
+
+/**
+ * How long is left on a lockout, in words.
+ *
+ * Rounded up, never down: telling somebody "1 minute" when 61 seconds remain
+ * sends them back to the keypad a second early, to be refused again.
+ */
+export function waitLeft(until: string): string {
+  const seconds = Math.ceil((Date.parse(until) - Date.now()) / 1000)
+  if (!Number.isFinite(seconds) || seconds <= 0) return "moments"
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.ceil(minutes / 60)
+  return `${hours}h`
+}
+
+/**
+ * Frees a locked-out cashier without waiting out the clock.
+ *
+ * The action behind this has existed since the lockout was built and had no
+ * caller — the escape hatch was written and never given a handle. Owner-only,
+ * matching the action's own check: clearing the lockout removes the only brake
+ * on guessing a 4-digit PIN, so it is not something a manager can do for
+ * themselves.
+ */
+function UnlockButton({
+  person,
+  canManage,
+}: {
+  person: StaffPinState
+  canManage: boolean
+}) {
+  const [pending, startTransition] = useTransition()
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={!canManage || pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await clearPinLock(person.id)
+          if (result.status === "success") {
+            toast.success(`${person.fullName} can try again now.`)
+          } else if (result.error) {
+            toast.error(result.error)
+          }
+        })
+      }
+    >
+      {pending ? (
+        <LoaderCircle className="animate-spin" aria-hidden />
+      ) : (
+        <LockOpen aria-hidden />
+      )}
+      Unlock
+    </Button>
   )
 }
