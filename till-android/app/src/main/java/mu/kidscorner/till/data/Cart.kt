@@ -13,6 +13,16 @@ data class CartLine(
     val variantId: Int,
     val productName: String,
     val variantLabel: String,
+    /**
+     * Size and colour kept apart as well as joined.
+     *
+     * `variantLabel` is the two of them run together for anywhere that wants one
+     * string. The basket wants them separately: the size is stamped as its own
+     * chip and the colour is drawn as a band, because that is how a person
+     * checks a screen against a pile of children's clothes.
+     */
+    val sizeLabel: String = "",
+    val colourName: String = "",
     val colourHex: String?,
     val sku: String,
     val unitPrice: Double,
@@ -109,6 +119,8 @@ fun List<CartLine>.withVariant(variant: CatalogVariant): List<CartLine> {
         variantId = variant.id,
         productName = variant.productName,
         variantLabel = variant.variantLabel,
+        sizeLabel = variant.sizeLabel,
+        colourName = variant.colourName,
         colourHex = variant.colourHex,
         sku = variant.sku,
         unitPrice = variant.price,

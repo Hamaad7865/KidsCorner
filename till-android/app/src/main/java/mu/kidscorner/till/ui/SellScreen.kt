@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,8 +33,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PersonOutline
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
@@ -53,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -194,6 +200,8 @@ fun SellScreen(
     var query by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf<ProductGroup?>(null) }
     var tab by remember { mutableStateOf<Int?>(null) }
+    /** Whether the catalogue overlay is open. Typing also opens it. */
+    var browsing by remember { mutableStateOf(false) }
     /** The line most recently added, for the design's "Added" badge. */
     var justAdded by remember { mutableStateOf<Int?>(null) }
 
@@ -205,8 +213,19 @@ fun SellScreen(
 
     // The search box is the till's default focus: a barcode scanner acts as a
     // keyboard, so anything typed anywhere has to land here.
+    //
+    // Focused, but the ON-SCREEN keyboard is pushed straight back down. The
+    // counter's scanner is a hardware keyboard; a soft keyboard springing up
+    // over the basket every time the field takes focus would cover the very
+    // thing the cashier is checking, and there is nothing to type on it. It
+    // still opens on a deliberate tap, which is when somebody actually wants
+    // to search by name.
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(picker, lines.size) {
-        if (picker == null) runCatching { search.requestFocus() }
+        if (picker == null) {
+            runCatching { search.requestFocus() }
+            keyboard?.hide()
+        }
     }
 
     // `scanHit` — when what has been typed IS a barcode, the design drops the
@@ -252,14 +271,69 @@ fun SellScreen(
             onCloseTill = onCloseTill,
         )
 
+        // ── the basket owns the screen ────────────────────────────────────
+        //
+        // The counter is scanner-first, so at rest the cashier is not browsing
+        // — they are confirming what just scanned and watching a total. The
+        // catalogue used to hold roughly 60% of the till for an interaction
+        // that happens when a tag is missing; it now lives one tap away in an
+        // overlay, where it gets the WHOLE width to be tapped in rather than a
+        // squeezed column. Nothing was removed; it stopped paying rent.
         Row(Modifier.weight(1f).fillMaxWidth()) {
-            // ── the catalogue side.  flex:1; padding:14px; gap:12px ────────
-            Column(
-                Modifier.weight(1f).fillMaxHeight().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // search row.  gap:10px
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BasketPane(
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                lines = lines,
+                tillOpen = tillOpen,
+                note = note,
+                justAdded = justAdded,
+                itemCount = totals.itemCount,
+                onSetQty = onSetQty,
+                onSetLineDiscount = onSetLineDiscount,
+                onOpenPriceOverride = onOpenPriceOverride,
+                onOpenNote = onOpenNote,
+                onSetNote = onSetNote,
+                onRemove = onRemove,
+                onClear = onClear,
+                onOpenTill = onOpenTill,
+            )
+
+            CartPane(
+                modifier = Modifier.width(468.dp).fillMaxHeight(),
+                lines = lines,
+                totals = totals,
+                vatRate = vatRate,
+                tillOpen = tillOpen,
+                customer = customer,
+                discount = discount,
+                heldCount = heldCount,
+                onOpenNote = onOpenNote,
+                note = note,
+                onPay = onPay,
+                onHold = onHold,
+                onOpenHeld = onOpenHeld,
+                onOpenCustomer = onOpenCustomer,
+                onDetachCustomer = onDetachCustomer,
+                onOpenDiscount = onOpenDiscount,
+                onRemoveDiscount = onRemoveDiscount,
+                onCloseTill = onCloseTill,
+                onOpenMovement = onOpenMovement,
+                onOpenHistory = onOpenHistory,
+            )
+        }
+
+        // ── the scan bar: full width, always focused ──────────────────────
+        //
+        // A hardware scanner is a keyboard, so this holds focus and anything
+        // typed anywhere lands here. It spans the till because it is the till's
+        // primary input, not a field in a corner of a browsing pane.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Handoff.Surface)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
                     SearchField(
                         value = query,
                         onValueChange = { query = it },
@@ -269,6 +343,28 @@ fun SellScreen(
                         modifier = Modifier.weight(1f),
                     )
                     ScanButton(onClick = ::submitSearch)
+
+                    // The way into the catalogue when a tag is missing.
+                    Surface(
+                        onClick = { browsing = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.Surface,
+                        contentColor = Handoff.InkStrong,
+                        border = BorderStroke(1.dp, Handoff.Line),
+                        modifier = Modifier.size(width = 132.dp, height = 56.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(
+                                8.dp,
+                                Alignment.CenterHorizontally,
+                            ),
+                        ) {
+                            Icon(Icons.Default.GridView, null, Modifier.size(18.dp))
+                            Text("Browse", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
 
                     // `width:74px;height:56px` — everything the till does that
                     // is not ringing up a sale, kept off the selling surface.
@@ -295,105 +391,30 @@ fun SellScreen(
                             )
                         }
                     }
-                }
-
-                if (query.trim().length < 2) {
-                    // tab strip.  gap:8px, with the custom-item key pushed to
-                    // the far end by the design's own `flex:1` spacer.
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        tabs.forEach { (id, label, count) ->
-                            Tab(
-                                label = label,
-                                count = count,
-                                selected = tab == id,
-                                onClick = { tab = if (tab == id) null else id },
-                            )
-                        }
-                        Spacer(Modifier.weight(1f))
-                        // `border:1px dashed #B6C9CB` — dashed because it adds
-                        // something the catalogue does not have.
-                        Surface(
-                            onClick = onOpenCustomItem,
-                            shape = RoundedCornerShape(11.dp),
-                            color = Handoff.Surface,
-                            contentColor = Handoff.Muted,
-                            modifier = Modifier
-                                .height(48.dp)
-                                .dashedBorder(Handoff.LineStrong, 11.dp),
-                        ) {
-                            Row(
-                                Modifier.fillMaxHeight().padding(horizontal = 15.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                            ) {
-                                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
-                                Text(
-                                    "Custom item",
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                when {
-                    catalog.isEmpty() -> Centred {
-                        Text(
-                            if (catalogLoading) "Loading the catalogue…"
-                            else "No products on this device yet.",
-                            fontSize = 14.sp,
-                            color = Handoff.Muted2,
-                        )
-                    }
-
-                    query.trim().length >= 2 ->
-                        if (scanHit != null) {
-                            ScanHitRow(scanHit, query.trim()) { add(scanHit); query = "" }
-                        } else {
-                            ResultRows(results, query.trim(), ::open, ::add)
-                        }
-
-                    else -> TileGrid(tiles, ::open)
-                }
-            }
-
-            // ── the cart side.  width:406px in the handoff ────────────────
-            CartPane(
-                modifier = Modifier.width(508.dp).fillMaxHeight(),
-                lines = lines,
-                totals = totals,
-                vatRate = vatRate,
-                tillOpen = tillOpen,
-                customer = customer,
-                discount = discount,
-                heldCount = heldCount,
-                justAdded = justAdded,
-                onSetQty = onSetQty,
-                onSetLineDiscount = onSetLineDiscount,
-                onOpenPriceOverride = onOpenPriceOverride,
-                onOpenNote = onOpenNote,
-                onSetNote = onSetNote,
-                note = note,
-                onRemove = onRemove,
-                onClear = onClear,
-                onPay = onPay,
-                onHold = onHold,
-                onOpenHeld = onOpenHeld,
-                onOpenCustomer = onOpenCustomer,
-                onDetachCustomer = onDetachCustomer,
-                onOpenDiscount = onOpenDiscount,
-                onRemoveDiscount = onRemoveDiscount,
-                onOpenTill = onOpenTill,
-                onCloseTill = onCloseTill,
-                onOpenMovement = onOpenMovement,
-                onOpenHistory = onOpenHistory,
-            )
         }
+    }
+
+    // ── Browse: the catalogue, given the whole till ───────────────────────
+    //
+    // Opened by the Browse key or by typing two characters. A search that finds
+    // something opens it; a scan closes it. Nothing here is new — it is the
+    // same tabs, tiles and results, with room to actually tap them.
+    if (browsing || query.trim().length >= 2) {
+        BrowseOverlay(
+            catalog = catalog,
+            catalogLoading = catalogLoading,
+            query = query.trim(),
+            scanHit = scanHit,
+            results = results,
+            tabs = tabs,
+            tiles = tiles,
+            selectedTab = tab,
+            onSelectTab = { tab = if (tab == it) null else it },
+            onOpenGroup = ::open,
+            onAdd = { add(it); query = "" },
+            onOpenCustomItem = { browsing = false; onOpenCustomItem() },
+            onDismiss = { browsing = false; query = "" },
+        )
     }
 
     picker?.let { group ->
@@ -564,7 +585,9 @@ private fun Tab(label: String, count: Int, selected: Boolean, onClick: () -> Uni
 @Composable
 private fun TileGrid(groups: List<ProductGroup>, onPick: (ProductGroup) -> Unit) {
     LazyVerticalGrid(
-        columns = GridCells.Fixed(4),
+        // Five across: the overlay has the whole till to work with, where the
+        // old in-pane grid had a squeezed column.
+        columns = GridCells.Fixed(5),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
@@ -751,37 +774,163 @@ private fun Centred(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), Alignment.Center) { content() }
 }
 
-// ─────────────────────────────────────────────────────────────── the cart
+// ───────────────────────────────────────────────────────────── the browser
 
+/**
+ * The catalogue, over the whole till.
+ *
+ * This is the fallback path — a garment whose tag has gone, stock not yet
+ * labelled, a gift item. It used to sit permanently in the largest region of
+ * the screen for an interaction that happens a handful of times a day. Here it
+ * is one tap away and gets the full width when it arrives, so the tiles are
+ * bigger than they ever were in the old column.
+ */
 @Composable
-private fun CartPane(
+private fun BrowseOverlay(
+    catalog: List<CatalogVariant>,
+    catalogLoading: Boolean,
+    query: String,
+    scanHit: CatalogVariant?,
+    results: List<ProductGroup>,
+    tabs: List<Triple<Int, String, Int>>,
+    tiles: List<ProductGroup>,
+    selectedTab: Int?,
+    onSelectTab: (Int) -> Unit,
+    onOpenGroup: (ProductGroup) -> Unit,
+    onAdd: (CatalogVariant) -> Unit,
+    onOpenCustomItem: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0x66201A18))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onDismiss,
+            ),
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = 56.dp)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .background(Handoff.Canvas)
+                // Swallows taps so a press inside does not dismiss.
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = {},
+                )
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (query.isEmpty()) "BROWSE" else "RESULTS",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp,
+                    color = Handoff.Muted3,
+                )
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    onClick = onOpenCustomItem,
+                    shape = RoundedCornerShape(11.dp),
+                    color = Handoff.Surface,
+                    contentColor = Handoff.Muted,
+                    modifier = Modifier.height(48.dp).dashedBorder(Handoff.LineStrong, 11.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxHeight().padding(horizontal = 15.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                        Text("Custom item", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(11.dp),
+                    color = Handoff.Surface,
+                    contentColor = Handoff.InkStrong,
+                    border = BorderStroke(1.dp, Handoff.Line),
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        Icon(Icons.Default.Close, "Close browse", Modifier.size(18.dp))
+                    }
+                }
+            }
+
+            if (query.isEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    tabs.forEach { (id, label, count) ->
+                        Tab(
+                            label = label,
+                            count = count,
+                            selected = selectedTab == id,
+                            onClick = { onSelectTab(id) },
+                        )
+                    }
+                }
+            }
+
+            when {
+                catalog.isEmpty() -> Centred {
+                    Text(
+                        if (catalogLoading) "Loading the catalogue…"
+                        else "No products on this device yet.",
+                        fontSize = 15.sp,
+                        color = Handoff.Muted2,
+                    )
+                }
+
+                query.length >= 2 ->
+                    if (scanHit != null) {
+                        ScanHitRow(scanHit, query) { onAdd(scanHit) }
+                    } else {
+                        ResultRows(results, query, onOpenGroup, onAdd)
+                    }
+
+                else -> TileGrid(tiles, onOpenGroup)
+            }
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────── the basket
+
+/**
+ * The basket, which now owns the till.
+ *
+ * At rest a scanning cashier is doing one of two things: confirming that what
+ * they just scanned is what they meant, and reading the total. This pane is the
+ * first of those, so it is given the room and the type size to be read at arm's
+ * length while their hands are on the goods.
+ */
+@Composable
+private fun BasketPane(
     lines: List<CartLine>,
-    totals: CartTotals,
-    vatRate: Double,
     tillOpen: Boolean,
-    customer: Customer?,
-    discount: AppliedDiscountLocal?,
-    heldCount: Int,
+    note: String,
     justAdded: Int?,
+    itemCount: Int,
     onSetQty: (Int, Int) -> Unit,
     onSetLineDiscount: (Int, String?, Double) -> Unit,
     onOpenPriceOverride: (Int) -> Unit,
-    onRemoveDiscount: () -> Unit,
     onOpenNote: () -> Unit,
     onSetNote: (String) -> Unit,
-    note: String,
     onRemove: (Int) -> Unit,
     onClear: () -> Unit,
-    onPay: () -> Unit,
-    onHold: () -> Unit,
-    onOpenHeld: () -> Unit,
-    onOpenCustomer: () -> Unit,
-    onDetachCustomer: () -> Unit,
-    onOpenDiscount: () -> Unit,
     onOpenTill: () -> Unit,
-    onCloseTill: () -> Unit,
-    onOpenMovement: () -> Unit,
-    onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     /** The design confirms a clear IN PLACE — the button becomes "Clear sale?". */
@@ -790,13 +939,56 @@ private fun CartPane(
         if (confirmingClear) { delay(3_000); confirmingClear = false }
     }
 
-    Column(modifier.background(Handoff.Surface)) {
-        // `hasNote` — `margin:9px 14px 0; padding:4px 6px 4px 10px`
+    Column(modifier.background(Handoff.Canvas).padding(horizontal = 14.dp)) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "BASKET",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.4.sp,
+                color = Handoff.Muted3,
+            )
+            if (itemCount > 0) {
+                Text(
+                    "  $itemCount item${if (itemCount == 1) "" else "s"}",
+                    fontFamily = PlexMono,
+                    fontSize = 13.sp,
+                    color = Handoff.Muted3,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (lines.isNotEmpty()) {
+                if (confirmingClear) {
+                    Surface(
+                        onClick = { onClear(); confirmingClear = false },
+                        shape = RoundedCornerShape(11.dp),
+                        color = Handoff.Danger,
+                        contentColor = Color.White,
+                        modifier = Modifier.height(44.dp),
+                    ) {
+                        Box(Modifier.padding(horizontal = 16.dp).fillMaxHeight(), Alignment.Center) {
+                            Text("Clear sale?", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    ToolButton(
+                        label = "Clear",
+                        textColour = Handoff.Muted2,
+                        modifier = Modifier.height(44.dp),
+                        onClick = { confirmingClear = true },
+                    )
+                }
+            }
+        }
+
         if (note.isNotBlank()) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 14.dp, end = 14.dp, top = 9.dp)
+                    .padding(bottom = 9.dp)
                     .clip(RoundedCornerShape(11.dp))
                     .background(Color(0xFFFFF9EF))
                     .border(1.dp, Color(0xFFF2E1C4), RoundedCornerShape(11.dp))
@@ -813,8 +1005,8 @@ private fun CartPane(
                 Text(
                     note,
                     Modifier.weight(1f).clickable(onClick = onOpenNote),
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.5.sp,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
                     color = Color(0xFF7A4E10),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -833,85 +1025,48 @@ private fun CartPane(
             }
         }
 
-        // toolbar.  padding:12px 14px; gap:8px
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            ToolButton(
-                label = "Hold",
-                icon = Icons.Default.Pause,
-                enabled = lines.isNotEmpty(),
-                border = Handoff.LineStrong,
-                background = Handoff.Well2,
-                modifier = Modifier.weight(1f),
-                onClick = onHold,
-            )
-            ToolButton(
-                label = "Held",
-                badge = heldCount.takeIf { it > 0 },
-                modifier = Modifier.width(92.dp),
-                onClick = onOpenHeld,
-            )
-            if (confirmingClear) {
-                Surface(
-                    onClick = { onClear(); confirmingClear = false },
-                    shape = RoundedCornerShape(11.dp),
-                    color = Handoff.Danger,
-                    contentColor = Color.White,
-                    modifier = Modifier.width(118.dp).height(48.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        Text("Clear sale?", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            } else {
-                ToolButton(
-                    label = "Clear",
-                    enabled = lines.isNotEmpty(),
-                    textColour = Handoff.Muted2,
-                    modifier = Modifier.width(78.dp),
-                    onClick = { confirmingClear = true },
-                )
-            }
-        }
-
         if (!tillOpen) {
             Surface(
                 onClick = onOpenTill,
                 color = Handoff.DangerTint,
                 contentColor = Handoff.Danger,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp),
                 shape = RoundedCornerShape(11.dp),
             ) {
                 Text(
                     "The till is closed. Tap to count the float and start a shift.",
                     Modifier.padding(12.dp),
-                    fontSize = 12.5.sp,
+                    fontSize = 13.sp,
                 )
             }
         }
 
-        // lines.  padding:0 14px
-        Box(Modifier.weight(1f).padding(horizontal = 14.dp)) {
+        Box(Modifier.weight(1f)) {
             if (lines.isEmpty()) {
+                // An empty basket is an invitation, not a void: it says what to
+                // do, and the scan bar below it is where to do it.
                 Column(
                     Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 30.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(
-                        Icons.Default.ShoppingCart,
+                        Icons.Default.QrCodeScanner,
                         contentDescription = null,
                         tint = Handoff.Ghost,
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.size(46.dp),
                     )
-                    Spacer(Modifier.height(10.dp))
-                    Text("Cart is empty", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Handoff.Muted2)
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(14.dp))
                     Text(
-                        "Scan a label, tap a quick key, or resume a held sale.",
-                        fontSize = 12.5.sp,
+                        "Scan a tag to start",
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Handoff.Muted2,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "No tag? Tap Browse, or type a name below.",
+                        fontSize = 14.sp,
                         color = Handoff.Faint,
                         textAlign = TextAlign.Center,
                     )
@@ -931,7 +1086,42 @@ private fun CartPane(
                 }
             }
         }
+    }
+}
 
+// ─────────────────────────────────────────────────────────────── the cart
+
+@Composable
+private fun CartPane(
+    /** Only to know whether there is anything to hold. */
+    lines: List<CartLine>,
+    totals: CartTotals,
+    vatRate: Double,
+    tillOpen: Boolean,
+    customer: Customer?,
+    discount: AppliedDiscountLocal?,
+    heldCount: Int,
+    onRemoveDiscount: () -> Unit,
+    onOpenNote: () -> Unit,
+    note: String,
+    onPay: () -> Unit,
+    onHold: () -> Unit,
+    onOpenHeld: () -> Unit,
+    onOpenCustomer: () -> Unit,
+    onDetachCustomer: () -> Unit,
+    onOpenDiscount: () -> Unit,
+    onCloseTill: () -> Unit,
+    onOpenMovement: () -> Unit,
+    onOpenHistory: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+
+    // ── the rail ──────────────────────────────────────────────────────────
+    //
+    // What the cashier and the customer both look at, and the one action that
+    // matters. The basket is checked on the left; this side answers "how much"
+    // and "take the money", and everything else on it is deliberately quiet.
+    Column(modifier.background(Handoff.Surface)) {
         CartFooter(
             totals = totals,
             vatRate = vatRate,
@@ -945,10 +1135,44 @@ private fun CartPane(
             onPay = onPay,
             onOpenCustomer = onOpenCustomer,
             onDetachCustomer = onDetachCustomer,
-            onOpenMovement = onOpenMovement,
-            onOpenHistory = onOpenHistory,
-            onCloseTill = onCloseTill,
         )
+
+        // Hold and the parked baskets. Quiet, and below the fold of the total:
+        // they are not what this rail is for, but a cashier fetching another
+        // size needs them within reach.
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ToolButton(
+                label = "Hold",
+                icon = Icons.Default.Pause,
+                enabled = lines.isNotEmpty(),
+                border = Handoff.LineStrong,
+                background = Handoff.Well2,
+                modifier = Modifier.weight(1f).height(48.dp),
+                onClick = onHold,
+            )
+            ToolButton(
+                label = "Held",
+                badge = heldCount.takeIf { it > 0 },
+                modifier = Modifier.weight(1f).height(48.dp),
+                onClick = onOpenHeld,
+            )
+        }
+
+        // Everything a till does between customers, under the keys that do the
+        // selling — reachable, never in the way of taking money.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            FooterLink("Cash in/out", onOpenMovement)
+            FooterLink("Past sales", onOpenHistory)
+            if (tillOpen) FooterLink("Close till", onCloseTill)
+        }
     }
 }
 
@@ -1035,34 +1259,79 @@ private fun CartRow(
     val discounted = line.discount > 0
     var discOpen by remember(line.variantId) { mutableStateOf(false) }
 
-    Column(
+    Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 11.dp, bottom = 12.dp)
-            .border(0.dp, Color.Transparent),
+            .padding(vertical = 5.dp)
+            .clip(RoundedCornerShape(13.dp))
+            .background(if (isNew) Handoff.AccentTint else Handoff.Surface)
+            .border(
+                1.dp,
+                if (isNew) Handoff.AccentLine else Handoff.LineSoft,
+                RoundedCornerShape(13.dp),
+            ),
+        verticalAlignment = Alignment.Top,
     ) {
+        // The garment's own colour, running the full height of the line.
+        //
+        // This is the one place chroma is let in from outside the brand, and it
+        // is what makes a basket checkable against a pile of clothes at arm's
+        // length: you match the band and the size chip, not the words. A
+        // variant with no colour on file gets a neutral rather than a guess,
+        // the same rule ColourSwatch follows.
+        Box(
+            Modifier
+                .width(9.dp)
+                .heightIn(min = 86.dp)
+                .fillMaxHeight()
+                .background(parseHex(line.colourHex) ?: Handoff.Ghost),
+        )
+
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 13.dp, end = 11.dp, top = 11.dp, bottom = 11.dp),
+        ) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(
                     line.productName,
-                    fontSize = 14.5.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
-                    lineHeight = 18.85.sp,
+                    lineHeight = 25.sp,
+                    letterSpacing = (-0.2).sp,
                     color = Handoff.Ink,
                 )
                 Row(
-                    Modifier.padding(top = 4.dp),
+                    Modifier.padding(top = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    ColourSwatch(line.colourHex, size = 12)
+                    // The size, stamped. Mono and uppercase so "3-6 MTHS" reads
+                    // as a garment tag rather than as prose.
+                    if (line.sizeLabel.isNotBlank()) {
+                        Text(
+                            line.sizeLabel.uppercase(),
+                            Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .background(Handoff.Well)
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                            fontFamily = PlexMono,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.5.sp,
+                            color = Handoff.Muted,
+                        )
+                    }
                     Text(
-                        line.variantLabel.ifBlank { line.sku },
-                        fontSize = 12.5.sp,
+                        line.colourName.ifBlank { line.variantLabel.ifBlank { line.sku } },
+                        fontSize = 14.sp,
                         color = Handoff.Muted2,
                     )
-                    if (isNew) {
-                        Badge("Added", Handoff.AccentTint, Handoff.AccentText)
+                    // The last one on the shelf, said on the line it concerns
+                    // rather than as a warning after the sale is refused.
+                    if (line.qtyOnHand == 1 && !line.isCustom) {
+                        Badge("Last one", Handoff.WarnTint, Handoff.WarnText)
                     }
                     if (line.priceOverride != null) {
                         // `l.overridden` — a hand-set price is called out by
@@ -1090,7 +1359,7 @@ private fun CartRow(
                     Text(
                         formatAmount(line.unitPrice * line.qty),
                         fontFamily = PlexMono,
-                        fontSize = 11.5.sp,
+                        fontSize = 13.sp,
                         color = Handoff.Faint,
                         textDecoration = TextDecoration.LineThrough,
                     )
@@ -1098,10 +1367,21 @@ private fun CartRow(
                 Text(
                     formatAmount(line.lineTotal),
                     fontFamily = PlexMono,
-                    fontSize = 15.5.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-0.4).sp,
                     color = Handoff.InkFigure,
                 )
+                // So a line of three reads as three of one thing rather than as
+                // one expensive thing.
+                if (line.qty > 1) {
+                    Text(
+                        "${line.qty} x ${formatAmount(line.unitPrice)}",
+                        fontFamily = PlexMono,
+                        fontSize = 12.sp,
+                        color = Handoff.Muted3,
+                    )
+                }
             }
 
             Surface(
@@ -1218,8 +1498,7 @@ private fun CartRow(
             }
         }
 
-        Spacer(Modifier.height(13.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
+        }
     }
 }
 
@@ -1327,42 +1606,125 @@ private fun CartFooter(
     onOpenNote: () -> Unit,
     onOpenCustomer: () -> Unit,
     onDetachCustomer: () -> Unit,
-    onOpenMovement: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onCloseTill: () -> Unit,
 ) {
     Column(
         Modifier
             .fillMaxWidth()
             .background(Color(0xFFFBFDFD))
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 16.dp),
     ) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
-        Spacer(Modifier.height(12.dp))
+        // ── the total, first and largest ──────────────────────────────────
+        //
+        // This is the figure the cashier reads out and the customer checks, and
+        // it used to be 34sp at the bottom of a 500dp column. It leads now, in
+        // mono so the digits do not shift width as it changes, and in the one
+        // colour reserved for it.
+        Text(
+            "TOTAL",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+            color = Handoff.Muted3,
+        )
+        Text(
+            formatAmount(totals.total),
+            fontFamily = PlexMono,
+            fontSize = 56.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-2).sp,
+            lineHeight = 60.sp,
+            color = Handoff.AccentSolid,
+        )
+        Text(
+            "incl. VAT ${(vatRate * 100).toInt()}%  ${formatAmount(totals.vat)}",
+            fontFamily = PlexMono,
+            fontSize = 12.5.sp,
+            color = Handoff.Muted4,
+        )
 
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 3.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
+        Spacer(Modifier.height(14.dp))
+
+        if (totals.itemCount > 0 && tillOpen) {
             Surface(
-                onClick = if (customer == null) onOpenCustomer else onDetachCustomer,
-                color = Color.Transparent,
-                contentColor = if (customer == null) Handoff.Muted2 else Handoff.AccentText,
+                onClick = onPay,
+                shape = RoundedCornerShape(14.dp),
+                color = Handoff.AccentSolid,
+                contentColor = Color.White,
+                modifier = Modifier.fillMaxWidth().height(88.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("PAY", fontSize = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text(
+                        formatAmount(totals.total),
+                        fontFamily = PlexMono,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        } else {
+            // Blocked reads as a well, never as a dimmed button — the handoff's
+            // own rule, and it stops a cashier stabbing at something disabled.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(88.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Handoff.Blocked),
+                Alignment.Center,
             ) {
                 Text(
-                    customer?.fullName ?: "Attach customer",
-                    fontSize = 13.sp,
-                    fontWeight = if (customer == null) FontWeight.Normal else FontWeight.SemiBold,
+                    if (!tillOpen) "Open the till to sell" else "Scan something to sell",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Handoff.BlockedText,
                 )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                FooterLink("Cash in/out", onOpenMovement)
-                FooterLink("Past sales", onOpenHistory)
-                if (tillOpen) FooterLink("Close till", onCloseTill)
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(16.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
+        Spacer(Modifier.height(12.dp))
+
+        // The customer, as a key rather than as grey text. Attaching one is a
+        // deliberate act with a name attached to it afterwards, so it gets a
+        // target a thumb can find.
+        Surface(
+            onClick = if (customer == null) onOpenCustomer else onDetachCustomer,
+            shape = RoundedCornerShape(11.dp),
+            color = if (customer == null) Handoff.Surface else Handoff.AccentTint,
+            contentColor = if (customer == null) Handoff.Muted else Handoff.AccentText,
+            border = BorderStroke(
+                1.dp,
+                if (customer == null) Handoff.Line else Handoff.AccentLine,
+            ),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                Icon(Icons.Default.PersonOutline, null, Modifier.size(18.dp))
+                Text(
+                    customer?.fullName ?: "Attach a customer",
+                    fontSize = 14.sp,
+                    fontWeight = if (customer == null) FontWeight.Medium else FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (customer != null) {
+                    Icon(Icons.Default.Close, "Detach the customer", Modifier.size(16.dp))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         // ── the basket-discount chip and the note key ───────────────────────
         //
@@ -1476,83 +1838,6 @@ private fun CartFooter(
             }
         }
 
-        TotalRow(
-            "VAT ${(vatRate * 100).toInt()}% (included)",
-            formatAmount(totals.vat),
-            12.5.sp,
-            Handoff.Muted4,
-            Handoff.Muted4,
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
-        Spacer(Modifier.height(10.dp))
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Text(
-                "TOTAL",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.3.sp,
-                color = Handoff.Muted,
-            )
-            Text(
-                formatAmount(totals.total),
-                fontFamily = PlexMono,
-                fontSize = 34.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-1).sp,
-                lineHeight = 34.sp,
-                color = Handoff.InkFigure,
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        if (totals.itemCount > 0 && tillOpen) {
-            Surface(
-                onClick = onPay,
-                shape = RoundedCornerShape(14.dp),
-                color = Handoff.AccentSolid,
-                contentColor = Color.White,
-                modifier = Modifier.fillMaxWidth().height(72.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxSize().padding(horizontal = 22.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text("PAY", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.9.sp)
-                    Text(
-                        formatAmount(totals.total),
-                        fontFamily = PlexMono,
-                        fontSize = 23.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.46).sp,
-                    )
-                }
-            }
-        } else {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(72.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFEFF3F3)),
-                Alignment.Center,
-            ) {
-                Text(
-                    if (!tillOpen) "Open the till to take payment" else "Add an item to take payment",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Handoff.Fainter,
-                )
-            }
-        }
     }
 }
 

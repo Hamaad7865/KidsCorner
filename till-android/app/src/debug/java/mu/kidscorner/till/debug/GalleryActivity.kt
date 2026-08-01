@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.data.AppliedDiscountLocal
+import kotlin.math.absoluteValue
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.Cashier
 import mu.kidscorner.till.data.CloseShiftResponse
@@ -564,15 +565,21 @@ private fun line(
     price: Double,
     qty: Int,
     category: Int = 1,
+    size: String = "",
+    colour: String = "",
+    hex: String = "#F0806B",
+    stock: Int = 12,
 ) = CartLine(
-    variantId = name.hashCode(),
+    variantId = name.hashCode().absoluteValue,
     productName = name,
     variantLabel = variant,
-    colourHex = "#F0806B",
+    sizeLabel = size,
+    colourName = colour,
+    colourHex = hex,
     sku = "KC-${name.take(3).uppercase()}",
     unitPrice = price,
     qty = qty,
-    qtyOnHand = 12,
+    qtyOnHand = stock,
     categoryId = category,
 )
 
@@ -643,8 +650,9 @@ private val SAMPLE_CATALOG = listOf(
 )
 
 private val SAMPLE_LINES = listOf(
-    line("Cotton romper", "Coral · 3–6m", 565.71, 2, category = 1),
-    line("Sun hat", "Butter · One size", 320.00, 1, category = 2),
+    line("Cotton romper", "Coral · 3–6m", 565.71, 2, 1, "3-6 mths", "Coral", "#F0806B"),
+    line("Denim dungarees", "Indigo · 1–2y", 1_240.00, 1, 1, "1-2 yrs", "Indigo", "#3B4A7A"),
+    line("Sun hat", "Butter · One size", 320.00, 1, 2, "One size", "Butter", "#F7E9A0", stock = 1),
 )
 
 private val SAMPLE_RECEIPT = """
