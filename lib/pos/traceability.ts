@@ -12,17 +12,17 @@ import { createClient } from "@/lib/supabase/server"
  * happened, not by duplicating them into a log that can then disagree with the
  * thing it describes.
  *
- * So this feed is derived. Every event below is read from the ledger that
- * already holds it, and reaches this device through the same chain the money
- * does — sale to shift to device. Nothing here is written twice, and nothing
- * here can drift from the sale it describes.
+ * So this feed is derived. Every money event below is read from the ledger
+ * that already holds it, and reaches this device through the same chain the
+ * money does — sale to shift to device. Nothing here is written twice, and
+ * nothing here can drift from the sale it describes.
  *
- * WHAT THIS CANNOT YET SHOW, and why. Carfectionist also traces terminal
- * starts, app version changes, operator sign-ins and device enable/disable.
- * Those live in `audit_events`, which records what changed but not which till
- * it was changed at — so attributing them to a device would be a guess. The
- * fix is a `device_id` column on `audit_events` fed by the till API, not a
- * heuristic here.
+ * The four events that never touch a sale — terminal starts, version changes,
+ * operator sign-ins, retire/restore — come from `audit_events`, which since
+ * migration 026 records the device at the moment of writing: the registration
+ * RPC knows the device because the device is announcing itself, the PIN check
+ * is told it by the till asking, and a trigger catches retirement from any
+ * direction. Still one recorder per fact; nothing attributed by guesswork.
  */
 
 export type TraceKind =
@@ -34,6 +34,10 @@ export type TraceKind =
   | "refund"
   | "cash_out"
   | "till_close"
+  | "terminal"
+  | "version"
+  | "operator"
+  | "device_state"
 
 export type TraceEvent = {
   key: string
@@ -109,6 +113,60 @@ type TraceInput = {
     reason: string
     byName: string | null
   }[]
+  /**
+   * Device-attributed audit events — the four kinds migration 026 exists for:
+   * terminal starts, version changes, operator sign-ins, retire/restore. The
+   * recorder wrote a human summary at the moment it knew everything, so the
+   * feed shows that rather than re-deriving one from a row that may be gone.
+   */
+  audits: {
+    id: number
+    at: string
+    eventType: string
+    summary: string
+    detail: Record<string, unknown>
+  }[]
+}
+
+/** How an audit event renders on the feed. Exported for the tests. */
+export function auditEvent(audit: TraceInput["audits"][number]): TraceEvent {
+  const base = { key: `a${audit.id}`, at: audit.at, detail: audit.summary, href: null }
+  switch (audit.eventType) {
+    case "till_registered":
+      return { ...base, kind: "terminal", title: "Till registered" }
+    case "terminal_started":
+      return { ...base, kind: "terminal", title: "Terminal started" }
+    case "app_version_changed": {
+      const from = audit.detail.from
+      const to = audit.detail.to
+      return {
+        ...base,
+        kind: "version",
+        title: "App version changed",
+        detail:
+          typeof from === "string" || typeof to === "string"
+            ? `${typeof from === "string" ? `v${from}` : "—"} → ${typeof to === "string" ? `v${to}` : "—"}`
+            : audit.summary,
+      }
+    }
+    case "operator_signed_in":
+      return { ...base, kind: "operator", title: "Operator" }
+    case "till_retired":
+    case "till_restored":
+      return {
+        ...base,
+        kind: "device_state",
+        title: audit.eventType === "till_retired" ? "Till retired" : "Till brought back",
+      }
+    default:
+      // Whatever else lands on this device later still shows, named after its
+      // type — an event the feed cannot render is worse than a plain one.
+      return {
+        ...base,
+        kind: "device_state",
+        title: audit.eventType.replaceAll("_", " ").replaceAll(".", " "),
+      }
+  }
 }
 
 /**
@@ -228,6 +286,10 @@ export function buildTrace(input: TraceInput): TraceEvent[] {
     })
   }
 
+  for (const audit of input.audits) {
+    events.push(auditEvent(audit))
+  }
+
   // Newest first, by instant — never by string, since these arrive at +00:00
   // and the shop's day is +04:00. Ties break on key so two events recorded in
   // the same millisecond keep a stable order between renders.
@@ -273,11 +335,13 @@ export async function getDeviceTrace(
       (s.closed_at === null || Date.parse(s.closed_at) >= startMs),
   )
 
-  if (shifts.length === 0) return { from, to, events: [] }
+  // NOT gated on the shifts: a terminal can start, update or sign an operator
+  // in on a day it never opened a drawer, and those events are half the point
+  // of the feed. `.limit(-1)` is not a thing, so an empty shift list simply
+  // queries the money ledgers with an impossible id.
+  const shiftIds = shifts.length > 0 ? shifts.map((s) => s.id) : [-1]
 
-  const shiftIds = shifts.map((s) => s.id)
-
-  const [{ data: saleRows }, { data: movementRows }, { data: creditRows }] =
+  const [{ data: saleRows }, { data: movementRows }, { data: creditRows }, { data: auditRows }] =
     await Promise.all([
       supabase
         .from("sales")
@@ -302,6 +366,17 @@ export async function getDeviceTrace(
            profiles ( full_name )`,
         )
         .in("shift_id", shiftIds),
+      // Terminal starts, version changes, sign-ins, retire/restore — recorded
+      // with this device's id by migration 026, filtered by instant range in
+      // SQL since `at` is indexed with device_id.
+      supabase
+        .from("audit_events")
+        .select("id, at, event_type, summary, detail")
+        .eq("device_id", device.id)
+        .gte("at", startOfShopDay(from))
+        .lte("at", endOfShopDay(to))
+        .order("at", { ascending: false })
+        .limit(300),
     ])
 
   const payments: TraceInput["payments"] = []
@@ -408,6 +483,16 @@ export async function getDeviceTrace(
           reason: m.reason,
           byName: m.profiles?.full_name ?? null,
         })),
+      audits: (auditRows ?? []).map((a) => ({
+        id: a.id,
+        at: a.at,
+        eventType: a.event_type,
+        summary: a.summary,
+        detail:
+          a.detail && typeof a.detail === "object" && !Array.isArray(a.detail)
+            ? (a.detail as Record<string, unknown>)
+            : {},
+      })),
     }),
   }
 }

@@ -34,10 +34,14 @@ export function CashFlowTab({
   flow,
   basePath,
   params,
+  action,
 }: {
   flow: CashFlow
   basePath: string
   params: Record<string, string | undefined>
+  /** The Cash out button, when the viewer may use it — composed by the page
+   *  so this component stays free of role checks. */
+  action?: React.ReactNode
 }) {
   const inflowTotal = flowTotal(flow.inflows)
   const outflowTotal = flowTotal(flow.outflows)
@@ -145,12 +149,15 @@ export function CashFlowTab({
                 Every payment in and out of this till over the period.
               </p>
             </div>
-            <DateRangeFilter
-              basePath={basePath}
-              params={params}
-              from={flow.from}
-              to={flow.to}
-            />
+            <div className="flex flex-wrap items-center gap-2.5">
+              {action}
+              <DateRangeFilter
+                basePath={basePath}
+                params={params}
+                from={flow.from}
+                to={flow.to}
+              />
+            </div>
           </div>
 
           {flow.truncated ? (

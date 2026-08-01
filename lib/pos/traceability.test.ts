@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { buildTrace } from "./traceability"
+import { auditEvent, buildTrace } from "./traceability"
 
 /** Only the arrays a test cares about; the rest stay empty. */
 const trace = (input: Partial<Parameters<typeof buildTrace>[0]>) =>
@@ -11,6 +11,7 @@ const trace = (input: Partial<Parameters<typeof buildTrace>[0]>) =>
     prints: [],
     refunds: [],
     movements: [],
+    audits: [],
     ...input,
   })
 
@@ -149,6 +150,72 @@ describe("buildTrace — money", () => {
 
     expect(out[0]).toMatchObject({ title: "Disbursement", kind: "cash_out" })
     expect(inn[0]).toMatchObject({ title: "Paid in", kind: "float_in" })
+  })
+})
+
+describe("auditEvent — the device events migration 026 records", () => {
+  const audit = (eventType: string, over: Record<string, unknown> = {}) => ({
+    id: 7,
+    at: "2026-07-29T06:00:00.000Z",
+    eventType,
+    summary: "what the recorder wrote",
+    detail: {},
+    ...over,
+  })
+
+  it("maps each recorded kind onto Carfectionist's vocabulary", () => {
+    expect(auditEvent(audit("till_registered"))).toMatchObject({
+      kind: "terminal",
+      title: "Till registered",
+    })
+    expect(auditEvent(audit("terminal_started"))).toMatchObject({
+      kind: "terminal",
+      title: "Terminal started",
+    })
+    expect(auditEvent(audit("operator_signed_in"))).toMatchObject({
+      kind: "operator",
+      title: "Operator",
+      detail: "what the recorder wrote",
+    })
+    expect(auditEvent(audit("till_retired"))).toMatchObject({
+      kind: "device_state",
+      title: "Till retired",
+    })
+    expect(auditEvent(audit("till_restored"))).toMatchObject({
+      kind: "device_state",
+      title: "Till brought back",
+    })
+  })
+
+  it("renders a version change as from → to", () => {
+    const event = auditEvent(
+      audit("app_version_changed", { detail: { from: "0.1.0", to: "0.2.0" } }),
+    )
+    expect(event.title).toBe("App version changed")
+    expect(event.detail).toBe("v0.1.0 → v0.2.0")
+  })
+
+  it("survives a version event whose detail is missing a side", () => {
+    // The very first version ever reported has no `from`. The feed must render
+    // the half it has rather than print "vundefined".
+    const event = auditEvent(audit("app_version_changed", { detail: { to: "0.2.0" } }))
+    expect(event.detail).toBe("— → v0.2.0")
+  })
+
+  it("shows an unknown event type rather than dropping it", () => {
+    const event = auditEvent(audit("price.changed"))
+    expect(event.title).toBe("price changed")
+    expect(event.detail).toBe("what the recorder wrote")
+  })
+
+  it("joins the feed in timestamp order like everything else", () => {
+    const events = trace({
+      audits: [audit("terminal_started", { at: "2026-07-29T12:00:00.000Z" })],
+      movements: [
+        { id: 1, at: "2026-07-29T04:00:00.000Z", amount: -1, reason: "early", byName: null },
+      ],
+    })
+    expect(events.map((e) => e.title)).toEqual(["Terminal started", "Disbursement"])
   })
 })
 

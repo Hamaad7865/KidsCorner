@@ -1049,7 +1049,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun submitPin(cashier: Cashier, pin: String) = viewModelScope.launch {
         _state.update { it.copy(busy = true, error = null) }
 
-        repo.verifyPin(cashier.id, pin)
+        repo.verifyPin(cashier.id, pin, _state.value.deviceId)
             .onSuccess { result ->
                 if (result.ok && result.cashier != null) {
                     /*

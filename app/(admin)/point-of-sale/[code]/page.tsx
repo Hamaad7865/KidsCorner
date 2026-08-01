@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeft, Monitor, TabletSmartphone } from "lucide-react"
 
 import { CashFlowTab } from "@/components/pos/cash-flow-tab"
+import { CashOut } from "@/components/pos/cash-out"
 import { CloseTillRemotely } from "@/components/pos/close-till-remotely"
 import { DeviceSettings } from "@/components/pos/device-settings"
 import { TraceTab } from "@/components/pos/trace-tab"
@@ -220,6 +221,11 @@ export default async function DevicePage({
           flow={flow}
           basePath={basePath}
           params={{ tab: "cashflow", ref: flow.refDate, from: flow.from, to: flow.to }}
+          action={
+            device.drawer && canClose ? (
+              <CashOut till={device.drawer} deviceName={device.name} />
+            ) : null
+          }
         />
       ) : null}
 

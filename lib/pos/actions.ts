@@ -82,7 +82,17 @@ export async function switchCashier(
 ): Promise<{ ok: boolean; error?: string; cashier?: Cashier; lockedFor?: number }> {
   const user = await requireTillUser()
   if ("status" in user) return { ok: false, error: "Session expired." }
-  return authenticateCashier(await createClient(), profileId, pin)
+
+  const supabase = await createClient()
+  // This keypad is the web till, so the sign-in is attributed to the
+  // back-office device — the same row the shift opener uses.
+  const { data: backOffice } = await supabase
+    .from("pos_devices")
+    .select("id")
+    .eq("code", "back-office")
+    .maybeSingle()
+
+  return authenticateCashier(supabase, profileId, pin, backOffice?.id ?? null)
 }
 
 /** Frees a locked-out cashier without waiting out the clock. Owner/manager. */
@@ -347,6 +357,60 @@ export async function closeShiftRemotely(input: {
  * attributable to it forever — a device that can be deleted is a variance that
  * can be made to belong to nobody.
  */
+/**
+ * Cash taken out of another till's drawer, from the back office.
+ *
+ * Carfectionist's Cash out button, on its Cash movements header. Owner or
+ * manager only — at the till itself a cashier records their own pay-outs, but
+ * reaching into a drawer someone else is standing at is a management act. The
+ * shift must be open because a movement is a line in a drawer's ledger: it has
+ * to land inside the Z of the drawer it changed, and `record_till_movement`
+ * refuses to overdraw what that drawer actually holds.
+ */
+export async function cashOutRemotely(input: {
+  shiftId: number
+  amount: number
+  reason: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) {
+    return { ok: false, error: "Your session has expired. Sign in again." }
+  }
+  if (profile.role !== "owner" && profile.role !== "manager") {
+    return { ok: false, error: "Only an owner or manager can take cash out from here." }
+  }
+
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    return { ok: false, error: "Enter the amount taken out." }
+  }
+
+  const supabase = await createClient()
+
+  // Confirmed open here for the error message; the RPC re-checks under lock,
+  // so a close racing this loses nothing.
+  const { data: shift } = await supabase
+    .from("shifts")
+    .select("id, closed_at")
+    .eq("id", input.shiftId)
+    .maybeSingle()
+
+  if (!shift) return { ok: false, error: "That shift no longer exists." }
+  if (shift.closed_at !== null) {
+    return { ok: false, error: "That till has been closed — nothing can move in a closed drawer." }
+  }
+
+  const result = await recordMovementFor(
+    supabase,
+    input.shiftId,
+    -Math.abs(input.amount),
+    input.reason,
+  )
+  if (!result.ok) return { ok: false, error: result.error }
+
+  revalidatePath("/point-of-sale")
+  return { ok: true }
+}
+
 export async function saveDevice(input: {
   id: number
   name?: string

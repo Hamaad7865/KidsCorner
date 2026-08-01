@@ -54,8 +54,8 @@ class TillRepository(
         )
     }
 
-    suspend fun verifyPin(profileId: String, pin: String): Result<PinResult> =
-        authed { api.verifyPin(it, profileId, pin) }
+    suspend fun verifyPin(profileId: String, pin: String, deviceId: Int? = null): Result<PinResult> =
+        authed { api.verifyPin(it, profileId, pin, deviceId) }
 
     suspend fun completeSale(sale: SaleRequest): Result<SaleResult> =
         authed { api.completeSale(it, sale) }

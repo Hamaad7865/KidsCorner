@@ -118,6 +118,9 @@ export async function authenticateCashier(
   supabase: TillClient,
   profileId: string,
   pin: string,
+  // Which till the keypad was on, for the audit trail. Optional because a
+  // caller that genuinely does not know must say so with a null, not invent one.
+  deviceId?: number | null,
 ): Promise<{ ok: true; cashier: Cashier } | { ok: false; error: string; lockedFor?: number }> {
   if (!PIN_PATTERN.test(pin)) return { ok: false, error: "Enter a 4-digit PIN." }
 
@@ -159,6 +162,20 @@ export async function authenticateCashier(
       lockedFor: seconds,
     }
   }
+
+  // The operator event Carfectionist's traceability shows. Recorded after the
+  // check passes and never allowed to fail it — a sign-in must not bounce
+  // because the audit write hiccupped, so the error is deliberately dropped.
+  await supabase
+    .rpc("log_audit" as never, {
+      p_event_type: "operator_signed_in",
+      p_ref_type: "profile",
+      p_ref_id: data.id,
+      p_summary: `${data.full_name} signed in at the till`,
+      p_detail: {},
+      p_device_id: deviceId ?? null,
+    } as never)
+    .then(() => undefined, () => undefined)
 
   return {
     ok: true,

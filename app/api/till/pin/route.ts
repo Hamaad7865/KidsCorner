@@ -7,6 +7,9 @@ import { authenticateCashier, pinLockSeconds } from "@/lib/pos/sale-core"
 const bodySchema = z.object({
   profileId: z.uuid(),
   pin: z.string(),
+  /** The till's registry id from bootstrap, so the sign-in lands on the right
+   *  device in the audit trail. Optional: an old APK simply doesn't send it. */
+  deviceId: z.number().int().positive().optional(),
 })
 
 /**
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
     session.supabase,
     parsed.data.profileId,
     parsed.data.pin,
+    parsed.data.deviceId ?? null,
   )
 
   if (!result.ok) {

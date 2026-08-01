@@ -1,13 +1,17 @@
 import Link from "next/link"
 import {
   BadgePercent,
+  Ban,
   Banknote,
   CalendarCheck,
   CircleDot,
   Coins,
+  Download,
   HandCoins,
+  Power,
   ReceiptText,
   RotateCcw,
+  UserRound,
   Wallet,
 } from "lucide-react"
 
@@ -33,6 +37,10 @@ const KIND_ICON: Record<TraceKind, typeof CircleDot> = {
   refund: RotateCcw,
   cash_out: Banknote,
   till_close: CalendarCheck,
+  terminal: Power,
+  version: Download,
+  operator: UserRound,
+  device_state: Ban,
 }
 
 export function TraceTab({
@@ -48,8 +56,8 @@ export function TraceTab({
     <div className="max-w-3xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm">
-          Everything this till did in the period — shifts, payments, discounts,
-          receipts, refunds and cash movements.
+          Everything this till did in the period — starts and sign-ins, shifts,
+          payments, discounts, receipts, refunds and cash movements.
         </p>
         <DateRangeFilter
           basePath={basePath}

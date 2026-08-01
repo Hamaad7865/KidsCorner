@@ -71,7 +71,13 @@ data class Bootstrap(
 )
 
 @Serializable
-data class PinRequest(val profileId: String, val pin: String)
+data class PinRequest(
+    val profileId: String,
+    val pin: String,
+    /** From bootstrap, so the sign-in lands on this till in the audit trail.
+     *  Null before the first successful bootstrap — the server accepts that. */
+    val deviceId: Int? = null,
+)
 
 @Serializable
 data class PinResult(
@@ -201,11 +207,16 @@ class TillApi(private val http: HttpClient) {
             appVersion?.let { parameter("version", it) }
         }.decode()
 
-    suspend fun verifyPin(token: String, profileId: String, pin: String): PinResult =
+    suspend fun verifyPin(
+        token: String,
+        profileId: String,
+        pin: String,
+        deviceId: Int? = null,
+    ): PinResult =
         http.post("$origin/api/till/pin") {
             bearer(token)
             contentType(ContentType.Application.Json)
-            setBody(PinRequest(profileId, pin))
+            setBody(PinRequest(profileId, pin, deviceId))
         }.decode()
 
     suspend fun catalog(token: String): CatalogResponse =

@@ -19,6 +19,7 @@ export type Database = {
           actor_id: string | null
           at: string
           detail: Json
+          device_id: number | null
           event_type: string
           id: number
           ref_id: string | null
@@ -29,6 +30,7 @@ export type Database = {
           actor_id?: string | null
           at?: string
           detail?: Json
+          device_id?: number | null
           event_type: string
           id?: number
           ref_id?: string | null
@@ -39,6 +41,7 @@ export type Database = {
           actor_id?: string | null
           at?: string
           detail?: Json
+          device_id?: number | null
           event_type?: string
           id?: number
           ref_id?: string | null
@@ -51,6 +54,13 @@ export type Database = {
             columns: ["actor_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_events_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "pos_devices"
             referencedColumns: ["id"]
           },
         ]
