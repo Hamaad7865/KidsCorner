@@ -6,6 +6,7 @@ import { ArrowLeft, Monitor, TabletSmartphone } from "lucide-react"
 import { CashFlowTab } from "@/components/pos/cash-flow-tab"
 import { CloseTillRemotely } from "@/components/pos/close-till-remotely"
 import { DeviceSettings } from "@/components/pos/device-settings"
+import { TraceTab } from "@/components/pos/trace-tab"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils"
 import { formatDateTime, formatQty, formatRs, shopToday } from "@/lib/format"
 import { getDeviceCashFlow } from "@/lib/pos/cash-flow"
 import { getDevice, getDeviceSessions } from "@/lib/pos/overview"
+import { getDeviceTrace } from "@/lib/pos/traceability"
 
 export const metadata: Metadata = { title: "Till" }
 
@@ -29,17 +31,19 @@ const TABS = [
   { key: "general", label: "General" },
   { key: "settings", label: "Settings" },
   { key: "cashflow", label: "Cash flow" },
+  { key: "trace", label: "Traceability" },
   { key: "sessions", label: "Sessions" },
 ] as const
 
+/** Tabs whose content is driven by the date pickers. */
+const DATED_TABS = new Set(["cashflow", "trace"])
+
 /**
- * One till — General, Settings, Cash flow, Sessions.
+ * One till — General, Settings, Cash flow, Traceability, Sessions.
  *
- * The first three are Carfectionist's Point of Sale module tab for tab.
- * Sessions stands in for its Traceability tab: Carfectionist keys an event
- * stream on the device, and Kids Corner's `audit_events` records what changed
- * (a price, a PIN, a role) without recording which till it happened at, so a
- * per-device feed cannot yet be built from it honestly.
+ * The first four are Carfectionist's Point of Sale module, tab for tab.
+ * Sessions is ours: the cash-up record per shift, which Carfectionist folds
+ * into its General tab and which is worth its own table here.
  */
 export default async function DevicePage({
   params,
@@ -65,6 +69,8 @@ export default async function DevicePage({
     tab === "cashflow"
       ? await getDeviceCashFlow(device, { ref: sp.ref, from: sp.from, to: sp.to })
       : null
+  const trace =
+    tab === "trace" ? await getDeviceTrace(device, { from: sp.from, to: sp.to }) : null
 
   const basePath = `/point-of-sale/${encodeURIComponent(device.code)}`
   const today = shopToday()
@@ -116,8 +122,8 @@ export default async function DevicePage({
             // filled — today to today, the way Carfectionist opens it. Landing
             // on empty pickers reads as "no movements", not "pick a date".
             href={
-              t.key === "cashflow"
-                ? `${basePath}?tab=cashflow&ref=${today}&from=${today}&to=${today}`
+              DATED_TABS.has(t.key)
+                ? `${basePath}?tab=${t.key}&ref=${today}&from=${today}&to=${today}`
                 : `${basePath}?tab=${t.key}`
             }
             aria-current={tab === t.key ? "page" : undefined}
@@ -214,6 +220,14 @@ export default async function DevicePage({
           flow={flow}
           basePath={basePath}
           params={{ tab: "cashflow", ref: flow.refDate, from: flow.from, to: flow.to }}
+        />
+      ) : null}
+
+      {tab === "trace" && trace ? (
+        <TraceTab
+          trace={trace}
+          basePath={basePath}
+          params={{ tab: "trace", from: trace.from, to: trace.to }}
         />
       ) : null}
     </div>

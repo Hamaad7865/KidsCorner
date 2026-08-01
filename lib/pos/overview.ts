@@ -176,6 +176,23 @@ export async function getDevice(code: string): Promise<PosDevice | null> {
 }
 
 /**
+ * Narrows a `shifts` query to one till.
+ *
+ * The web till also answers for shifts with no device at all — every shift
+ * opened before the registry existed carries `device_id NULL`, and the overview
+ * already shows their drawer on the back-office card. Shared rather than
+ * repeated because three screens now ask this question, and a copy that drifts
+ * would make one tab show history another swears does not exist.
+ */
+export function forDeviceShifts<
+  Q extends { or(filter: string): Q; eq(column: string, value: number): Q },
+>(query: Q, device: { id: number; isBackOffice: boolean }): Q {
+  return device.isBackOffice
+    ? query.or(`device_id.eq.${device.id},device_id.is.null`)
+    : query.eq("device_id", device.id)
+}
+
+/**
  * Every shift this till has run, newest first.
  *
  * The web till also answers for shifts with no device at all. Every shift
@@ -200,9 +217,7 @@ export async function getDeviceSessions(device: {
     .order("opened_at", { ascending: false })
     .limit(50)
 
-  const { data } = await (device.isBackOffice
-    ? query.or(`device_id.eq.${device.id},device_id.is.null`)
-    : query.eq("device_id", device.id))
+  const { data } = await forDeviceShifts(query, device)
 
   return (data ?? []).map<CashUp>((s) => ({
     shiftId: s.id,

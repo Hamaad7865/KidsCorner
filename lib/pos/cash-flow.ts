@@ -1,6 +1,6 @@
 import { PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/db-enums"
 import { endOfShopDay, round2, shopToday, startOfShopDay } from "@/lib/format"
-import type { PosDevice } from "@/lib/pos/overview"
+import { forDeviceShifts, type PosDevice } from "@/lib/pos/overview"
 import { createClient } from "@/lib/supabase/server"
 
 /**
@@ -231,13 +231,7 @@ export async function getDeviceCashFlow(
     .order("opened_at", { ascending: false })
     .limit(SHIFT_WINDOW)
 
-  const { data: shiftRows } = await (device.isBackOffice
-    ? // Shifts opened before the device registry existed carry no device. They
-      // were all opened from the web till, which is where the overview already
-      // shows their drawer — so this must match, or the tab would report no
-      // history for a till whose card shows money in it.
-      shiftQuery.or(`device_id.eq.${device.id},device_id.is.null`)
-    : shiftQuery.eq("device_id", device.id))
+  const { data: shiftRows } = await forDeviceShifts(shiftQuery, device)
 
   const shifts = (shiftRows ?? []) as unknown as ShiftRow[]
 

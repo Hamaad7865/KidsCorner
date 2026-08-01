@@ -135,6 +135,18 @@ export function shopToday(): string {
   return SHOP_DAY_FORMAT.format(new Date())
 }
 
+/**
+ * Which of the shop's calendar days an instant fell on, as `YYYY-MM-DD`.
+ *
+ * Used to group a feed into days. Not `slice(0, 10)` on the ISO string: a sale
+ * at 01:14 in Mauritius is stored as 21:14 the previous day in UTC, so slicing
+ * files it under yesterday.
+ */
+export function shopDayOf(value: string | Date): string {
+  const date = typeof value === "string" ? new Date(value) : value
+  return Number.isNaN(date.getTime()) ? "" : SHOP_DAY_FORMAT.format(date)
+}
+
 const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",
