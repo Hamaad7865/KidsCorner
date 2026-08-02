@@ -45,7 +45,6 @@ import mu.kidscorner.till.ui.MovementDialog
 import mu.kidscorner.till.ui.OfflineScreen
 import mu.kidscorner.till.ui.OpenShiftScreen
 import mu.kidscorner.till.ui.PaymentScreen
-import mu.kidscorner.till.ui.PriceOverrideDialog
 import mu.kidscorner.till.ui.PrinterSettingsDialog
 import mu.kidscorner.till.ui.ReceiptPreviewDialog
 import mu.kidscorner.till.ui.RefundDoneDialog
@@ -112,7 +111,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     ) { }
 
     /** The cart line whose unit price is being set by hand, if any. */
-    var overriding by remember { mutableStateOf<Int?>(null) }
 
     val managers = state.shop?.cashiers.orEmpty()
         .filter { it.role == "owner" || it.role == "manager" }
@@ -203,7 +201,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onAdd = vm::addVariant,
                         onSetQty = vm::setQty,
                         onSetLineDiscount = vm::setLineDiscount,
-                        onOpenPriceOverride = { overriding = it },
+                        onSetPrice = vm::setPriceOverride,
                         onOpenActions = { overlay = Overlay.Actions },
                         onOpenCustomItem = { overlay = Overlay.Custom },
                         onOpenNote = { overlay = Overlay.Note },
@@ -292,19 +290,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 onCancel = vm::cancelClose,
                 onFinish = vm::finishClose,
             )
-        }
-
-        overriding?.let { variantId ->
-            state.lines.firstOrNull { it.variantId == variantId }?.let { line ->
-                PriceOverrideDialog(
-                    line = line,
-                    onApply = { price ->
-                        vm.setPriceOverride(variantId, price)
-                        overriding = null
-                    },
-                    onDismiss = { overriding = null },
-                )
-            } ?: run { overriding = null }
         }
 
         ToastPill(state.toast)

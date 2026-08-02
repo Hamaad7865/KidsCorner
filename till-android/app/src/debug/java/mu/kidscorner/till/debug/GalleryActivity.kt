@@ -298,9 +298,7 @@ class GalleryActivity : ComponentActivity() {
                             onSetLineDiscount = { id, kind, value ->
                                 cart = cart.withLineDiscount(id, kind, value)
                             },
-                            onOpenPriceOverride = { id ->
-                                cart = cart.withPriceOverride(id, 500.0)
-                            },
+                            onSetPrice = { _, _ -> },
                             onOpenActions = { showing = "actions" },
                             onOpenCustomItem = { showing = "custom" },
                             onOpenNote = {},
@@ -342,7 +340,7 @@ class GalleryActivity : ComponentActivity() {
                             onAdd = {},
                             onSetQty = { _, _ -> },
                             onSetLineDiscount = { _, _, _ -> },
-                            onOpenPriceOverride = {},
+                            onSetPrice = { _, _ -> },
                             onOpenActions = {},
                             onOpenCustomItem = {},
                             onOpenNote = {},
