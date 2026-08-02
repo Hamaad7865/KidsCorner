@@ -49,15 +49,56 @@ per-role module access, till movements, and X/Z reporting.
 
 ### 1. Run the migration
 
+> **`catch-up.sql` is out of date and will not build a correct database.**
+> Do not stand up a new project from it alone until it has been regenerated.
+>
+> It stops at migration 025. Everything from 026 to 036 is missing, and two of
+> those are what keep the shop's money private:
+>
+> - **028** pins `search_path` on every `SECURITY DEFINER` function. Without
+>   it, `current_role_of_user()` can be made to resolve `profiles` against a
+>   schema the caller controls — a privilege escalation.
+> - **035** takes `EXECUTE` away from `anon`, the role the *publishable key*
+>   maps to — the key in the browser bundle and inside the Android APK.
+>   Without it, that key can read the day's takings and call `complete_sale`.
+>
+> It has also drifted inside its own range: its `create_credit_note` is the
+> original six-argument version, missing `p_restock`, migration 021's
+> paid-factor fix and 027's gapless numbering. So the later migrations cannot
+> simply be appended — several patch a function body by matching on text that
+> catch-up never produces.
+>
+> The fix is to regenerate it as a **snapshot of the live schema** rather than
+> a replay of history. Until then, run the numbered files in
+> `supabase/Migrations/` in order.
+
 In the Supabase dashboard, SQL Editor, run
-[`supabase/catch-up.sql`](supabase/catch-up.sql). It is every migration to date
-rewritten to be idempotent, so it works on a fresh project and on one that is
-part-way set up, and it is safe to re-run. It creates the tables, RLS policies,
+[`supabase/catch-up.sql`](supabase/catch-up.sql) followed by every numbered
+migration from `026` onward. Between them they create the tables, RLS policies,
 RPCs, views and seed data (sizes, colours, categories).
 
-The numbered files in `supabase/migrations/` are the historical record —
-catch-up is the one you run. It ends with a SELECT that reports what is
-present; expect 24 tables, 2 views and 18 functions.
+The numbered files in `supabase/Migrations/` are the historical record, and for
+now they are also what you run.
+
+Whatever route you take, check the result before trusting it:
+
+```sql
+select
+  (select count(*) from information_schema.role_routine_grants
+    where specific_schema = 'public' and grantee in ('anon','PUBLIC')) as anon_can_execute,
+  (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.prosecdef
+      and (p.proconfig is null or not exists (
+            select 1 from unnest(p.proconfig) c where c like 'search_path=%')))
+    as definers_unpinned,
+  (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'v'
+      and 'security_invoker=on' = any(c.reloptions)) as views_with_invoker;
+```
+
+`anon_can_execute` and `definers_unpinned` must both be **0**, and
+`views_with_invoker` must be **4**. Anything else means the publishable key can
+reach further into this database than it should.
 
 ### 2. Fill in `.env.local`
 
