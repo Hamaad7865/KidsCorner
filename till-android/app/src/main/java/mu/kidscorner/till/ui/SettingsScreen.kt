@@ -48,12 +48,19 @@ import mu.kidscorner.till.ui.theme.Handoff
  *
  * `padding:13px 18px 8px` header over a scroller at `padding:4px 18px 20px`:
  * six peripheral cards in a `repeat(2,1fr)` grid at `gap:11px`, then a "Till
- * behaviour" card holding six switches in their own `repeat(2,1fr)` grid.
+ * behaviour" card holding the switches in their own `repeat(2,1fr)` grid.
  *
  * Peripherals the till has no driver for are drawn exactly as the design draws
  * them but read "Not set up" with the switch disabled. A switch that flips and
  * changes nothing is worse than no switch: a cashier turns the cash drawer
  * "on", nothing opens, and now they distrust the whole screen.
+ *
+ * That was written about the peripherals and was quietly untrue of the
+ * switches beside them. All six flipped, persisted across restarts, and were
+ * read by nothing. Two of them now work — "Print receipt automatically" and
+ * "Beep on scan". The two drawer switches and cash rounding say on the row
+ * why they cannot be used. "Ask print / email / none" is gone: the complete
+ * screen always offers Print and Gift receipt, and the till cannot email.
  */
 @Composable
 fun SettingsScreen(
@@ -61,7 +68,6 @@ fun SettingsScreen(
     printerLabel: String,
     paper: PaperWidth,
     autoPrint: Boolean,
-    askReceipt: Boolean,
     drawerOnCash: Boolean,
     drawerOnCard: Boolean,
     beepOnScan: Boolean,
@@ -191,13 +197,35 @@ fun SettingsScreen(
                         modifier = Modifier.padding(bottom = 4.dp),
                     )
 
+                    // "Ask print / email / none" is gone. The complete screen
+                    // always offers Print and Gift receipt, so asking was not
+                    // optional — and it promised an email the till cannot send.
                     val prefs = listOf(
-                        Pref("autoPrint", "Print receipt automatically", "Every completed sale, no prompt", autoPrint),
-                        Pref("askReceipt", "Ask print / email / none", "Cashier picks on the payment screen", askReceipt),
-                        Pref("drawerOnCash", "Pop drawer on cash sales", "Opens as the sale completes", drawerOnCash),
-                        Pref("drawerOnCard", "Pop drawer on card sales", "Off for card-only tills", drawerOnCard),
+                        Pref(
+                            "autoPrint",
+                            "Print receipt automatically",
+                            if (printerConfigured) "Every completed sale, no prompt"
+                            else "Set up the receipt printer first",
+                            autoPrint,
+                            blockedBecause =
+                                if (printerConfigured) null else "No printer on this till yet",
+                        ),
                         Pref("beep", "Beep on scan", "Audible confirm when a barcode lands", beepOnScan),
-                        Pref("roundCash", "Round cash to nearest Rs 5", "Coins under Rs 5 are scarce", roundCash),
+                        Pref(
+                            "drawerOnCash", "Pop drawer on cash sales",
+                            "Opens as the sale completes", drawerOnCash,
+                            blockedBecause = "No cash drawer on this till yet",
+                        ),
+                        Pref(
+                            "drawerOnCard", "Pop drawer on card sales",
+                            "Off for card-only tills", drawerOnCard,
+                            blockedBecause = "No cash drawer on this till yet",
+                        ),
+                        Pref(
+                            "roundCash", "Round cash to nearest Rs 5",
+                            "Coins under Rs 5 are scarce", roundCash,
+                            blockedBecause = "Not built yet — it would change what customers pay",
+                        ),
                     )
 
                     Column(Modifier.padding(top = 8.dp, bottom = 14.dp)) {
@@ -236,6 +264,17 @@ private data class Pref(
     val label: String,
     val sub: String,
     val on: Boolean,
+    /**
+     * Why this switch cannot be flipped, or null when it can.
+     *
+     * Every one of these was live, persisted across restarts, and read by
+     * nothing — the shopkeeper flipped it, it stayed flipped, and the till
+     * behaved identically. A switch with a memory and no effect is worse than
+     * no switch, because it looks like it worked. The ones that cannot work
+     * yet now say so on the row, the way the peripheral cards already say
+     * "No driver on this till yet".
+     */
+    val blockedBecause: String? = null,
 )
 
 /** `background:#FFFFFF;border:1px solid #E3E9EA;radius:13;padding:14px 15px 12px` */
@@ -353,28 +392,34 @@ private fun PeripheralCard(
 /** `padding:10px 12px; background:#F7FAFA; border:1px solid #E7EDEE; radius:11` */
 @Composable
 private fun PrefRow(pref: Pref, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val blocked = pref.blockedBecause != null
     Row(
         modifier
             .clip(RoundedCornerShape(11.dp))
-            .background(Handoff.FieldWell)
+            .background(if (blocked) Handoff.Blocked else Handoff.FieldWell)
             .border(1.dp, Handoff.LineIdle, RoundedCornerShape(11.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        Toggle(on = pref.on, enabled = true, onClick = onClick)
+        // A blocked switch reads off and stays off. Showing its stored value
+        // would be the old lie in a new colour.
+        Toggle(on = !blocked && pref.on, enabled = !blocked, onClick = onClick)
         Column(Modifier.weight(1f)) {
             Text(
                 pref.label,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Handoff.Ink,
+                color = if (blocked) Handoff.BlockedText else Handoff.Ink,
             )
             Text(
-                pref.sub,
+                // The reason wins over the description: "No cash drawer on
+                // this till yet" is what the cashier needs, and "Opens as the
+                // sale completes" is a promise nothing can keep.
+                pref.blockedBecause ?: pref.sub,
                 fontSize = 11.5.sp,
                 lineHeight = 16.1.sp,
-                color = Handoff.Muted3,
+                color = if (blocked) Handoff.Fainter else Handoff.Muted3,
             )
         }
     }

@@ -44,19 +44,19 @@ class PrinterSettings(context: Context) {
 
     // ── till behaviour, from `atSettings` ─────────────────────────────────
     //
-    // POS v2 gives the till a settings screen with six switches. They live here
+    // POS v2 gives the till a settings screen of switches. They live here
     // beside the printer for the same reason: they are per-device. Two tills in
     // one shop can reasonably disagree about whether to print automatically.
+    //
+    // `askReceipt` used to sit here too, storing whether the payment screen
+    // should offer print / email / none. It always offers Print and Gift
+    // receipt, unconditionally, and the till cannot send an email at all — so
+    // the switch described neither a choice nor a capability.
 
     /** Print every completed sale without asking. */
     var autoPrint: Boolean
         get() = prefs.getBoolean(KEY_AUTO_PRINT, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_PRINT, value).apply()
-
-    /** Offer print / email / none on the payment screen. */
-    var askReceipt: Boolean
-        get() = prefs.getBoolean(KEY_ASK_RECEIPT, true)
-        set(value) = prefs.edit().putBoolean(KEY_ASK_RECEIPT, value).apply()
 
     /** Kick the drawer as a cash sale completes. */
     var drawerOnCash: Boolean
@@ -108,7 +108,6 @@ class PrinterSettings(context: Context) {
         const val KEY_PORT = "port"
         const val KEY_PAPER = "paper"
         const val KEY_AUTO_PRINT = "auto_print"
-        const val KEY_ASK_RECEIPT = "ask_receipt"
         const val KEY_DRAWER_CASH = "drawer_on_cash"
         const val KEY_DRAWER_CARD = "drawer_on_card"
         const val KEY_BEEP = "beep_on_scan"

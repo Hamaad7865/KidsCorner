@@ -1,6 +1,8 @@
 package mu.kidscorner.till
 
 import android.app.Application
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
@@ -804,7 +806,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // where a value is stored is nobody else's business.
         when (key) {
             "autoPrint" -> printerSettings.autoPrint = on
-            "askReceipt" -> printerSettings.askReceipt = on
             "drawerOnCash" -> printerSettings.drawerOnCash = on
             "drawerOnCard" -> printerSettings.drawerOnCard = on
             "beep" -> printerSettings.beepOnScan = on
@@ -822,7 +823,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             paper = printerSettings.paper,
             prefs = mapOf(
                 "autoPrint" to printerSettings.autoPrint,
-                "askReceipt" to printerSettings.askReceipt,
                 "drawerOnCash" to printerSettings.drawerOnCash,
                 "drawerOnCard" to printerSettings.drawerOnCard,
                 "beep" to printerSettings.beepOnScan,
@@ -1316,6 +1316,44 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addVariant(variant: CatalogVariant) = mutateCart { it.withVariant(variant) }
 
+    /**
+     * The same, but the line arrived from a barcode rather than a tap.
+     *
+     * Separate so "Beep on scan" can mean scan. A cashier tapping a tile is
+     * looking at the screen and does not need telling; a cashier running a
+     * scanner over a pile of clothes is looking at the clothes, and the beep
+     * is the only confirmation they get. That switch was read by nothing
+     * until now, so the till has been silent whatever it was set to.
+     */
+    fun addScanned(variant: CatalogVariant) {
+        if (printerSettings.beepOnScan) beep()
+        addVariant(variant)
+    }
+
+    /**
+     * A short confirmation tone.
+     *
+     * ToneGenerator on STREAM_SYSTEM rather than a bundled sound file: it is
+     * on the alarm-ish stream a shop leaves audible, it needs no asset, and
+     * it survives the phone being on vibrate the way a media-stream sound
+     * would not. Failures are swallowed — some devices refuse to allocate a
+     * generator, and no beep is a far smaller problem than a crash mid-sale.
+     */
+    private fun beep() {
+        try {
+            ToneGenerator(AudioManager.STREAM_SYSTEM, 80).apply {
+                startTone(ToneGenerator.TONE_PROP_BEEP, 120)
+                // The generator holds an audio track; released on its own
+                // thread after the tone has had time to play.
+                viewModelScope.launch {
+                    delay(300)
+                    release()
+                }
+            }
+        } catch (_: RuntimeException) {
+        }
+    }
+
     fun setQty(variantId: Int, qty: Int) = mutateCart { it.withQty(variantId, qty) }
 
     fun removeLine(variantId: Int) = mutateCart { it.without(variantId) }
@@ -1646,6 +1684,20 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     // fresh basket must never reuse it, or the server would
                     // replay this sale instead of ringing up the next one.
                     saleKey = UUID.randomUUID().toString()
+
+                    // "Print receipt automatically" — the switch has existed
+                    // on the settings screen since it was built and nothing
+                    // read it, so a till set to print automatically printed
+                    // nothing until somebody tapped Print.
+                    //
+                    // Only for a sale that reached the server: printReceipt
+                    // needs the sale number to fetch and to record the print
+                    // against, and a queued sale has neither yet. Those still
+                    // print from Past sales once the queue drains.
+                    val printedId = result.saleId
+                    if (printedId != null && printerSettings.autoPrint) {
+                        printReceipt(printedId)
+                    }
                     _state.update {
                         it.copy(
                             busy = false,

@@ -218,7 +218,6 @@ class GalleryActivity : ComponentActivity() {
                             printerLabel = "Counter · 80mm",
                             paper = PaperWidth.Mm80,
                             autoPrint = false,
-                            askReceipt = true,
                             drawerOnCash = true,
                             drawerOnCard = false,
                             beepOnScan = true,
@@ -294,6 +293,7 @@ class GalleryActivity : ComponentActivity() {
                             queuedCount = 0,
                             onSwitchCashier = {},
                             onAdd = { cart = cart.withVariant(it) },
+                            onAddScanned = { cart = cart.withVariant(it) },
                             onSetQty = { id, qty -> cart = cart.withQty(id, qty) },
                             onSetLineDiscount = { id, kind, value ->
                                 cart = cart.withLineDiscount(id, kind, value)
@@ -338,6 +338,7 @@ class GalleryActivity : ComponentActivity() {
                             queuedCount = 3,
                             onSwitchCashier = {},
                             onAdd = {},
+                            onAddScanned = {},
                             onSetQty = { _, _ -> },
                             onSetLineDiscount = { _, _, _ -> },
                             onSetPrice = { _, _ -> },

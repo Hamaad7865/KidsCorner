@@ -9,6 +9,7 @@ import { CloseTillRemotely } from "@/components/pos/close-till-remotely"
 import { DeviceSettings } from "@/components/pos/device-settings"
 import { TraceTab } from "@/components/pos/trace-tab"
 import { Badge } from "@/components/ui/badge"
+import { TabLink } from "@/components/admin/tab-link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -20,7 +21,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { requireAdminProfile } from "@/lib/auth/session"
-import { cn } from "@/lib/utils"
 import { formatDateTime, formatQty, formatRs, shopToday } from "@/lib/format"
 import { getDeviceCashFlow } from "@/lib/pos/cash-flow"
 import { getDevice, getDeviceSessions } from "@/lib/pos/overview"
@@ -120,7 +120,7 @@ export default async function DevicePage({
 
       <div className="flex flex-wrap gap-1 border-b">
         {TABS.map((t) => (
-          <Link
+          <TabLink
             key={t.key}
             // Cash flow is driven by its pickers, so the tab arrives with them
             // filled — today to today, the way Carfectionist opens it. Landing
@@ -130,16 +130,10 @@ export default async function DevicePage({
                 ? `${basePath}?tab=${t.key}&ref=${today}&from=${today}&to=${today}`
                 : `${basePath}?tab=${t.key}`
             }
-            aria-current={tab === t.key ? "page" : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-              tab === t.key
-                ? "border-brand-600 text-foreground"
-                : "text-muted-foreground hover:text-foreground border-transparent",
-            )}
+            active={tab === t.key}
           >
             {t.label}
-          </Link>
+          </TabLink>
         ))}
       </div>
 
@@ -166,10 +160,20 @@ export default async function DevicePage({
                     <div className="text-muted-foreground mt-1 text-xl font-semibold">
                       Closed
                     </div>
+                    {/* The web till is one click away, so the sentence that
+                        names it is the link. "Opens from the tablet" stays
+                        plain — nothing here can reach the tablet. */}
                     <div className="text-muted-foreground text-xs">
-                      {device.isBackOffice
-                        ? "Open it from the web till"
-                        : "Opens from the tablet"}
+                      {device.isBackOffice ? (
+                        <Link
+                          href="/pos"
+                          className="hover:text-brand-700 underline-offset-2 hover:underline"
+                        >
+                          Open it from the web till
+                        </Link>
+                      ) : (
+                        "Opens from the tablet"
+                      )}
                     </div>
                   </>
                 )}

@@ -200,6 +200,8 @@ fun SellScreen(
     queuedCount: Int,
     onSwitchCashier: () -> Unit,
     onAdd: (CatalogVariant) -> Unit,
+    /** The same, for a line that arrived from a barcode — see TillViewModel.addScanned. */
+    onAddScanned: (CatalogVariant) -> Unit,
     onSetQty: (Int, Int) -> Unit,
     onSetLineDiscount: (Int, String?, Double) -> Unit,
     onSetPrice: (Int, Double?) -> Unit,
@@ -287,6 +289,12 @@ fun SellScreen(
         justAdded = variant.id
     }
 
+    /** A barcode landed. Same line, but the till is allowed to beep about it. */
+    fun addScanned(variant: CatalogVariant) {
+        onAddScanned(variant)
+        justAdded = variant.id
+    }
+
     fun open(group: ProductGroup) {
         if (group.variants.size == 1) add(group.variants.first()) else picker = group
     }
@@ -295,7 +303,7 @@ fun SellScreen(
         val raw = query.trim()
         if (raw.isEmpty()) return
         val scanned = onFindBarcode(raw)
-        if (scanned != null) { add(scanned); query = ""; return }
+        if (scanned != null) { addScanned(scanned); query = ""; return }
         if (results.size == 1) { open(results.first()); query = "" }
     }
 
@@ -433,7 +441,7 @@ fun SellScreen(
                         groups = results,
                         query = query.trim(),
                         onPick = ::open,
-                        onAdd = { add(it); query = "" },
+                        onAdd = { addScanned(it); query = "" },
                     )
                 } else {
                     TileGrid(
