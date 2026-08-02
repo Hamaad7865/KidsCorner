@@ -7,20 +7,32 @@ import androidx.compose.ui.graphics.Color
  *
  * `design-handoff/project/Kids Corner POS.dc.html` is reproduced exactly —
  * dimensions, spacing, grid shapes, fonts, structure. The ONE permitted
- * deviation is colour: the handoff is teal, Kids Corner is coral.
+ * deviation is colour: the handoff is teal, Kids Corner is red.
  *
  * Every teal in that file is mapped here, by role, so the translation happens
  * in a single place. Doing it per-component is how three slightly different
- * corals end up on one screen.
+ * reds end up on one screen.
  *
- * The neutrals are NOT remapped. The handoff's greys are cool (#16333A, #7A8C90,
- * #E3E9EA) and reading them as "close enough" to the app's warm greys would
- * change the whole screen's temperature. They are taken literally, because only
- * the accent was ever the thing to change.
+ * ── white and red ──
+ *
+ * The screen is WHITE. Not cream, not a warm near-white: #FFFFFF, the same
+ * white as the cards on it. Panels are told apart from the page by a hairline,
+ * and the only tinted surfaces left are the ones that are meant to sink — a
+ * search field, a keypad well, the slot a photo has not loaded into yet.
+ *
+ * That leaves a resting till with exactly two colours on it: the brand red,
+ * and whatever colour the clothes in the basket happen to be. It is the whole
+ * point of the palette, and every token below is chosen to protect it.
+ *
+ * The neutrals are re-hued to 330 — the plum of the mark's own outline. They
+ * used to be warm browns mixed toward the old coral, which against a white
+ * page read as dirt rather than as grey. Each one kept its lightness exactly
+ * and gave up two thirds of its chroma, so every contrast relationship the
+ * handoff drew still holds.
  */
 object Handoff {
 
-    // ── accents: teal in the file, coral here ──────────────────────────────
+    // ── accents: teal in the file, the mark's red here ─────────────────────
     /** #14B8A6 — the primary accent: focus rings, active chips. */
     val Accent = Brand500
 
@@ -36,143 +48,149 @@ object Handoff {
     /** #CFE8E3 — the border of a tinted accent panel: the balanced drawer. */
     val AccentLine = Brand100
 
-    /** #0C2429 → #123B41 — the near-black scan button. Deep coral-black. */
-    val ScanButton = Color(0xFF2A1310)
-    val ScanButtonPressed = Color(0xFF3D1D18)
+    /** #0C2429 → #123B41 — the near-black scan button. */
+    val ScanButton = Color(0xFF1E181D)
+    val ScanButtonPressed = Color(0xFF2B252B)
     /** #8FE3D8 — the glyph on it. */
     val ScanGlyph = Brand200
 
-    /** #EAFBF9 — the toast's text on the same near-black, warmed to match. */
-    val ToastInk = Color(0xFFFBEFEC)
+    /** #EAFBF9 — the toast's text on the same near-black. */
+    val ToastInk = Color(0xFFF4F1F3)
 
     // ── the PIN sheet ─────────────────────────────────────────────────────
     //
-    // The handoff draws `atPin` on a dark ground. Kids Corner is off-white and
+    // The handoff draws `atPin` on a dark ground. Kids Corner is white and
     // red, so it is drawn light here — the layout, the dimensions and the
     // structure are the design's, the temperature is the shop's.
     //
     // This went through two wrong answers first. Warming the design's darks to
-    // coral gave a muddy brown; taking them literally gave a cool slate that
-    // was faithful but not this shop. Light is the third and it is the right
-    // one: it matches every other screen, so the till does not change
+    // the accent gave a muddy brown; taking them literally gave a cool slate
+    // that was faithful but not this shop. Light is the third and it is the
+    // right one: it matches every other screen, so the till does not change
     // temperature when it locks.
     /** The sheet behind everything — a shade deeper than the canvas. */
-    val PinGround = Color(0xFFF5F0ED)
+    val PinGround = Color(0xFFF2F1F2)
     /** A keypad key. */
     val PinKey = Color(0xFFFFFFFF)
     /** The avatar well on a tile. */
-    val PinKeySelected = Color(0xFFF0E7E3)
+    val PinKeySelected = Color(0xFFEBE8EA)
     /** A key's border. */
-    val PinKeyBorder = Color(0xFFE9E0DC)
+    val PinKeyBorder = Color(0xFFE4E1E3)
     /** The heading. */
-    val PinText = Color(0xFF2B2422)
+    val PinText = Color(0xFF272527)
     /** A key's digit, a tile's name. */
-    val PinTextBright = Color(0xFF3A302D)
+    val PinTextBright = Color(0xFF343234)
     /** A hint. */
-    val PinMuted = Color(0xFF8B7B76)
-    /** A wrong PIN. Red, and the only red on the sheet that is not the accent. */
-    val PinError = Color(0xFFB4402F)
+    val PinMuted = Color(0xFF827D81)
+    /** A wrong PIN. The danger red, which on this sheet is the only red that
+     *  is not the brand — and it is a different red, deliberately. */
+    val PinError = Destructive
 
     // ── the PIN sheet, v2 ─────────────────────────────────────────────────
     /** The keypad panel and an unselected staff tile. */
     val PinPanel = Color(0xFFFFFFFF)
     /** A selected staff tile. */
-    val PinPanelOn = Color(0xFFFFF2F1)
+    val PinPanelOn = Brand50
     /** The border on both. */
-    val PinPanelLine = Color(0xFFECE3DF)
+    val PinPanelLine = Color(0xFFE7E4E6)
     /** That border after a wrong PIN. */
-    val PinPanelLineError = Color(0xFFF5D2CB)
+    val PinPanelLineError = Color(0xFFFFC6BC)
     /** An unfilled dot's ring. */
-    val PinDotEmpty = Color(0xFFD6C9C4)
+    val PinDotEmpty = Color(0xFFCECBCE)
     /** The shop line and "Checking PIN…". */
-    val PinTextSoft = Color(0xFF7A6C67)
+    val PinTextSoft = Color(0xFF726E71)
     /** The sub-line under the heading. */
-    val PinTextFaint = Color(0xFF8B7B76)
+    val PinTextFaint = Color(0xFF827D81)
     /** A staff tile's role, and the welcome sub. */
-    val PinTextRole = Color(0xFF9C8B85)
+    val PinTextRole = Color(0xFF928E91)
     /** The ink ON the accent: the KC mark's letters, the success tick. */
     val PinOnAccent = Color(0xFFFFFFFF)
 
     // ── the change-due panel on `atComplete` ──────────────────────────────
     //
-    // #FFF3F0 / #F7D8D0 / #B4402F / #A83A28 — the handoff is ALREADY warm here,
-    // so these are its own values, untouched.
-    val ChangeTint = Color(0xFFFFF3F0)
-    val ChangeLine = Color(0xFFF7D8D0)
-    val ChangeLabel = Color(0xFFB4402F)
-    val ChangeFigure = Color(0xFFA83A28)
+    // #FFF3F0 / #F7D8D0 / #B4402F / #A83A28 — the handoff draws this warm and
+    // separate from its accent. Here it IS the accent: change due is the one
+    // figure a customer leans over the counter to read, and the brand red is
+    // the loudest thing the palette owns. It cannot be mistaken for an error
+    // because errors are the other red, and they never appear on this screen.
+    val ChangeTint = Brand50
+    val ChangeLine = Color(0xFFFCC8C9)
+    val ChangeLabel = Brand600
+    val ChangeFigure = Brand700
     /** #B07568 — the line under the change figure. */
-    val ChangeNote = Color(0xFFB07568)
+    val ChangeNote = Color(0xFFA77879)
 
-    // ── neutrals: taken from the handoff literally ─────────────────────────
-    /** #F3F6F6 — the screen behind everything. */
-    val Canvas = Color(0xFFFAF7F5)
+    // ── neutrals ──────────────────────────────────────────────────────────
+    /** The screen behind everything. White, and that is the palette. */
+    val Canvas = Color(0xFFFFFFFF)
 
-    /** #FFFFFF — cards, tiles, the search field. */
+    /** #FFFFFF — cards, tiles, the search field. The same white as the page:
+     *  a panel is a panel because of its hairline, not because of its fill. */
     val Surface = Color(0xFFFFFFFF)
 
-    /** #E9EEEF — the page ground outside the frame. */
-    val Ground = Color(0xFFF0EBE8)
-
     /** #16333A — body text. */
-    val Ink = Color(0xFF2B2422)
+    val Ink = Color(0xFF272527)
 
     /** #0F2E33 — figures, a shade darker than body text. */
-    val InkFigure = Color(0xFF241D1B)
+    val InkFigure = Color(0xFF201E20)
 
     /** #22383C — text on a secondary button. */
-    val InkStrong = Color(0xFF3A302D)
+    val InkStrong = Color(0xFF343234)
 
     /** #4A6165 — secondary text. */
-    val Muted = Color(0xFF5C4F4B)
+    val Muted = Color(0xFF545154)
 
     /** #6B7E82 — tertiary text. */
-    val Muted2 = Color(0xFF7A6C67)
+    val Muted2 = Color(0xFF726E71)
 
     /** #7A8C90 — labels under a heading. */
-    val Muted3 = Color(0xFF8B7B76)
+    val Muted3 = Color(0xFF827D81)
 
     /** #8A9DA1 — the search icon, the sizes label. */
-    val Muted4 = Color(0xFF9C8B85)
+    val Muted4 = Color(0xFF928E91)
 
     /** #9BABAE — placeholder text, a struck-through price. */
-    val Faint = Color(0xFFAC9C96)
+    val Faint = Color(0xFFA39EA2)
 
     /** #A3B2B5 — the IMG slot's own label. */
-    val Fainter = Color(0xFFB4A49E)
+    val Fainter = Color(0xFFABA6AA)
 
     /** #C4D2D4 — the empty-cart glyph. */
-    val Ghost = Color(0xFFD2C5C0)
+    val Ghost = Color(0xFFCAC7CA)
 
     // ── lines ─────────────────────────────────────────────────────────────
+    //
+    // These do more work than they did. On a cream page a panel was visible
+    // before its border was; on a white one the border IS the panel, so every
+    // line below is a structural element rather than a finishing touch.
     /** #DAE3E4 — the search field and secondary buttons. */
-    val Line = Color(0xFFE5DBD7)
+    val Line = Color(0xFFDFDCDF)
 
     /** #E3E9EA — tiles and result rows. */
-    val LineSoft = Color(0xFFECE3DF)
+    val LineSoft = Color(0xFFE7E4E6)
 
     /** #E1E8E9 — the chrome bar's underline. */
-    val LineChrome = Color(0xFFEAE1DD)
+    val LineChrome = Color(0xFFE5E2E4)
 
     /** #F1F4F5 — between cart lines. */
-    val LineFaint = Color(0xFFF5EFEC)
+    val LineFaint = Color(0xFFF1F0F1)
 
     /** #C9D6D8 — the Hold button, which is bordered more strongly. */
-    val LineStrong = Color(0xFFD6C9C4)
+    val LineStrong = Color(0xFFCECBCE)
 
     /** #DFE7E8 — keypad keys and the amount wells they type into. */
-    val LineField = Color(0xFFE9E0DC)
+    val LineField = Color(0xFFE4E1E3)
 
     /** #E7EDEE — a panel that is waiting for input: the uncounted drawer. */
-    val LineIdle = Color(0xFFF0E8E5)
+    val LineIdle = Color(0xFFEBE9EB)
 
     /** #F1F5F5 / #F3F7F7 — an inset well: the clear button, the IMG slot. */
-    val Well = Color(0xFFF6F1EE)
-    val Well2 = Color(0xFFF8F3F0)
-    val WellPressed = Color(0xFFEDE5E1)
+    val Well = Color(0xFFF3F2F3)
+    val Well2 = Color(0xFFF5F4F5)
+    val WellPressed = Color(0xFFE8E6E8)
 
     /** #F7FAFA — the well a figure is typed into: the float, the drawer count. */
-    val FieldWell = Color(0xFFFBF7F5)
+    val FieldWell = Color(0xFFF9F7F8)
 
     /**
      * #EDF3F3 / #4A6165 — a list avatar.
@@ -181,31 +199,58 @@ object Handoff {
      * the customer attached to the sale. Everyone in a list gets this neutral,
      * so a column of names reads as names rather than as a row of buttons.
      */
-    val AvatarTint = Color(0xFFF4EDEA)
-    val AvatarInk = Color(0xFF5C4F4B)
+    val AvatarTint = Color(0xFFF0EEF0)
+    val AvatarInk = Color(0xFF545154)
 
     /** #E4EFEF / #B6C9CB — a keypad key under the thumb. */
-    val KeyPressed = Color(0xFFF0E7E3)
-    val KeyPressedLine = Color(0xFFCBBAB4)
+    val KeyPressed = Color(0xFFEBE8EA)
+    val KeyPressedLine = Color(0xFFC1BCC0)
 
     // ── states ────────────────────────────────────────────────────────────
-    /** #B4402F — destructive: "Clear sale?", a discount badge. */
-    val Danger = Color(0xFFB4402F)
+    /**
+     * #B4402F — destructive: "Clear sale?", a discount badge.
+     *
+     * A red on a screen whose brand is also a red. That only works because the
+     * two are never the same shape: the brand is a solid fill under white
+     * text, danger is this colour as text on its own tint. Hue 30 against the
+     * brand's 17 is the difference between fire and wine.
+     */
+    val Danger = Destructive
     /** #FDECEA / #F5D2CB — its tint and border. */
-    val DangerTint = Color(0xFFFDECEA)
-    val DangerLine = Color(0xFFF5D2CB)
+    val DangerTint = Color(0xFFFFEAE6)
+    val DangerLine = Color(0xFFFFC6BC)
 
-    /** #FFF1DE / #9A5B12 — the held-sales count badge. */
+    /**
+     * #FFF1DE / #9A5B12 — anything the shop should look at but need not fix
+     * now: the held-sales badge, the offline pill, a hand-typed price.
+     *
+     * One amber, four uses. There used to be four ambers — #FFF1DE, #FFF6EC,
+     * #FFF3DF and #FFF9EF — each within a couple of points of the others and
+     * each written out as a literal at the place it was needed, which is
+     * exactly the failure this file exists to prevent. The dot is the mark's
+     * own tan, so even the warning colour comes from the logo.
+     */
     val WarnTint = Color(0xFFFFF1DE)
+    val WarnLine = Color(0xFFF3DCBB)
+    val WarnDot = Color(0xFFECA65B)
     val WarnText = Color(0xFF9A5B12)
+
+    /**
+     * The scrim behind a dialog.
+     *
+     * Plum at 44%, matching the ink. It was a cool near-black (#091C20) held
+     * over from the handoff, and a cool scrim over a warm page tints the
+     * whole screen green for as long as the dialog is up.
+     */
+    val Scrim = Color(0x70241B23)
 
     /**
      * #EFF3F3 / #A3B2B5 — `primaryBlocked`.
      *
      * The handoff does not dim the accent for an action that is not ready; it
-     * replaces the button with a flat well. Worth copying: a pale coral button
+     * replaces the button with a flat well. Worth copying: a pale red button
      * still reads as a button, and a cashier taps it and waits.
      */
-    val Blocked = Color(0xFFF4EEEB)
-    val BlockedText = Color(0xFFB4A49E)
+    val Blocked = Color(0xFFF0EFF0)
+    val BlockedText = Color(0xFFABA6AA)
 }

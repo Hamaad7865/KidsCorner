@@ -1,5 +1,6 @@
 package mu.kidscorner.till.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,13 +18,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import mu.kidscorner.till.ui.theme.Brand500
+import mu.kidscorner.till.R
 import mu.kidscorner.till.ui.theme.Handoff
 
 /** Shown while the app decides whether this device has been set up. */
@@ -118,19 +119,21 @@ fun OfflineScreen(
     }
 }
 
-/** The 44px KC mark the dark PIN screen leads with, on a light ground. */
+/**
+ * The shop's mark, wherever the till needs to say which shop it is.
+ *
+ * This drew the letters "KC" in a rounded coral square until the real artwork
+ * arrived — `res/drawable/kc_mark.xml`, converted from the same
+ * `kids-corner-favicon.svg` the browser tab uses. No plate behind it: the
+ * monogram brings its own three colours and sits on the white page directly,
+ * which is also why it needs no `contentDescription` — every use of it is
+ * beside the shop's name in text.
+ */
 @Composable
 internal fun KcMark(size: Int = 44) {
-    Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size / 3.4f).dp)).background(Brand500),
-        Alignment.Center,
-    ) {
-        Text(
-            "KC",
-            fontSize = (size * 0.38f).sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-0.3).sp,
-            color = Color.White,
-        )
-    }
+    Image(
+        painter = painterResource(R.drawable.kc_mark),
+        contentDescription = null,
+        modifier = Modifier.size(size.dp),
+    )
 }

@@ -125,8 +125,13 @@ fun LockScreen(
                     Brush.radialGradient(
                         // The stop at 62% is the design's; past it the aura is
                         // fully transparent and the ground shows through.
+                        //
+                        // 0.11 rather than the design's 0.16: the ground under
+                        // it went from a warm cream to a near-white grey, and
+                        // the same wash that read as warmth on cream reads as
+                        // a stain on grey.
                         colorStops = arrayOf(
-                            0f to Brand500.copy(alpha = 0.16f),
+                            0f to Brand500.copy(alpha = 0.11f),
                             0.62f to Color.Transparent,
                             1f to Color.Transparent,
                         ),
@@ -145,17 +150,7 @@ fun LockScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.padding(bottom = 22.dp),
                 ) {
-                    Box(
-                        Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Brand500),
-                        Alignment.Center,
-                    ) {
-                        Text(
-                            "KC",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Handoff.PinOnAccent,
-                        )
-                    }
+                    KcMark(size = 30)
                     Text(
                         "$shopName · Till 1",
                         fontSize = 13.5.sp,

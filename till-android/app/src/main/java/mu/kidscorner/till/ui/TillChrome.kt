@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.data.Cashier
-import mu.kidscorner.till.ui.theme.Brand500
 import mu.kidscorner.till.ui.theme.Handoff
 
 /**
@@ -74,21 +73,7 @@ fun TillChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                Box(
-                    Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(Brand500),
-                    Alignment.Center,
-                ) {
-                    Text(
-                        "KC",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.24).sp,
-                        color = Color.White,
-                    )
-                }
+                KcMark(size = 30)
                 Column {
                     Text(
                         shopName,
@@ -169,7 +154,7 @@ fun TillChrome(
             Surface(
                 onClick = onSwitchCashier,
                 shape = RoundedCornerShape(11.dp),
-                color = Color(0xFFF5F8F8),
+                color = Handoff.Well,
                 contentColor = Handoff.Ink,
                 border = BorderStroke(1.dp, Handoff.LineIdle),
                 modifier = Modifier.height(44.dp),
@@ -202,7 +187,7 @@ fun TillChrome(
             Surface(
                 onClick = onLock,
                 shape = RoundedCornerShape(11.dp),
-                color = Color(0xFFF5F8F8),
+                color = Handoff.Well,
                 contentColor = Handoff.Muted,
                 border = BorderStroke(1.dp, Handoff.LineIdle),
                 modifier = Modifier.size(44.dp),
@@ -244,13 +229,13 @@ private fun ConnectionPill(online: Boolean, queuedCount: Int) {
             Modifier
                 .height(32.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFFFFF6EC))
-                .border(1.dp, Color(0xFFF5D9B4), RoundedCornerShape(8.dp))
+                .background(Handoff.WarnTint)
+                .border(1.dp, Handoff.WarnLine, RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFE8A33D)))
+            Box(Modifier.size(6.dp).clip(CircleShape).background(Handoff.WarnDot))
             Text(
                 when {
                     waiting && queuedCount == 1 -> "1 sale queued"

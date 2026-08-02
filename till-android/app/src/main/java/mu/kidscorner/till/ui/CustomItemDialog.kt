@@ -74,7 +74,7 @@ fun CustomItemDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x70091C20))
+            .background(Handoff.Scrim)
             .clickable(interactionSource = noRipple, indication = null, onClick = onDismiss),
         Alignment.Center,
     ) {
@@ -111,7 +111,7 @@ fun CustomItemDialog(
                     Surface(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF5F8F8),
+                        color = Handoff.Well,
                         contentColor = Handoff.Muted,
                         modifier = Modifier.size(48.dp),
                     ) {

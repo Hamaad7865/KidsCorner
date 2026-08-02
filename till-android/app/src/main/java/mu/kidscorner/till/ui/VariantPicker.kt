@@ -73,7 +73,7 @@ fun VariantPickerDialog(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0x70091C20))
+            .background(Handoff.Scrim)
             .clickable(interactionSource = noRipple, indication = null, onClick = onDismiss),
         Alignment.Center,
     ) {
@@ -113,7 +113,7 @@ fun VariantPickerDialog(
                     Surface(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFF5F8F8),
+                        color = Handoff.Well,
                         contentColor = Handoff.Muted,
                         modifier = Modifier.size(48.dp),
                     ) {
@@ -122,7 +122,7 @@ fun VariantPickerDialog(
                         }
                     }
                 }
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEDF1F2)))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
 
                 Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp)) {
                     // colour headers, over a 148px gutter that lines up with
@@ -180,10 +180,10 @@ fun VariantPickerDialog(
                                         onClick = { variant?.let(onPick) },
                                         enabled = inStock,
                                         shape = RoundedCornerShape(11.dp),
-                                        color = if (inStock) Handoff.Surface else Color(0xFFF7FAFA),
+                                        color = if (inStock) Handoff.Surface else Handoff.Well2,
                                         border = BorderStroke(
                                             1.dp,
-                                            if (inStock) Handoff.LineSoft else Color(0xFFEDF1F2),
+                                            if (inStock) Handoff.LineSoft else Handoff.LineSoft,
                                         ),
                                         modifier = Modifier.weight(1f).height(56.dp),
                                     ) {

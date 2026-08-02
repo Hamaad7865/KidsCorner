@@ -120,7 +120,7 @@ fun BasketDiscountDialog(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 listOf(true to "Percent off", false to "Rupees off").forEach { (pct, label) ->
-                    DangerChip(
+                    PickChip(
                         label = label,
                         selected = percent == pct,
                         height = 48,
@@ -166,14 +166,17 @@ fun BasketDiscountDialog(
                             fontSize = 30.sp,
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = (-0.9).sp,
-                            color = Handoff.Danger,
+                            // Amber: the figure the shop is about to give up,
+                            // shown the same way it will be shown on the line
+                            // and in the totals once it is applied.
+                            color = Handoff.WarnText,
                         )
                     }
 
                     val presets = if (percent) PCT_PRESETS else AMT_PRESETS
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         presets.forEach { value ->
-                            DangerChip(
+                            PickChip(
                                 label = if (percent) "${value.toInt()}%" else "Rs ${value.toInt()}",
                                 selected = typed == value && pickedRule == null,
                                 solid = true,
@@ -230,7 +233,7 @@ fun BasketDiscountDialog(
                     .fillMaxWidth()
                     .padding(top = 7.dp, bottom = 13.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFFFBFDFD))
+                    .background(Handoff.FieldWell)
                     .border(1.dp, Handoff.LineIdle, RoundedCornerShape(12.dp))
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -299,7 +302,12 @@ fun BasketDiscountDialog(
                             )
                         },
                         shape = RoundedCornerShape(12.dp),
-                        color = Handoff.Danger,
+                        // The brand, like every other button that commits what
+                        // a sheet was opened to do. Applying a discount is not
+                        // a destructive act; refusing to look like one is the
+                        // difference between a cashier tapping it and a
+                        // cashier calling the manager over.
+                        color = Handoff.AccentSolid,
                         contentColor = Color.White,
                         modifier = Modifier.weight(1.6f).height(58.dp),
                     ) {
@@ -333,9 +341,16 @@ fun BasketDiscountDialog(
     }
 }
 
-/** Danger-tinted when picked, or solid when the design asks for it. */
+/**
+ * A preset the cashier picks: 5%, 10%, Rs 100. Brand-tinted when picked,
+ * solid when the design asks for it.
+ *
+ * It used to be called DangerChip and drawn in the danger red — every chip in
+ * the discount sheet looked like a warning, for what is a routine and
+ * deliberate thing to do at a counter. Picking is picking, so it is the accent.
+ */
 @Composable
-private fun DangerChip(
+private fun PickChip(
     label: String,
     selected: Boolean,
     height: Int,
@@ -348,16 +363,16 @@ private fun DangerChip(
         onClick = onClick,
         shape = RoundedCornerShape(11.dp),
         color = when {
-            selected && solid -> Handoff.Danger
-            selected -> Handoff.DangerTint
+            selected && solid -> Handoff.AccentSolid
+            selected -> Handoff.AccentTint
             else -> Handoff.Surface
         },
         contentColor = when {
             selected && solid -> Color.White
-            selected -> Handoff.Danger
+            selected -> Handoff.AccentSolid
             else -> Handoff.InkStrong
         },
-        border = BorderStroke(1.dp, if (selected) Handoff.Danger else Handoff.LineField),
+        border = BorderStroke(1.dp, if (selected) Handoff.AccentSolid else Handoff.LineField),
         modifier = modifier.height(height.dp),
     ) {
         Box(Modifier.fillMaxHeight().padding(horizontal = 15.dp), Alignment.Center) {

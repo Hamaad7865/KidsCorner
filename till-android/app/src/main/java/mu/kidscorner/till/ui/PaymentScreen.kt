@@ -212,7 +212,7 @@ fun PaymentScreen(
                     }
                     if (payments.isNotEmpty()) {
                         Box(
-                            Modifier.width(1.dp).height(46.dp).background(Color(0xFFEDF1F2)),
+                            Modifier.width(1.dp).height(46.dp).background(Handoff.LineSoft),
                         )
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
@@ -563,7 +563,7 @@ fun PaymentScreen(
                     color = Handoff.Muted3,
                 )
             }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEDF1F2)))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
 
             LazyColumn(
                 Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 6.dp),
@@ -604,13 +604,13 @@ fun PaymentScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFFBFDFD))
+                    .background(Handoff.FieldWell)
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
             ) {
                 SummaryRow("Subtotal", formatAmount(totals.subtotal))
                 val discount = round2(totals.lineDiscounts + totals.saleDiscount)
                 if (discount > 0) {
-                    SummaryRow("Discount", "-${formatAmount(discount)}", tone = Handoff.Danger)
+                    SummaryRow("Discount", "-${formatAmount(discount)}", tone = Handoff.WarnText)
                 }
                 // VAT-inclusive: this is the portion already inside the total,
                 // never something added to it.
@@ -666,7 +666,7 @@ private fun SummaryLine(line: CartLine) {
                 fontFamily = PlexMono,
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF5C7276),
+                color = Handoff.Muted,
                 modifier = Modifier.width(22.dp),
             )
             Column(Modifier.weight(1f)) {

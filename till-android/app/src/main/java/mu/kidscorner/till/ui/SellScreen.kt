@@ -1007,8 +1007,8 @@ private fun BasketPane(
                     .fillMaxWidth()
                     .padding(bottom = 9.dp)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(Color(0xFFFFF9EF))
-                    .border(1.dp, Color(0xFFF2E1C4), RoundedCornerShape(11.dp))
+                    .background(Handoff.WarnTint)
+                    .border(1.dp, Handoff.WarnLine, RoundedCornerShape(11.dp))
                     .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -1016,7 +1016,7 @@ private fun BasketPane(
                 Icon(
                     Icons.Default.StickyNote2,
                     null,
-                    tint = Color(0xFFB08A4C),
+                    tint = Handoff.WarnText,
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
@@ -1024,7 +1024,7 @@ private fun BasketPane(
                     Modifier.weight(1f).clickable(onClick = onOpenNote),
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
-                    color = Color(0xFF7A4E10),
+                    color = Handoff.WarnText,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1032,7 +1032,7 @@ private fun BasketPane(
                     onClick = { onSetNote("") },
                     shape = RoundedCornerShape(10.dp),
                     color = Color.Transparent,
-                    contentColor = Color(0xFFB08A4C),
+                    contentColor = Handoff.WarnText,
                     modifier = Modifier.size(48.dp),
                 ) {
                     Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -1385,16 +1385,21 @@ private fun CartRow(
                         // different act from applying a discount chip.
                         Badge(
                             "Price set",
-                            Color(0xFFFFF3DF),
-                            Color(0xFF7A4E10),
-                            border = Color(0xFFF2E1C4),
+                            Handoff.WarnTint,
+                            Handoff.WarnText,
+                            border = Handoff.WarnLine,
                         )
                     } else if (discounted) {
+                        // Amber, beside "Price set" and "Last one", because it
+                        // is the same kind of fact: something the shop chose
+                        // that an owner would want to see on the receipt. The
+                        // danger red is for a refund or a void — money going
+                        // back out — not for a discount going on.
                         Badge(
                             "-${formatAmount(line.discount)}",
-                            Handoff.DangerTint,
-                            Handoff.Danger,
-                            border = Handoff.DangerLine,
+                            Handoff.WarnTint,
+                            Handoff.WarnText,
+                            border = Handoff.WarnLine,
                         )
                     }
                 }
@@ -1679,7 +1684,7 @@ private fun PriceField(
     val tooHigh = typed != null && round2(typed) > listPrice
     val border = when {
         tooHigh -> Handoff.Danger
-        overridden -> Color(0xFFE0B978)
+        overridden -> Handoff.WarnDot
         else -> Handoff.LineField
     }
 
@@ -1773,31 +1778,6 @@ private val LINE_DISCOUNTS_AMT: List<Pair<String, Pair<String, Double>>> = listO
     "Rs 200" to ("amount" to 200.0),
 )
 
-/** `height:44px; padding:0 16px; radius:10px`, solid `#B4402F` when on. */
-@Composable
-private fun DiscountChip(
-    label: String,
-    selected: Boolean,
-    wide: Boolean = false,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) Handoff.Danger else Handoff.Surface,
-        contentColor = if (selected) Color.White else Handoff.InkStrong,
-        border = BorderStroke(1.dp, if (selected) Handoff.Danger else Handoff.LineField),
-        modifier = if (wide) Modifier.fillMaxWidth().height(44.dp) else Modifier.height(44.dp),
-    ) {
-        // Height only. `fillMaxSize()` would take the whole row: Material's
-        // Surface propagates min constraints, so an unsized chip would expand to
-        // whatever the Row offered and squeeze its siblings out — which it did.
-        Box(Modifier.fillMaxHeight().padding(horizontal = 16.dp), Alignment.Center) {
-            Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-    }
-}
-
 @Composable
 private fun StepKey(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1808,7 +1788,7 @@ private fun StepKey(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        color = Color(0xFFF7FAFA),
+        color = Handoff.Well2,
         contentColor = Handoff.InkStrong,
         modifier = Modifier.size(48.dp),
     ) {
@@ -1867,7 +1847,7 @@ private fun CartFooter(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(Color(0xFFFBFDFD))
+            .background(Handoff.FieldWell)
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
     ) {
         // ── the total, first and largest ──────────────────────────────────
@@ -1963,7 +1943,7 @@ private fun CartFooter(
         }
 
         Spacer(Modifier.height(10.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
         Spacer(Modifier.height(8.dp))
 
         // The customer key, the basket-discount chip and the note share ONE
@@ -2008,18 +1988,17 @@ private fun CartFooter(
                 }
             }
 
-            // The chip goes coral-bordered on `#FDECEA` once a discount is on,
-            // and carries the figure and the reason: "Basket 10% · Staff
-            // discount". That is the whole state of it, readable without
-            // opening anything.
+            // The chip goes amber once a discount is on, and carries the
+            // figure and the reason: "Basket 10% · Staff discount". That is
+            // the whole state of it, readable without opening anything.
             Surface(
                 onClick = onOpenDiscount,
                 shape = RoundedCornerShape(11.dp),
-                color = if (discount != null) Handoff.DangerTint else Handoff.Surface,
-                contentColor = if (discount != null) Handoff.Danger else Handoff.InkStrong,
+                color = if (discount != null) Handoff.WarnTint else Handoff.Surface,
+                contentColor = if (discount != null) Handoff.WarnText else Handoff.InkStrong,
                 border = BorderStroke(
                     1.dp,
-                    if (discount != null) Color(0xFFF2C8C1) else Handoff.Line,
+                    if (discount != null) Handoff.WarnLine else Handoff.Line,
                 ),
                 modifier = Modifier.weight(1f).height(44.dp),
             ) {
@@ -2066,8 +2045,8 @@ private fun CartFooter(
                 "Line discounts",
                 "-${formatAmount(totals.lineDiscounts)}",
                 13.sp,
-                Handoff.Danger,
-                Handoff.Danger,
+                Handoff.WarnText,
+                Handoff.WarnText,
                 bold = true,
             )
         }
@@ -2084,7 +2063,7 @@ private fun CartFooter(
                     "Basket ${discountFigure(discount)}",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Handoff.Danger,
+                    color = Handoff.WarnText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
@@ -2092,8 +2071,8 @@ private fun CartFooter(
                 Surface(
                     onClick = onRemoveDiscount,
                     shape = RoundedCornerShape(6.dp),
-                    color = Handoff.DangerTint,
-                    contentColor = Handoff.Danger,
+                    color = Handoff.WarnTint,
+                    contentColor = Handoff.WarnText,
                     modifier = Modifier.padding(start = 7.dp).size(22.dp),
                 ) {
                     Box(Modifier.fillMaxSize(), Alignment.Center) {
@@ -2110,7 +2089,7 @@ private fun CartFooter(
                     fontFamily = PlexMono,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Handoff.Danger,
+                    color = Handoff.WarnText,
                 )
             }
         }
@@ -2223,8 +2202,12 @@ private fun ScanHitRow(variant: CatalogVariant, code: String, onAdd: () -> Unit)
     Surface(
         onClick = onAdd,
         shape = RoundedCornerShape(12.dp),
-        color = Handoff.DangerTint,
-        border = BorderStroke(1.dp, Handoff.Danger),
+        // The brand, not the danger red. A barcode that matched is the single
+        // most welcome thing that happens at this counter, and it was drawn in
+        // the same colour as "wrong PIN" — which nobody noticed while the two
+        // reds were near-identical, and which is unmissable now they are not.
+        color = Handoff.AccentTint,
+        border = BorderStroke(1.dp, Handoff.AccentSolid),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -2236,7 +2219,7 @@ private fun ScanHitRow(variant: CatalogVariant, code: String, onAdd: () -> Unit)
                 Modifier
                     .size(46.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Handoff.Danger),
+                    .background(Handoff.AccentSolid),
                 Alignment.Center,
             ) {
                 BarcodeGlyph(size = 22, tint = Color.White)
@@ -2249,7 +2232,7 @@ private fun ScanHitRow(variant: CatalogVariant, code: String, onAdd: () -> Unit)
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 0.88.sp,
-                    color = Handoff.Danger,
+                    color = Handoff.AccentText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

@@ -7,9 +7,25 @@
 /* ------------------------------------------------------------------
    Kids Corner design system
    One system, two densities (see --density-* below).
-   Accent: soft coral (#F0645C -> oklch(0.678 0.174 26)), used everywhere.
-   Destructive is deliberately pushed to hue 14 so "danger" never reads
-   as "brand" — coral and red are close neighbours.
+
+   White and red. Every colour below is taken from the shop's own mark
+   (kids-corner-brand-assets/kids-corner-favicon.svg), not invented
+   alongside it:
+
+     red   #A71937  the mark's crimson  -> the whole brand ramp, hue 17
+     plum  #3F2E3D  the mark's outline  -> --foreground, deepened
+     tan   #ECA65B  the mark's highlight -> --warning, hue 66
+
+   The page is pure white and stays pure white; separation comes from
+   hairlines, not from tinted paper. That is the point of the palette —
+   the only colour on a resting screen is the brand red and whatever
+   the shop is actually selling.
+
+   Danger stays a red because nothing else reads as danger, and it can:
+   the destructive BUTTON is a tint with red text (see button.tsx) while
+   primary is a solid fill, so the two are told apart by weight before
+   hue is even consulted. Its hue is pushed to 30 anyway, which is the
+   difference between wine and fire.
    ------------------------------------------------------------------ */
 
 @theme inline {
@@ -90,60 +106,62 @@
 }
 
 :root {
-  --brand-50: oklch(0.971 0.014 26);
-  --brand-100: oklch(0.94 0.032 26);
-  --brand-200: oklch(0.893 0.061 26);
-  --brand-300: oklch(0.831 0.098 26);
-  --brand-400: oklch(0.752 0.146 26);
-  --brand-500: oklch(0.678 0.174 26); /* #F0645C — the spec coral */
-  --brand-600: oklch(0.58 0.163 26); /* solid fills + white text */
-  --brand-700: oklch(0.505 0.146 26);
-  --brand-800: oklch(0.438 0.122 26);
-  --brand-900: oklch(0.39 0.1 26);
+  /* Hue 17 all the way down, so no tint drifts pink or orange.
+     brand-600 lands on #A71936 — the mark's own red, to the byte. */
+  --brand-50: oklch(0.972 0.013 17);
+  --brand-100: oklch(0.938 0.03 17);
+  --brand-200: oklch(0.886 0.062 17);
+  --brand-300: oklch(0.812 0.106 17);
+  --brand-400: oklch(0.702 0.16 17);
+  --brand-500: oklch(0.575 0.192 17); /* #D2354E — rings, charts */
+  --brand-600: oklch(0.473 0.174 17); /* #A71936 — the mark's red; every solid fill, 7.4:1 on white */
+  --brand-700: oklch(0.408 0.15 17);
+  --brand-800: oklch(0.348 0.125 17);
+  --brand-900: oklch(0.3 0.102 17);
 
-  --background: oklch(0.988 0.003 40);
-  --foreground: oklch(0.205 0.008 30);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.235 0.021 330);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.205 0.008 30);
+  --card-foreground: oklch(0.235 0.021 330);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.205 0.008 30);
+  --popover-foreground: oklch(0.235 0.021 330);
 
   --primary: var(--brand-600);
-  --primary-foreground: oklch(0.99 0.005 40);
-  --secondary: oklch(0.968 0.005 40);
-  --secondary-foreground: oklch(0.26 0.008 30);
-  --muted: oklch(0.968 0.005 40);
-  --muted-foreground: oklch(0.53 0.012 30);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.968 0.003 330);
+  --secondary-foreground: oklch(0.28 0.015 330);
+  --muted: oklch(0.968 0.003 330);
+  --muted-foreground: oklch(0.505 0.012 330);
   --accent: var(--brand-50);
   --accent-foreground: var(--brand-800);
 
-  --destructive: oklch(0.53 0.19 14);
+  --destructive: oklch(0.582 0.212 30);
   --success: oklch(0.55 0.13 150);
   --success-foreground: oklch(0.99 0.005 150);
   --success-muted: oklch(0.955 0.03 150);
-  --warning: oklch(0.62 0.14 75);
-  --warning-foreground: oklch(0.22 0.04 75);
-  --warning-muted: oklch(0.96 0.04 85);
+  --warning: oklch(0.595 0.128 66);
+  --warning-foreground: oklch(0.22 0.04 66);
+  --warning-muted: oklch(0.955 0.045 75);
 
-  --border: oklch(0.918 0.005 40);
-  --input: oklch(0.918 0.005 40);
+  --border: oklch(0.912 0.004 330);
+  --input: oklch(0.912 0.004 330);
   --ring: var(--brand-500);
 
-  --chart-1: var(--brand-500);
+  --chart-1: var(--brand-600);
   --chart-2: oklch(0.65 0.12 200);
-  --chart-3: oklch(0.7 0.13 75);
+  --chart-3: oklch(0.7 0.13 66);
   --chart-4: oklch(0.62 0.12 150);
   --chart-5: oklch(0.6 0.12 285);
 
   --radius: 0.625rem;
 
-  --sidebar: oklch(0.985 0.004 40);
-  --sidebar-foreground: oklch(0.28 0.008 30);
+  --sidebar: oklch(0.985 0.002 330);
+  --sidebar-foreground: oklch(0.3 0.015 330);
   --sidebar-primary: var(--brand-600);
-  --sidebar-primary-foreground: oklch(0.99 0.005 40);
+  --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: var(--brand-50);
   --sidebar-accent-foreground: var(--brand-800);
-  --sidebar-border: oklch(0.918 0.005 40);
+  --sidebar-border: oklch(0.912 0.004 330);
   --sidebar-ring: var(--brand-500);
 
   /* Density scale. Admin is the default; the POS layout sets
@@ -199,39 +217,41 @@ html:has([data-density="pos"]) {
 }
 
 .dark {
-  --background: oklch(0.16 0.008 30);
-  --foreground: oklch(0.975 0.004 40);
-  --card: oklch(0.215 0.008 30);
-  --card-foreground: oklch(0.975 0.004 40);
-  --popover: oklch(0.215 0.008 30);
-  --popover-foreground: oklch(0.975 0.004 40);
+  --background: oklch(0.16 0.012 330);
+  --foreground: oklch(0.975 0.003 330);
+  --card: oklch(0.215 0.012 330);
+  --card-foreground: oklch(0.975 0.003 330);
+  --popover: oklch(0.215 0.012 330);
+  --popover-foreground: oklch(0.975 0.003 330);
 
+  /* brand-500, not -600: the mark's red is a DEEP crimson, and a deep
+     crimson on a dark ground is a hole rather than a button. */
   --primary: var(--brand-500);
-  --primary-foreground: oklch(0.18 0.03 26);
-  --secondary: oklch(0.28 0.008 30);
-  --secondary-foreground: oklch(0.975 0.004 40);
-  --muted: oklch(0.28 0.008 30);
-  --muted-foreground: oklch(0.72 0.01 30);
-  --accent: oklch(0.3 0.03 26);
+  --primary-foreground: oklch(0.99 0.005 17);
+  --secondary: oklch(0.28 0.012 330);
+  --secondary-foreground: oklch(0.975 0.003 330);
+  --muted: oklch(0.28 0.012 330);
+  --muted-foreground: oklch(0.72 0.01 330);
+  --accent: oklch(0.3 0.05 17);
   --accent-foreground: var(--brand-200);
 
-  --destructive: oklch(0.66 0.18 14);
+  --destructive: oklch(0.68 0.2 30);
   --success: oklch(0.68 0.13 150);
   --success-foreground: oklch(0.16 0.03 150);
   --success-muted: oklch(0.3 0.05 150);
-  --warning: oklch(0.75 0.14 75);
-  --warning-foreground: oklch(0.18 0.04 75);
-  --warning-muted: oklch(0.32 0.05 80);
+  --warning: oklch(0.75 0.13 66);
+  --warning-foreground: oklch(0.18 0.04 66);
+  --warning-muted: oklch(0.32 0.05 70);
 
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: var(--brand-400);
 
-  --sidebar: oklch(0.19 0.008 30);
-  --sidebar-foreground: oklch(0.95 0.004 40);
+  --sidebar: oklch(0.19 0.012 330);
+  --sidebar-foreground: oklch(0.95 0.003 330);
   --sidebar-primary: var(--brand-500);
-  --sidebar-primary-foreground: oklch(0.18 0.03 26);
-  --sidebar-accent: oklch(0.3 0.03 26);
+  --sidebar-primary-foreground: oklch(0.99 0.005 17);
+  --sidebar-accent: oklch(0.3 0.05 17);
   --sidebar-accent-foreground: var(--brand-200);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: var(--brand-400);

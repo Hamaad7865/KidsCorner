@@ -432,7 +432,7 @@ fun CloseShiftScreen(
 
             // `padding:9px 0; margin-top:2px; border-top:1px solid #EDF1F2`
             Spacer(Modifier.height(2.dp))
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFEDF1F2)))
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 9.dp),
                 verticalAlignment = Alignment.Bottom,

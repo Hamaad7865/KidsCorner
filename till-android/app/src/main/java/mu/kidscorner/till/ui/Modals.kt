@@ -667,7 +667,7 @@ fun SquareKey(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(11.dp),
-        color = if (enabled) Color(0xFFF5F8F8) else Handoff.Blocked,
+        color = if (enabled) Handoff.Well else Handoff.Blocked,
         contentColor = if (enabled) tint else Handoff.BlockedText,
         border = BorderStroke(1.dp, Handoff.LineIdle),
         modifier = Modifier.size(size.dp),
