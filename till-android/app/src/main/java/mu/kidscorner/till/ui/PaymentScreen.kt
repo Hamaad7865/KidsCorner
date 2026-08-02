@@ -343,15 +343,23 @@ fun PaymentScreen(
                     }
 
                     // ── change due (cash) or the method's own instruction ────
+                    //
+                    // Coloured only once there is change to hand back. It used
+                    // to be the biggest tinted block on the screen from the
+                    // moment the screen opened, announcing "CHANGE DUE Rs 0.00"
+                    // before a single key had been pressed — the loudest thing
+                    // in the room saying nothing. It keeps its size either way,
+                    // so nothing jumps when the figure arrives.
+                    val hasChange = isCash && pendingChange > 0
                     Column(
                         Modifier
                             .weight(1f)
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (isCash) Handoff.ChangeTint else Handoff.Surface)
+                            .background(if (hasChange) Handoff.ChangeTint else Handoff.Surface)
                             .border(
                                 1.dp,
-                                if (isCash) Handoff.ChangeLine else Handoff.LineSoft,
+                                if (hasChange) Handoff.ChangeLine else Handoff.LineSoft,
                                 RoundedCornerShape(14.dp),
                             )
                             .padding(horizontal = 20.dp, vertical = 14.dp),
@@ -363,7 +371,7 @@ fun PaymentScreen(
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.15.sp,
-                                color = Handoff.ChangeLabel,
+                                color = if (hasChange) Handoff.ChangeLabel else Handoff.Muted3,
                             )
                             Text(
                                 formatRs(pendingChange),
@@ -372,7 +380,7 @@ fun PaymentScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 letterSpacing = (-1.6).sp,
                                 lineHeight = 40.sp,
-                                color = Handoff.ChangeFigure,
+                                color = if (hasChange) Handoff.ChangeFigure else Handoff.Faint,
                                 modifier = Modifier.padding(vertical = 6.dp),
                             )
                             Text(
@@ -385,7 +393,7 @@ fun PaymentScreen(
                                     else -> "Hand back ${formatRs(pendingChange)}."
                                 },
                                 fontSize = 12.sp,
-                                color = Handoff.ChangeNote,
+                                color = if (hasChange) Handoff.ChangeNote else Handoff.Muted3,
                             )
                         } else {
                             Text(

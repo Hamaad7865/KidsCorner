@@ -874,16 +874,24 @@ private fun DrawerRow(label: String, value: String) {
 }
 
 /**
- * The handoff's per-method colours.
+ * The per-method bar colours.
  *
- * Cash is the teal one, so it becomes coral; the other three were never teal
- * and carry across untouched. Keeping them distinct matters more than keeping
- * them on-brand — the bars exist to be told apart at a glance.
+ * Keeping them distinct matters more than keeping them on-brand — the bars
+ * exist to be told apart at a glance, which is the one place on this till
+ * where four hues earn their keep.
+ *
+ * They are the back office's own `--chart-2/3/5` now, rather than four hexes
+ * invented here. Two reasons. The same payment method should be the same
+ * colour whichever screen the shop is looking at; and Juice was #F0806B,
+ * which is the retired brand coral to within a couple of points — the one
+ * colour deliberately removed from the entire app, still sitting on the
+ * end-of-day screen next to the new crimson and reading as something left
+ * behind.
  */
 private fun methodColor(method: String): Color = when (method) {
     "cash" -> Handoff.AccentSolid
-    "card" -> Color(0xFF8CC6E8)
-    "juice" -> Color(0xFFF0806B)
-    "myt", "myt_money" -> Color(0xFFA9A2E8)
+    "card" -> Color(0xFF00A4AC)
+    "juice" -> Color(0xFFD48C3A)
+    "myt", "myt_money" -> Color(0xFF7974C5)
     else -> Handoff.Muted4
 }
