@@ -136,10 +136,10 @@ export function CloseTillRemotely({
               <span
                 className={
                   variance === 0
-                    ? "font-semibold tabular-nums text-emerald-600"
+                    ? "font-semibold tabular-nums text-success"
                     : variance < 0
                       ? "text-destructive font-semibold tabular-nums"
-                      : "font-semibold tabular-nums text-amber-600"
+                      : "font-semibold tabular-nums text-warning"
                 }
               >
                 {formatRs(variance)}

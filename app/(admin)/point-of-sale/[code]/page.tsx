@@ -302,10 +302,10 @@ function SessionTable({
                     open || s.variance === null
                       ? "text-muted-foreground text-right"
                       : s.variance === 0
-                        ? "text-right font-semibold tabular-nums text-emerald-600"
+                        ? "text-right font-semibold tabular-nums text-success"
                         : s.variance < 0
                           ? "text-destructive text-right font-semibold tabular-nums"
-                          : "text-right font-semibold tabular-nums text-amber-600"
+                          : "text-right font-semibold tabular-nums text-warning"
                   }
                 >
                   {/* A shift closed without a count is not a shift that

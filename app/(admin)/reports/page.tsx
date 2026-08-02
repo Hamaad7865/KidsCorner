@@ -142,7 +142,7 @@ export default async function ReportsPage({
             that came back, so a silent clip would report a smaller month as
             though it were the whole one. */}
         {summary.truncated ? (
-          <p className="text-sm text-amber-600">
+          <p className="text-sm text-warning">
             This period holds more documents than one report reads, so these
             totals cover only its earliest {formatQty(summary.saleCount)}. Narrow
             the dates for a complete figure.

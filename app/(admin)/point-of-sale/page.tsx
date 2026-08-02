@@ -151,10 +151,10 @@ export default async function PointOfSalePage() {
                       row.variance === null
                         ? "text-muted-foreground text-right"
                         : row.variance === 0
-                          ? "text-right font-semibold tabular-nums text-emerald-600"
+                          ? "text-right font-semibold tabular-nums text-success"
                           : row.variance < 0
                             ? "text-destructive text-right font-semibold tabular-nums"
-                            : "text-right font-semibold tabular-nums text-amber-600"
+                            : "text-right font-semibold tabular-nums text-warning"
                     }
                   >
                     {/* Never counted reads as "—", not as a balanced drawer. */}

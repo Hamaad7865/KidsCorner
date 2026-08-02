@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useFormStatus } from "react-dom"
 import { AlertCircle, LoaderCircle, Search, SlidersHorizontal } from "lucide-react"
 import { toast } from "sonner"
@@ -32,9 +33,27 @@ import { cn } from "@/lib/utils"
  * they *counted* rather than a delta — the difference is worked out server-side
  * against the current quantity, so two simultaneous corrections can't overwrite
  * each other with the same absolute figure.
+ *
+ * @param defaultOpen Open on arrival. Set by `/stock?new=adjustment`, which is
+ *   where the dashboard's "Adjust stock" goes — asking for the form should
+ *   produce the form, not the ledger with the form somewhere on it.
  */
-export function AdjustmentDialog() {
-  const [open, setOpen] = useState(false)
+export function AdjustmentDialog({ defaultOpen = false }: { defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const router = useRouter()
+
+  /**
+   * Closing takes `?new=adjustment` off the URL.
+   *
+   * Without this the parameter outlives the dialog, and a refresh — or a
+   * bookmark, or the back button — reopens a form the shopkeeper has already
+   * dismissed once. `replace` rather than `push` so closing a dialog does not
+   * become a history entry to click back through.
+   */
+  const change = (next: boolean) => {
+    setOpen(next)
+    if (!next && defaultOpen) router.replace("/stock")
+  }
 
   return (
     <>
@@ -43,7 +62,7 @@ export function AdjustmentDialog() {
         Adjust stock
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={change}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Adjust stock</DialogTitle>
@@ -53,7 +72,7 @@ export function AdjustmentDialog() {
             </DialogDescription>
           </DialogHeader>
           {/* Unmounts on close, resetting the search and the action state. */}
-          <AdjustmentForm onDone={() => setOpen(false)} />
+          <AdjustmentForm onDone={() => change(false)} />
         </DialogContent>
       </Dialog>
     </>

@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Plus, Truck } from "lucide-react"
+import { Ban, Layers, PackageCheck, Plus, Truck } from "lucide-react"
 
+import { TabLink } from "@/components/admin/tab-link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -20,7 +21,7 @@ import { listPurchases } from "@/lib/purchases/queries"
 export const metadata: Metadata = { title: "Purchases" }
 
 const STATUS_LABELS: Record<PurchaseStatus, string> = {
-  draft: "Draft",
+  draft: "On order",
   received: "Received",
   cancelled: "Cancelled",
 }
@@ -34,12 +35,29 @@ function StatusBadge({ status }: { status: PurchaseStatus }) {
       </Badge>
     )
   }
-  return <Badge variant="outline">Draft</Badge>
+  return <Badge variant="outline">{STATUS_LABELS.draft}</Badge>
 }
 
-export default async function PurchasesPage() {
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+export default async function PurchasesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   await requireAdminProfile()
-  const { rows: purchases, truncated } = await listPurchases()
+  const params = await searchParams
+  const statusParam = first(params.status)
+  const status: PurchaseStatus | undefined =
+    statusParam === "draft" ||
+    statusParam === "received" ||
+    statusParam === "cancelled"
+      ? statusParam
+      : undefined
+
+  const { rows: purchases, truncated, counts } = await listPurchases(status)
 
   return (
     <div className="space-y-6">
@@ -48,9 +66,11 @@ export default async function PurchasesPage() {
           <h1 className="font-heading text-xl font-semibold">Purchases</h1>
           <p className="text-muted-foreground text-sm">
             Stock only goes up when you mark a purchase as received.
-            {truncated
-              ? ` Showing the ${purchases.length} most recent — there are older ones.`
-              : ""}
+            {truncated && status === undefined
+              ? ` Showing the ${purchases.length} most recent — pick a status to see further back.`
+              : truncated
+                ? ` Showing the ${purchases.length} most recent.`
+                : ""}
           </p>
         </div>
         <Button render={<Link href="/purchases/new" />}>
@@ -59,7 +79,62 @@ export default async function PurchasesPage() {
         </Button>
       </header>
 
-      {purchases.length === 0 ? (
+      {/* "On order" rather than "Draft". The status is `draft` in the
+          database, but to a shopkeeper a purchase that has been raised is
+          ordered, not a rough copy — and the dashboard already calls the
+          same rows "awaiting delivery" and links straight into this tab. */}
+      <div className="flex gap-1 border-b">
+        <TabLink href="/purchases" active={status === undefined} icon={Layers}>
+          All
+        </TabLink>
+        <TabLink
+          href="/purchases?status=draft"
+          active={status === "draft"}
+          icon={Truck}
+          count={counts.draft}
+        >
+          On order
+        </TabLink>
+        <TabLink
+          href="/purchases?status=received"
+          active={status === "received"}
+          icon={PackageCheck}
+        >
+          Received
+        </TabLink>
+        <TabLink
+          href="/purchases?status=cancelled"
+          active={status === "cancelled"}
+          icon={Ban}
+        >
+          Cancelled
+        </TabLink>
+      </div>
+
+      {purchases.length === 0 && status !== undefined ? (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <Truck className="text-muted-foreground mx-auto size-8" aria-hidden />
+          <p className="mt-3 font-medium">
+            {status === "draft"
+              ? "Nothing on order"
+              : status === "received"
+                ? "Nothing received yet"
+                : "Nothing cancelled"}
+          </p>
+          <p className="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
+            {status === "draft"
+              ? "Every purchase you have raised has already been booked in."
+              : status === "received"
+                ? "A purchase moves here once you mark the delivery as received."
+                : "Purchases you cancel stay on record and appear here."}
+          </p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Button variant="outline" render={<Link href="/purchases" />}>
+              Show all purchases
+            </Button>
+          </div>
+        </div>
+      ) : purchases.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center">
           <Truck className="text-muted-foreground mx-auto size-8" aria-hidden />
           <p className="mt-3 font-medium">No purchases yet</p>

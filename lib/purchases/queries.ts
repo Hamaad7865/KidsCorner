@@ -114,12 +114,23 @@ export const PURCHASE_LIST_LIMIT = 200
 export type PurchaseList = {
   rows: PurchaseListRow[]
   truncated: boolean
+  /** How many purchases sit in each status, whatever is being shown. */
+  counts: Record<PurchaseStatus, number>
 }
 
-export async function listPurchases(): Promise<PurchaseList> {
+/**
+ * @param status Narrow to one status, or undefined for all of them.
+ *
+ * The counts are always for the whole table, not for the filtered slice —
+ * a tab that says "Ordered 4" has to keep saying 4 while you are looking at
+ * the received ones.
+ */
+export async function listPurchases(
+  status?: PurchaseStatus,
+): Promise<PurchaseList> {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("purchases")
     .select(
       `id, invoice_no, purchase_date, expected_date, status, total_amount,
@@ -131,7 +142,24 @@ export async function listPurchases(): Promise<PurchaseList> {
     // One extra row so a capped list can say so rather than just ending.
     .limit(PURCHASE_LIST_LIMIT + 1)
 
+  if (status) query = query.eq("status", status)
+
+  const [{ data, error }, statusRows] = await Promise.all([
+    query,
+    supabase.from("purchases").select("status"),
+  ])
+
   if (error) throw error
+  if (statusRows.error) throw statusRows.error
+
+  const counts: Record<PurchaseStatus, number> = {
+    draft: 0,
+    received: 0,
+    cancelled: 0,
+  }
+  for (const row of statusRows.data ?? []) {
+    if (isPurchaseStatus(row.status)) counts[row.status] += 1
+  }
 
   const all = data ?? []
   const rows = all.slice(0, PURCHASE_LIST_LIMIT).map((row) => ({
@@ -149,7 +177,7 @@ export async function listPurchases(): Promise<PurchaseList> {
     expectedDate: row.expected_date,
   }))
 
-  return { rows, truncated: all.length > PURCHASE_LIST_LIMIT }
+  return { rows, truncated: all.length > PURCHASE_LIST_LIMIT, counts }
 }
 
 export type PurchaseLine = {

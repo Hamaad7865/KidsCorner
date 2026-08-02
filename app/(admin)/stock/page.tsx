@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TabLink } from "@/components/admin/tab-link"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { isMovementType, type MovementType } from "@/lib/db-enums"
 import { formatDate, formatQty, formatRs } from "@/lib/format"
@@ -114,7 +115,7 @@ export default async function StockPage({
               isDefault: l.isDefault,
             }))}
           />
-          <AdjustmentDialog />
+          <AdjustmentDialog defaultOpen={first(params.new) === "adjustment"} />
         </div>
       </header>
 
@@ -419,41 +420,6 @@ export default async function StockPage({
         </div>
       )}
     </div>
-  )
-}
-
-function TabLink({
-  href,
-  active,
-  icon: Icon,
-  count,
-  children,
-}: {
-  href: string
-  active: boolean
-  icon: React.ComponentType<{ className?: string }>
-  count?: number
-  children: React.ReactNode
-}) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-        active
-          ? "border-brand-600 text-foreground"
-          : "text-muted-foreground hover:text-foreground border-transparent",
-      )}
-    >
-      <Icon className="size-4" aria-hidden />
-      {children}
-      {count !== undefined && count > 0 ? (
-        <Badge variant="secondary" className="ml-1">
-          {count}
-        </Badge>
-      ) : null}
-    </Link>
   )
 }
 

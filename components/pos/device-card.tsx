@@ -51,7 +51,7 @@ export function DeviceCard({
                   }
                   className={
                     device.online
-                      ? "size-2 shrink-0 rounded-full bg-emerald-500"
+                      ? "size-2 shrink-0 rounded-full bg-success"
                       : "bg-muted-foreground/40 size-2 shrink-0 rounded-full"
                   }
                   aria-label={device.online ? "Online" : "Offline"}

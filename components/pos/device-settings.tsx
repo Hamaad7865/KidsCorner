@@ -74,7 +74,7 @@ export function DeviceSettings({ device }: { device: PosDevice }) {
               model on first sight; renaming it here sticks, and a reinstall
               will not overwrite it.
             </p>
-            {saved ? <p className="text-xs text-emerald-600">Saved.</p> : null}
+            {saved ? <p className="text-xs text-success">Saved.</p> : null}
           </div>
 
           {/* Reported by the device, not editable. These are evidence about the

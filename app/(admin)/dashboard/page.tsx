@@ -64,8 +64,13 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" render={<Link href="/stock" />}>
-            New adjustment
+          {/* Opens the adjustment form on arrival rather than dropping you on
+              the ledger to go looking for the button that does what you just
+              asked for. Named "Adjust stock" because that is what the button
+              on the stock page and the dialog's own title both say — three
+              names for one action is three things to learn. */}
+          <Button variant="outline" render={<Link href="/stock?new=adjustment" />}>
+            Adjust stock
           </Button>
           <Button render={<Link href="/import" />}>Import from Excel</Button>
         </div>
@@ -108,7 +113,10 @@ export default async function DashboardPage() {
               ? `Next: ${stats.awaiting.nextSupplier}, ${formatDate(stats.awaiting.nextDate)}`
               : "Nothing on order"
           }
-          href={stats.awaiting.count > 0 ? "/purchases" : undefined}
+          // The count is of purchases still on order, so the link is too —
+          // it used to land on the full list, mixed in with everything
+          // already received.
+          href={stats.awaiting.count > 0 ? "/purchases?status=draft" : undefined}
         />
       </div>
 
@@ -290,8 +298,8 @@ function Stat({
           <span
             className={
               delta.percent >= 0
-                ? "rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700"
-                : "rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700"
+                ? "rounded-md bg-success-muted px-1.5 py-0.5 text-[11px] font-semibold text-success"
+                : "rounded-md bg-warning-muted px-1.5 py-0.5 text-[11px] font-semibold text-warning-foreground"
             }
           >
             {delta.percent >= 0 ? "+" : ""}

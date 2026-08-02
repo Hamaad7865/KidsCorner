@@ -95,10 +95,10 @@ export function CashFlowTab({
                     value={formatRs(closure.variance)}
                     tone={
                       closure.variance === 0
-                        ? "text-emerald-600"
+                        ? "text-success"
                         : closure.variance < 0
                           ? "text-destructive"
-                          : "text-amber-600"
+                          : "text-warning"
                     }
                   />
                 </div>
@@ -161,7 +161,7 @@ export function CashFlowTab({
           </div>
 
           {flow.truncated ? (
-            <p className="text-amber-600 text-sm">
+            <p className="text-warning text-sm">
               This period covers more shifts than one view reads. Narrow the dates
               to see all of it.
             </p>
@@ -170,7 +170,7 @@ export function CashFlowTab({
           <FlowTable
             title="Cash inflows"
             total={inflowTotal}
-            totalTone="text-emerald-600"
+            totalTone="text-success"
             headers={["Date", "User", "Method", "Ref", "Amount"]}
             empty={flow.inflows.length === 0}
           >
