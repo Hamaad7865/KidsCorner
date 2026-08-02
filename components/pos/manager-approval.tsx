@@ -48,7 +48,7 @@ export function ManagerApproval({
           This needs a manager, but no owner or manager has a PIN set. An owner
           sets them in Settings, under Staff PINs.
         </p>
-        <Button variant="outline" className="w-full" onClick={onCancel}>
+        <Button type="button" variant="outline" className="w-full" onClick={onCancel}>
           Back
         </Button>
       </div>
@@ -82,7 +82,7 @@ export function ManagerApproval({
             </li>
           ))}
         </ul>
-        <Button variant="ghost" className="w-full" onClick={onCancel}>
+        <Button type="button" variant="ghost" className="w-full" onClick={onCancel}>
           Cancel
         </Button>
       </div>
@@ -115,6 +115,7 @@ export function ManagerApproval({
               <span key={i} />
             ) : (
               <Button
+                type="button"
                 key={i}
                 variant="outline"
                 className="h-14 text-lg"
@@ -143,6 +144,7 @@ export function ManagerApproval({
       <div className="flex gap-2">
         {managers.length > 1 ? (
           <Button
+            type="button"
             variant="ghost"
             className="flex-1"
             onClick={() => {
@@ -153,7 +155,7 @@ export function ManagerApproval({
             Someone else
           </Button>
         ) : null}
-        <Button variant="ghost" className="flex-1" onClick={onCancel}>
+        <Button type="button" variant="ghost" className="flex-1" onClick={onCancel}>
           Cancel
         </Button>
       </div>

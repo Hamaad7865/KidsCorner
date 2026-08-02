@@ -87,6 +87,15 @@ export function ReturnForm({
   /** The manager's PIN, once one has been typed. Never held beyond this submit. */
   const [approval, setApproval] = useState<{ managerId: string; pin: string } | null>(null)
 
+  // Re-submits once a manager has authorised. An effect rather than a call
+  // inside onApprove, because the approval reaches the server as a hidden
+  // input and that input does not exist until React has committed the state
+  // that renders it. Effects run after commit; a requestAnimationFrame does
+  // not promise to.
+  useEffect(() => {
+    if (approval) formRef.current?.requestSubmit()
+  }, [approval])
+
   useEffect(() => {
     if (state.status === "success") {
       if (state.message) toast.success(state.message)
@@ -124,30 +133,7 @@ export function ReturnForm({
   // one place and this reacts to it rather than keeping a second copy.
   const needsApproval = Boolean(state.fieldErrors.needsApproval)
 
-  if (needsApproval && managers.length > 0) {
-    return (
-      <div className="space-y-4">
-        <Alert>
-          <AlertCircle aria-hidden />
-          <AlertDescription>{state.error}</AlertDescription>
-        </Alert>
-        <ManagerApproval
-          managers={managers}
-          reason="return"
-          pending={false}
-          onApprove={(managerId, pin) => {
-            // Stored, then the form is submitted again with it attached. The
-            // quantities and the reason are still in state, so the manager
-            // approves the return that was actually built rather than a fresh
-            // empty one.
-            setApproval({ managerId, pin })
-            requestAnimationFrame(() => formRef.current?.requestSubmit())
-          }}
-          onCancel={() => setApproval(null)}
-        />
-      </div>
-    )
-  }
+  const showKeypad = needsApproval && managers.length > 0
 
   if (sale.fullyReturned) {
     return (
@@ -162,7 +148,35 @@ export function ReturnForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-5" noValidate>
+    <>
+      {showKeypad ? (
+        <div className="space-y-4">
+          <Alert>
+            <AlertCircle aria-hidden />
+            <AlertDescription>{state.error}</AlertDescription>
+          </Alert>
+          {/* Outside the form on purpose. Its keys are Buttons, and a Button
+              inside a form submits it — a manager typing a four-digit PIN
+              would post the return four times. */}
+          <ManagerApproval
+            managers={managers}
+            reason="return"
+            pending={false}
+            onApprove={(managerId, pin) => setApproval({ managerId, pin })}
+            onCancel={() => setApproval(null)}
+          />
+        </div>
+      ) : null}
+
+      {/* Hidden, never unmounted: the quantities, the reason and the restock
+          switch have to survive the detour so the manager approves the return
+          that was actually built, and requestSubmit needs a form that exists. */}
+      <form
+        ref={formRef}
+        action={formAction}
+        className={showKeypad ? "hidden" : "space-y-5"}
+        noValidate
+      >
       <input type="hidden" name="saleId" value={sale.id} />
       {shiftId !== null ? (
         <input type="hidden" name="shiftId" value={shiftId} />
@@ -330,6 +344,7 @@ export function ReturnForm({
         </div>
         <SubmitButton count={picked.length} amount={refundTotal} />
       </div>
-    </form>
+      </form>
+    </>
   )
 }
