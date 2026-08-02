@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -307,6 +308,82 @@ fun SellScreen(
             onCloseTill = onCloseTill,
         )
 
+        // ── the scan bar: full width, always focused, and on top ──────────
+        //
+        // A hardware scanner is a keyboard, so this holds focus and anything
+        // typed anywhere lands here. It spans the till because it is the till's
+        // primary input, not a field in a corner of a browsing pane — and it
+        // sits directly under the chrome, where the eye starts, rather than at
+        // the foot where it reads as a status bar.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Handoff.Surface)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+                    SearchField(
+                        value = query,
+                        onValueChange = { query = it },
+                        onSubmit = ::submitSearch,
+                        onClear = { query = "" },
+                        focusRequester = search,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ScanButton(onClick = ::submitSearch)
+
+                    // Custom item takes the key Browse used to hold. Browse
+                    // opened an overlay onto the catalogue, and the catalogue
+                    // is now the middle column — a door onto the room you are
+                    // already standing in.
+                    Surface(
+                        onClick = onOpenCustomItem,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.Surface,
+                        contentColor = Handoff.InkStrong,
+                        border = BorderStroke(1.dp, Handoff.Line),
+                        modifier = Modifier.size(width = 132.dp, height = 56.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(
+                                8.dp,
+                                Alignment.CenterHorizontally,
+                            ),
+                        ) {
+                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                            Text("Custom", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    // `width:74px;height:56px` — everything the till does that
+                    // is not ringing up a sale, kept off the selling surface.
+                    Surface(
+                        onClick = onOpenActions,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.Surface,
+                        contentColor = Handoff.InkStrong,
+                        border = BorderStroke(1.dp, Handoff.Line),
+                        modifier = Modifier.size(width = 74.dp, height = 56.dp),
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(Icons.Default.MoreHoriz, null, Modifier.size(19.dp))
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "More",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.42.sp,
+                            )
+                        }
+                    }
+        }
         // ── the checkout, three columns ───────────────────────────────────
         //
         // Carfectionist's CounterScreen, column for column: a category rail
@@ -415,80 +492,6 @@ fun SellScreen(
             }
         }
 
-        // ── the scan bar: full width, always focused ──────────────────────
-        //
-        // A hardware scanner is a keyboard, so this holds focus and anything
-        // typed anywhere lands here. It spans the till because it is the till's
-        // primary input, not a field in a corner of a browsing pane.
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(Handoff.Surface)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-                    SearchField(
-                        value = query,
-                        onValueChange = { query = it },
-                        onSubmit = ::submitSearch,
-                        onClear = { query = "" },
-                        focusRequester = search,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ScanButton(onClick = ::submitSearch)
-
-                    // Custom item takes the key Browse used to hold. Browse
-                    // opened an overlay onto the catalogue, and the catalogue
-                    // is now the middle column — a door onto the room you are
-                    // already standing in.
-                    Surface(
-                        onClick = onOpenCustomItem,
-                        shape = RoundedCornerShape(12.dp),
-                        color = Handoff.Surface,
-                        contentColor = Handoff.InkStrong,
-                        border = BorderStroke(1.dp, Handoff.Line),
-                        modifier = Modifier.size(width = 132.dp, height = 56.dp),
-                    ) {
-                        Row(
-                            Modifier.fillMaxSize(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(
-                                8.dp,
-                                Alignment.CenterHorizontally,
-                            ),
-                        ) {
-                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                            Text("Custom", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-
-                    // `width:74px;height:56px` — everything the till does that
-                    // is not ringing up a sale, kept off the selling surface.
-                    Surface(
-                        onClick = onOpenActions,
-                        shape = RoundedCornerShape(12.dp),
-                        color = Handoff.Surface,
-                        contentColor = Handoff.InkStrong,
-                        border = BorderStroke(1.dp, Handoff.Line),
-                        modifier = Modifier.size(width = 74.dp, height = 56.dp),
-                    ) {
-                        Column(
-                            Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(Icons.Default.MoreHoriz, null, Modifier.size(19.dp))
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "More",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.42.sp,
-                            )
-                        }
-                    }
-        }
     }
 
     picker?.let { group ->
@@ -602,7 +605,14 @@ private fun ScanButton(onClick: () -> Unit) {
     }
 }
 
-/** The handoff's own barcode mark: six bars of varying weight. */
+/**
+ * The handoff's own barcode mark: six bars of varying weight.
+ *
+ * The tint comes from `LocalContentColor`, which is what `Surface(contentColor)`
+ * actually sets. It used to read `LocalTextStyle.current.color`, which nothing
+ * had set here — so the bars were drawn in Color.Unspecified and the scan key
+ * was a solid dark block with no mark on it at all.
+ */
 @Composable
 private fun BarcodeGlyph(size: Int = 24, tint: Color? = null) {
     Row(
@@ -622,7 +632,7 @@ private fun BarcodeGlyph(size: Int = 24, tint: Color? = null) {
 }
 
 @Composable
-private fun LocalContentColourOrCurrent(): Color = LocalTextStyle.current.color
+private fun LocalContentColourOrCurrent(): Color = LocalContentColor.current
 
 // ─────────────────────────────────────────────────────────────── the tabs
 
@@ -1491,7 +1501,11 @@ private fun CartRow(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 val gross = round2(line.unitPrice * line.qty)
-                LINE_DISCOUNTS.chunked(3).forEach { row ->
+                // One row per unit, not a wrapped list: 5 · 10 · 15 · 20 reads
+                // as a scale when it sits on one line and as an arbitrary pile
+                // when it wraps. The rupee offers get their own row underneath
+                // for the same reason.
+                listOf(LINE_DISCOUNTS_PCT, LINE_DISCOUNTS_AMT).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { (label, spec) ->
                             val (kind, value) = spec
@@ -1532,12 +1546,18 @@ private fun CartRow(
  * Fixed offers rather than a keypad: at a counter the cashier is choosing from
  * what the shop allows, and a free-text box is how "20%" becomes "80%".
  */
-private val LINE_DISCOUNTS: List<Pair<String, Pair<String, Double>>> = listOf(
+private val LINE_DISCOUNTS_PCT: List<Pair<String, Pair<String, Double>>> = listOf(
     "5%" to ("percent" to 5.0),
     "10%" to ("percent" to 10.0),
+    "15%" to ("percent" to 15.0),
     "20%" to ("percent" to 20.0),
+)
+
+/** The same offers in rupees, for the times a customer is owed an amount. */
+private val LINE_DISCOUNTS_AMT: List<Pair<String, Pair<String, Double>>> = listOf(
     "Rs 50" to ("amount" to 50.0),
     "Rs 100" to ("amount" to 100.0),
+    "Rs 200" to ("amount" to 200.0),
 )
 
 /** `height:44px; padding:0 16px; radius:10px`, solid `#B4402F` when on. */
