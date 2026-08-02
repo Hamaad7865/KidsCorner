@@ -381,10 +381,17 @@ fun RefundScreen(
                 modifier = Modifier.padding(top = 18.dp, bottom = 8.dp),
             )
 
+            // my.t money was missing. The shop takes it, the back office
+            // offers it as a refund method, and /api/till/refund has always
+            // accepted it — only this grid left it out. A cashier refunding a
+            // my.t money sale had to pick Cash, which takes real notes out of
+            // the drawer for a payment that never put any in, and leaves the
+            // Z short by the refund.
             val methods = listOf(
                 "cash" to Icons.Default.Payments,
                 "card" to Icons.Default.CreditCard,
                 "juice" to Icons.Default.PhoneAndroid,
+                "myt_money" to Icons.Default.PhoneAndroid,
                 "exchange" to Icons.Default.SwapHoriz,
             )
             methods.chunked(2).forEach { pair ->
@@ -400,6 +407,10 @@ fun RefundScreen(
                             modifier = Modifier.weight(1f),
                         ) { method = id }
                     }
+                    // Five in a two-wide grid leaves one alone on the last
+                    // row; without this it stretches to full width and reads
+                    // as a different, more important key.
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
 

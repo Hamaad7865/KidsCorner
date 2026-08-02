@@ -61,6 +61,16 @@ export function ReturnForm({
   const [qty, setQty] = useState<Record<number, number>>({})
   const [method, setMethod] = useState("cash")
 
+  /**
+   * Whether the goods go back on the shelf.
+   *
+   * The tablet till has had this switch since it was built and the back
+   * office did not, so every return raised here restocked — a faulty garment
+   * went straight back out as sellable. The RPC defaults to restocking, which
+   * is why nothing ever failed.
+   */
+  const [restock, setRestock] = useState(true)
+
   useEffect(() => {
     if (state.status === "success") {
       if (state.message) toast.success(state.message)
@@ -230,6 +240,27 @@ export function ReturnForm({
           </select>
         </div>
       </div>
+
+      {/* Posted explicitly rather than relying on a checkbox's absence, so the
+          value is always in the payload whichever way it is set. */}
+      <input type="hidden" name="restock" value={restock ? "true" : ""} />
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+        <input
+          type="checkbox"
+          checked={restock}
+          onChange={(event) => setRestock(event.target.checked)}
+          className="accent-primary mt-0.5 size-4"
+        />
+        <span className="text-sm">
+          <span className="font-medium">Put items back into stock</span>
+          <span className="text-muted-foreground mt-0.5 block text-xs">
+            {restock
+              ? "Stock goes back on the shelf count immediately."
+              : "Faulty stock stays out — write it off with a stock adjustment."}
+          </span>
+        </span>
+      </label>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
         <div className="text-sm">

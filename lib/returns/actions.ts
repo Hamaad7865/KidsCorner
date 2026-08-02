@@ -6,6 +6,7 @@ import { z } from "zod"
 import { isAdminRole } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import {
+  boolOf,
   fieldErrorsOf,
   formFail as fail,
   formOk,
@@ -38,6 +39,14 @@ const creditNoteSchema = z.object({
     .min(3, "Give a reason — it is the only record of why the money went back.")
     .max(200, "Keep the reason under 200 characters."),
   refundMethod: z.enum(REFUND_METHODS),
+  /**
+   * Whether the goods go back on the shelf.
+   *
+   * `boolOf` reads an absent checkbox as false, so the form posts it
+   * explicitly and the default here is only for a caller that omits it —
+   * matching the RPC, which also defaults to restocking.
+   */
+  restock: z.boolean().default(true),
   items: z
     .array(
       z.object({
@@ -74,11 +83,12 @@ export async function createCreditNote(
     shiftId: idOf(formData, "shiftId"),
     reason: textOf(formData, "reason"),
     refundMethod: textOf(formData, "refundMethod"),
+    restock: boolOf(formData, "restock"),
     items: rawItems,
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { shiftId, reason, refundMethod, items } = parsed.data
+  const { shiftId, reason, refundMethod, restock, items } = parsed.data
 
   const supabase = await createClient()
 
@@ -110,6 +120,11 @@ export async function createCreditNote(
     p_approved_by: approvedBy,
     p_reason: reason,
     p_refund_method: refundMethod,
+    // The tablet till has always sent this; the back office never did, so a
+    // faulty garment returned here went straight back onto the shelf as
+    // sellable stock. The RPC defaults it TRUE, which is why nothing failed
+    // and nobody noticed.
+    p_restock: restock,
     // Merged by sale item, exactly as the till API does. The RPC's
     // already-returned check reads only COMMITTED credit notes and does not
     // accumulate within a call, so two entries naming one line each compare
