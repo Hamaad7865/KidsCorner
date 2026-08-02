@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonOutline
@@ -59,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.focusRequester
@@ -130,6 +131,15 @@ private const val MAX_RESULTS = 40
 
 /** Products shown per tab before the same. */
 private const val MAX_TILES = 60
+
+/**
+ * Below this width the category rail starts closed.
+ *
+ * Carfectionist's figure, kept rather than re-derived: three columns need room,
+ * and a 225dp rail on a drawer-sized tablet is taken out of the two that are
+ * doing the work.
+ */
+private const val COMPACT_RAIL_DP = 1100
 
 private data class ProductGroup(
     val productId: Int,
@@ -213,8 +223,18 @@ fun SellScreen(
     var query by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf<ProductGroup?>(null) }
     var tab by remember { mutableStateOf<Int?>(null) }
-    /** Whether the catalogue overlay is open. Typing also opens it. */
-    var browsing by remember { mutableStateOf(false) }
+    /**
+     * The category rail, open unless the tablet is too narrow for three columns.
+     *
+     * Carfectionist's own rule, and its number: below 1100dp the grid and the
+     * bill need the width more than the rail does, so it starts tucked away and
+     * the » brings it back. Without this a drawer-sized tablet gets 225dp of
+     * rail, a crushed grid and a bill too narrow to read a total in — which is
+     * the shape of every three-column layout that was only ever tried on the
+     * developer's screen.
+     */
+    val compactScreen = LocalConfiguration.current.screenWidthDp < COMPACT_RAIL_DP
+    var railOpen by remember(compactScreen) { mutableStateOf(!compactScreen) }
     /** The line most recently added, for the design's "Added" badge. */
     var justAdded by remember { mutableStateOf<Int?>(null) }
 
@@ -284,54 +304,100 @@ fun SellScreen(
             onCloseTill = onCloseTill,
         )
 
-        // ── the basket owns the screen ────────────────────────────────────
+        // ── the checkout, three columns ───────────────────────────────────
         //
-        // The counter is scanner-first, so at rest the cashier is not browsing
-        // — they are confirming what just scanned and watching a total. The
-        // catalogue used to hold roughly 60% of the till for an interaction
-        // that happens when a tag is missing; it now lives one tap away in an
-        // overlay, where it gets the WHOLE width to be tapped in rather than a
-        // squeezed column. Nothing was removed; it stopped paying rent.
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            BasketPane(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
-                lines = lines,
-                tillOpen = tillOpen,
-                note = note,
-                justAdded = justAdded,
-                itemCount = totals.itemCount,
-                onSetQty = onSetQty,
-                onSetLineDiscount = onSetLineDiscount,
-                onOpenPriceOverride = onOpenPriceOverride,
-                onOpenNote = onOpenNote,
-                onSetNote = onSetNote,
-                onRemove = onRemove,
-                onClear = onClear,
-                onOpenTill = onOpenTill,
+        // Carfectionist's CounterScreen, column for column: a category rail
+        // that collapses, the grid in the middle, the bill on the right at
+        // 42:54. Their layout, our colours.
+        //
+        // The scan bar stays where it is, under all three. Carfectionist puts
+        // its search at the head of the middle column; here the counter is
+        // scanner-first and that field holds focus for a hardware scanner, so
+        // it spans the till rather than sitting inside one pane. That is the
+        // one deliberate departure, and it is about a scanner theirs does not
+        // have to serve.
+        Row(
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CategoryRail(
+                open = railOpen,
+                tabs = tabs,
+                selected = tab,
+                onToggle = { railOpen = !railOpen },
+                onSelect = { tab = it },
             )
 
-            CartPane(
-                modifier = Modifier.width(468.dp).fillMaxHeight(),
-                lines = lines,
-                totals = totals,
-                vatRate = vatRate,
-                tillOpen = tillOpen,
-                customer = customer,
-                discount = discount,
-                heldCount = heldCount,
-                onOpenNote = onOpenNote,
-                note = note,
-                onPay = onPay,
-                onHold = onHold,
-                onOpenHeld = onOpenHeld,
-                onOpenCustomer = onOpenCustomer,
-                onDetachCustomer = onDetachCustomer,
-                onOpenDiscount = onOpenDiscount,
-                onRemoveDiscount = onRemoveDiscount,
-                onCloseTill = onCloseTill,
-                onOpenMovement = onOpenMovement,
-                onOpenHistory = onOpenHistory,
-            )
+            // ── products (42fr) ───────────────────────────────────────────
+            Column(
+                Modifier.weight(42f).fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (catalogLoading && catalog.isEmpty()) {
+                    Centred { Text("Loading the catalogue…", fontSize = 14.sp, color = Handoff.Muted2) }
+                } else if (query.trim().length >= 2 || scanHit != null) {
+                    // Typing turns the middle column into results, exactly as
+                    // tapping a category turns it into that category's tiles.
+                    ResultRows(
+                        groups = if (scanHit != null) emptyList() else results,
+                        query = query.trim(),
+                        onPick = ::open,
+                        onAdd = { add(it); query = "" },
+                    )
+                } else {
+                    TileGrid(groups = tiles, onPick = ::open)
+                }
+            }
+
+            // ── the bill (54fr) ───────────────────────────────────────────
+            Column(
+                Modifier
+                    .weight(54f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Handoff.Surface)
+                    .border(1.dp, Handoff.Line, RoundedCornerShape(16.dp)),
+            ) {
+                BasketPane(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    lines = lines,
+                    tillOpen = tillOpen,
+                    note = note,
+                    justAdded = justAdded,
+                    itemCount = totals.itemCount,
+                    onSetQty = onSetQty,
+                    onSetLineDiscount = onSetLineDiscount,
+                    onOpenPriceOverride = onOpenPriceOverride,
+                    onOpenNote = onOpenNote,
+                    onSetNote = onSetNote,
+                    onRemove = onRemove,
+                    onClear = onClear,
+                    onOpenTill = onOpenTill,
+                )
+
+                CartPane(
+                    modifier = Modifier.fillMaxWidth(),
+                    lines = lines,
+                    totals = totals,
+                    vatRate = vatRate,
+                    tillOpen = tillOpen,
+                    customer = customer,
+                    discount = discount,
+                    heldCount = heldCount,
+                    onOpenNote = onOpenNote,
+                    note = note,
+                    onPay = onPay,
+                    onHold = onHold,
+                    onOpenHeld = onOpenHeld,
+                    onOpenCustomer = onOpenCustomer,
+                    onDetachCustomer = onDetachCustomer,
+                    onOpenDiscount = onOpenDiscount,
+                    onRemoveDiscount = onRemoveDiscount,
+                    onCloseTill = onCloseTill,
+                    onOpenMovement = onOpenMovement,
+                    onOpenHistory = onOpenHistory,
+                )
+            }
         }
 
         // ── the scan bar: full width, always focused ──────────────────────
@@ -357,9 +423,12 @@ fun SellScreen(
                     )
                     ScanButton(onClick = ::submitSearch)
 
-                    // The way into the catalogue when a tag is missing.
+                    // Custom item takes the key Browse used to hold. Browse
+                    // opened an overlay onto the catalogue, and the catalogue
+                    // is now the middle column — a door onto the room you are
+                    // already standing in.
                     Surface(
-                        onClick = { browsing = true },
+                        onClick = onOpenCustomItem,
                         shape = RoundedCornerShape(12.dp),
                         color = Handoff.Surface,
                         contentColor = Handoff.InkStrong,
@@ -374,8 +443,8 @@ fun SellScreen(
                                 Alignment.CenterHorizontally,
                             ),
                         ) {
-                            Icon(Icons.Default.GridView, null, Modifier.size(18.dp))
-                            Text("Browse", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                            Text("Custom", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -405,29 +474,6 @@ fun SellScreen(
                         }
                     }
         }
-    }
-
-    // ── Browse: the catalogue, given the whole till ───────────────────────
-    //
-    // Opened by the Browse key or by typing two characters. A search that finds
-    // something opens it; a scan closes it. Nothing here is new — it is the
-    // same tabs, tiles and results, with room to actually tap them.
-    if (browsing || query.trim().length >= 2) {
-        BrowseOverlay(
-            catalog = catalog,
-            catalogLoading = catalogLoading,
-            query = query.trim(),
-            scanHit = scanHit,
-            results = results,
-            tabs = tabs,
-            tiles = tiles,
-            selectedTab = tab,
-            onSelectTab = { tab = if (tab == it) null else it },
-            onOpenGroup = ::open,
-            onAdd = { add(it); query = "" },
-            onOpenCustomItem = { browsing = false; onOpenCustomItem() },
-            onDismiss = { browsing = false; query = "" },
-        )
     }
 
     picker?.let { group ->
@@ -598,11 +644,12 @@ private fun Tab(label: String, count: Int, selected: Boolean, onClick: () -> Uni
 @Composable
 private fun TileGrid(groups: List<ProductGroup>, onPick: (ProductGroup) -> Unit) {
     LazyVerticalGrid(
-        // Five across: the overlay has the whole till to work with, where the
-        // old in-pane grid had a squeezed column.
-        columns = GridCells.Fixed(5),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        // Adaptive, as Carfectionist has it: the middle column is 42fr of
+        // whatever the tablet is, and a fixed count would either crush the
+        // tiles on a narrow one or strand them on a wide one.
+        columns = GridCells.Adaptive(minSize = 140.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(groups, key = { it.productId }) { group ->
@@ -831,138 +878,6 @@ private fun Centred(content: @Composable () -> Unit) {
 // ───────────────────────────────────────────────────────────── the browser
 
 /**
- * The catalogue, over the whole till.
- *
- * This is the fallback path — a garment whose tag has gone, stock not yet
- * labelled, a gift item. It used to sit permanently in the largest region of
- * the screen for an interaction that happens a handful of times a day. Here it
- * is one tap away and gets the full width when it arrives, so the tiles are
- * bigger than they ever were in the old column.
- */
-@Composable
-private fun BrowseOverlay(
-    catalog: List<CatalogVariant>,
-    catalogLoading: Boolean,
-    query: String,
-    scanHit: CatalogVariant?,
-    results: List<ProductGroup>,
-    tabs: List<Triple<Int, String, Int>>,
-    tiles: List<ProductGroup>,
-    selectedTab: Int?,
-    onSelectTab: (Int) -> Unit,
-    onOpenGroup: (ProductGroup) -> Unit,
-    onAdd: (CatalogVariant) -> Unit,
-    onOpenCustomItem: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0x66201A18))
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = onDismiss,
-            ),
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(top = 56.dp)
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(Handoff.Canvas)
-                // Swallows taps so a press inside does not dismiss.
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = {},
-                )
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (query.isEmpty()) "BROWSE" else "RESULTS",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.4.sp,
-                    color = Handoff.Muted3,
-                )
-                Spacer(Modifier.weight(1f))
-                Surface(
-                    onClick = onOpenCustomItem,
-                    shape = RoundedCornerShape(11.dp),
-                    color = Handoff.Surface,
-                    contentColor = Handoff.Muted,
-                    modifier = Modifier.height(48.dp).dashedBorder(Handoff.LineStrong, 11.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxHeight().padding(horizontal = 15.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    ) {
-                        Icon(Icons.Default.Add, null, Modifier.size(16.dp))
-                        Text("Custom item", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Surface(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(11.dp),
-                    color = Handoff.Surface,
-                    contentColor = Handoff.InkStrong,
-                    border = BorderStroke(1.dp, Handoff.Line),
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        Icon(Icons.Default.Close, "Close browse", Modifier.size(18.dp))
-                    }
-                }
-            }
-
-            if (query.isEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    tabs.forEach { (id, label, count) ->
-                        Tab(
-                            label = label,
-                            count = count,
-                            selected = selectedTab == id,
-                            onClick = { onSelectTab(id) },
-                        )
-                    }
-                }
-            }
-
-            when {
-                catalog.isEmpty() -> Centred {
-                    Text(
-                        if (catalogLoading) "Loading the catalogue…"
-                        else "No products on this device yet.",
-                        fontSize = 15.sp,
-                        color = Handoff.Muted2,
-                    )
-                }
-
-                query.length >= 2 ->
-                    if (scanHit != null) {
-                        ScanHitRow(scanHit, query) { onAdd(scanHit) }
-                    } else {
-                        ResultRows(results, query, onOpenGroup, onAdd)
-                    }
-
-                else -> TileGrid(tiles, onOpenGroup)
-            }
-        }
-    }
-}
-
-// ────────────────────────────────────────────────────────────── the basket
-
-/**
  * The basket, which now owns the till.
  *
  * At rest a scanning cashier is doing one of two things: confirming that what
@@ -993,7 +908,7 @@ private fun BasketPane(
         if (confirmingClear) { delay(3_000); confirmingClear = false }
     }
 
-    Column(modifier.background(Handoff.Canvas).padding(horizontal = 14.dp)) {
+    Column(modifier.background(Handoff.Surface).padding(horizontal = 14.dp)) {
         Row(
             Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -2051,6 +1966,181 @@ private fun ScanHitRow(variant: CatalogVariant, code: String, onAdd: () -> Unit)
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Handoff.InkFigure,
+            )
+        }
+    }
+}
+
+// ────────────────────────────────────────────────── the checkout columns
+
+/**
+ * The category rail — Carfectionist's CounterScreen, column for column.
+ *
+ * 225dp open, a 40dp strip closed, with its own search and a count per row.
+ * Their teal is our coral and their card is our off-white; everything else
+ * about it is theirs, including the 3dp bar down the selected row. That bar is
+ * not decoration: selection has to be readable as something other than colour
+ * alone, and a rail read at arm's length across a counter is exactly where
+ * that matters.
+ */
+@Composable
+private fun CategoryRail(
+    open: Boolean,
+    tabs: List<Triple<Int, String, Int>>,
+    selected: Int?,
+    onToggle: () -> Unit,
+    onSelect: (Int?) -> Unit,
+) {
+    var filter by remember { mutableStateOf("") }
+    val shown = remember(tabs, filter) {
+        val q = filter.trim().lowercase()
+        if (q.isEmpty()) tabs else tabs.filter { it.second.lowercase().contains(q) }
+    }
+
+    if (!open) {
+        Column(
+            Modifier
+                .width(40.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Handoff.Surface)
+                .border(1.dp, Handoff.Line, RoundedCornerShape(14.dp))
+                .clickable(onClick = onToggle),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "»",
+                color = Handoff.Muted,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 11.dp),
+            )
+            // A dot when a filter is on, so a collapsed rail cannot hide the
+            // reason the grid is showing less than everything.
+            if (selected != null) {
+                Box(
+                    Modifier
+                        .padding(top = 10.dp)
+                        .size(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Handoff.AccentSolid),
+                )
+            }
+        }
+        return
+    }
+
+    Column(
+        Modifier
+            .width(225.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Handoff.Surface)
+            .border(1.dp, Handoff.Line, RoundedCornerShape(14.dp)),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .clickable(onClick = onToggle)
+                .padding(start = 13.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "CATEGORIES",
+                color = Handoff.Muted3,
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 1.4.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text("«", color = Handoff.Muted, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+
+        RailFilter(
+            value = filter,
+            onValueChange = { filter = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        )
+
+        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+            item {
+                RailRow("All", tabs.sumOf { it.third }, selected == null) { onSelect(null) }
+            }
+            items(shown, key = { it.first }) { (id, name, count) ->
+                RailRow(name, count, selected == id) { onSelect(id) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailRow(label: String, count: Int, on: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 46.dp)
+            .height(IntrinsicSize.Min)
+            .background(if (on) Handoff.AccentTint else Color.Transparent)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .background(if (on) Handoff.AccentSolid else Color.Transparent),
+        )
+        Text(
+            label,
+            color = if (on) Handoff.AccentText else Handoff.Ink,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            lineHeight = 18.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(start = 11.dp, top = 10.dp, bottom = 10.dp),
+        )
+        Text(
+            count.toString(),
+            color = Handoff.Muted3,
+            fontFamily = PlexMono,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(start = 6.dp, end = 11.dp),
+        )
+    }
+}
+
+/** The rail's own 38dp filter. Deliberately not the scanner's field. */
+@Composable
+private fun RailFilter(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Handoff.Well)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Icon(Icons.Default.Search, null, Modifier.size(15.dp), tint = Handoff.Muted4)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) {
+                Text("Search…", color = Handoff.Muted4, fontSize = 13.sp)
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = TextStyle(color = Handoff.Ink, fontSize = 13.sp),
+                cursorBrush = SolidColor(Handoff.AccentSolid),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
