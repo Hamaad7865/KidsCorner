@@ -136,10 +136,21 @@
   --accent-foreground: var(--brand-800);
 
   --destructive: oklch(0.582 0.212 30);
-  --success: oklch(0.55 0.13 150);
+
+  /* Both darkened until they measure AA as TEXT, which is how they are mostly
+     used — the stock ledger's In column, a till variance, a queued-sales
+     count. Measured in the browser rather than computed here, because the
+     figure that matters is the one the page actually paints:
+
+       success  was 4.57:1 on white but 4.05:1 on its own chip tint
+       warning  was 4.15:1 on white and 3.79:1 in a muted well
+
+     Now 5.40 / 4.78 and 5.02 / 4.61. The tints are untouched, so a chip still
+     reads as a pale amber or green; only the ink on it moved. */
+  --success: oklch(0.51 0.13 150);
   --success-foreground: oklch(0.99 0.005 150);
   --success-muted: oklch(0.955 0.03 150);
-  --warning: oklch(0.595 0.128 66);
+  --warning: oklch(0.55 0.128 66);
   --warning-foreground: oklch(0.22 0.04 66);
   --warning-muted: oklch(0.955 0.045 75);
 
