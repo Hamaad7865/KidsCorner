@@ -73,6 +73,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -1275,6 +1276,8 @@ private fun CartRow(
     val discounted = line.discount > 0
     /** Which unit this line's offers are in — Carfectionist's %/Rs toggle. */
     var discMode by remember(line.variantId) { mutableStateOf("percent") }
+    /** A discount typed by hand, when none of the offers is the right one. */
+    var customText by remember(line.variantId) { mutableStateOf("") }
     /**
      * Carfectionist's line: closed by default, opened by tapping it.
      *
@@ -1494,12 +1497,34 @@ private fun CartRow(
                 )
                 val on = discounted && would == line.discount
                 OfferChip(label, on) {
+                    customText = ""
                     onLineDiscount(line.variantId, if (on) null else kind, value)
                 }
             }
 
+            // Anything the five offers do not cover, typed. Carfectionist has
+            // this field in its Rs mode; here it serves both, because "12%" is
+            // as likely a thing to be asked for as "Rs 120 off".
+            //
+            // No confirm key: `withLineDiscount` clamps to [0, the line's own
+            // gross], so a half-typed figure is a smaller discount and never an
+            // invalid one, and the line total answers as you type.
+            DiscountField(
+                percent = discMode == "percent",
+                value = customText,
+                onValueChange = { typed ->
+                    customText = typed
+                    val parsed = typed.toDoubleOrNull()
+                    if (typed.isBlank()) onLineDiscount(line.variantId, null, 0.0)
+                    else if (parsed != null) onLineDiscount(line.variantId, discMode, parsed)
+                },
+            )
+
             if (discounted) {
-                OfferChip("Clear", false) { onLineDiscount(line.variantId, null, 0.0) }
+                OfferChip("Clear", false) {
+                    customText = ""
+                    onLineDiscount(line.variantId, null, 0.0)
+                }
             }
 
             Box(Modifier.width(1.dp).height(22.dp).background(Handoff.Line))
@@ -1553,6 +1578,66 @@ private fun ModeToggle(percent: Boolean, onChange: (String) -> Unit) {
                     color = if (on) Color.White else Handoff.Muted2,
                 )
             }
+        }
+    }
+}
+
+/**
+ * A discount typed by hand, in whichever unit the toggle is showing.
+ *
+ * Digits and one decimal point only — filtered on the way in rather than
+ * validated on the way out, so there is never a state where the field holds
+ * something the line cannot be given.
+ */
+@Composable
+private fun DiscountField(
+    percent: Boolean,
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    Row(
+        Modifier
+            .height(34.dp)
+            .width(if (percent) 74.dp else 92.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Handoff.Well)
+            .border(1.dp, Handoff.LineField, RoundedCornerShape(9.dp))
+            .padding(horizontal = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (!percent) {
+            Text("Rs", fontSize = 11.sp, color = Handoff.Muted4)
+            Spacer(Modifier.width(4.dp))
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) {
+                Text(
+                    if (percent) "Any %" else "Any",
+                    fontSize = 12.5.sp,
+                    color = Handoff.Muted4,
+                    maxLines = 1,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = { typed ->
+                    val cleaned = typed.filter { it.isDigit() || it == '.' }
+                    if (cleaned.count { it == '.' } <= 1) onValueChange(cleaned)
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                textStyle = TextStyle(
+                    color = Handoff.Ink,
+                    fontSize = 13.sp,
+                    fontFamily = PlexMono,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                cursorBrush = SolidColor(Handoff.AccentSolid),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (percent) {
+            Text("%", fontSize = 11.sp, color = Handoff.Muted4)
         }
     }
 }
