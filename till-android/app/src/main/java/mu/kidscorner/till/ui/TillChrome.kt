@@ -99,31 +99,39 @@ fun TillChrome(
             Box(Modifier.width(1.dp).height(26.dp).background(Handoff.LineIdle))
 
             // ── the shift pill ──────────────────────────────────────────────
+            //
+            // This was the wrong way round. An open shift — the normal state,
+            // the one the till is in all day — got a red dot on a red tint,
+            // and a CLOSED till, which is the one that stops the shop selling,
+            // was drawn quiet and grey. A round status light is read as a
+            // status light: red means down. It was saying "down" about the
+            // healthy state and nothing at all about the broken one.
+            //
+            // Quiet when open, amber when closed. Amber is what this palette
+            // uses for "look at this and decide" everywhere else, and a till
+            // that cannot take money is exactly that.
             Row(
                 Modifier
                     .height(30.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(if (tillOpen) Handoff.AccentTint else Handoff.Well)
+                    .background(if (tillOpen) Color.Transparent else Handoff.WarnTint)
                     .border(
                         1.dp,
-                        if (tillOpen) Handoff.AccentLine else Handoff.LineSoft,
+                        if (tillOpen) Color.Transparent else Handoff.WarnLine,
                         RoundedCornerShape(8.dp),
                     )
-                    .padding(horizontal = 11.dp),
+                    .padding(horizontal = if (tillOpen) 2.dp else 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                Box(
-                    Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(if (tillOpen) Handoff.Accent else Handoff.Faint),
-                )
+                if (!tillOpen) {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(Handoff.WarnDot))
+                }
                 Text(
                     if (tillOpen) "Shift open" else "Till closed",
                     fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (tillOpen) Handoff.AccentText else Handoff.Muted3,
+                    color = if (tillOpen) Handoff.Muted3 else Handoff.WarnText,
                 )
             }
 
@@ -214,12 +222,15 @@ private fun ConnectionPill(online: Boolean, queuedCount: Int) {
 
     if (online && !waiting) {
         // `background:transparent;border:none` — the good state is quiet.
+        //
+        // And now actually quiet. It carried a red dot, so the till read
+        // "● Online" in the colour every status light on earth uses for down.
+        // The word is the whole message; a light is only worth lighting when
+        // something is wrong, which is the branch below.
         Row(
             Modifier.height(32.dp).padding(horizontal = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(Handoff.Accent))
             Text("Online", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Handoff.Muted4)
         }
     } else {
