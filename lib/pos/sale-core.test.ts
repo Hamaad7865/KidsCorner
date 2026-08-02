@@ -220,6 +220,89 @@ describe("settleDiscounts", () => {
     expect(result.error).toContain("no longer exists")
   })
 
+  /**
+   * The four things an owner sets in the back office and then trusts the till
+   * with. `checkEligibility` and `discountAmountFor` are each tested on their
+   * own in lib/discounts/rules.test.ts — these prove the settlement actually
+   * CONSULTS them, which is the wiring the shop's money depends on and which
+   * a passing unit test says nothing about.
+   *
+   * Every one refuses rather than silently dropping the rule: the cashier put
+   * it on the screen and quoted it to a customer, so the till has to say why
+   * it cannot be honoured, not quietly charge full price.
+   */
+  describe("honours what the back office set on the rule", () => {
+    it("refuses a rule under its minimum spend", async () => {
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ name: "Back to school", min_spend: 1_000 })]),
+        [posted()],
+        [line({ lineTotal: 999 })],
+        null,
+      )
+      if (!("error" in result)) throw new Error("should have refused")
+      expect(result.error).toContain("Back to school")
+      expect(result.error).toContain("1000.00")
+    })
+
+    it("accepts it at exactly the minimum", async () => {
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ min_spend: 1_000 })]),
+        [posted()],
+        [line({ lineTotal: 1_000 })],
+        null,
+      )
+      if (!("applied" in result)) throw new Error(result.error)
+      expect(result.total).toBe(100)
+    })
+
+    it("refuses a rule that has expired", async () => {
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ name: "Summer sale", ends_on: "2020-01-01" })]),
+        [posted()],
+        [line()],
+        null,
+      )
+      if (!("error" in result)) throw new Error("should have refused")
+      expect(result.error).toContain("Summer sale")
+      expect(result.error).toContain("Expired on 2020-01-01")
+    })
+
+    it("refuses a rule that has not started", async () => {
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ starts_on: "2999-01-01" })]),
+        [posted()],
+        [line()],
+        null,
+      )
+      if (!("error" in result)) throw new Error("should have refused")
+      expect(result.error).toContain("Starts on 2999-01-01")
+    })
+
+    it("refuses a rule switched off in the back office", async () => {
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ is_active: false })]),
+        [posted()],
+        [line()],
+        null,
+      )
+      if (!("error" in result)) throw new Error("should have refused")
+      expect(result.error).toContain("inactive")
+    })
+
+    it("caps the amount at the rule's ceiling", async () => {
+      // 10% of 20,000 is 2,000; the rule says never more than 500.
+      const result = await settleDiscounts(
+        stubClient([ruleRow({ value: 10, max_amount: 500 })]),
+        [posted()],
+        [line({ lineTotal: 20_000 })],
+        null,
+      )
+      if (!("applied" in result)) throw new Error(result.error)
+      expect(result.total).toBe(500)
+      expect(result.applied[0].amount).toBe(500)
+    })
+  })
+
   it("never lets a stack of rules exceed the basket", async () => {
     const rules = [
       ruleRow({ id: 1, name: "Sixty", kind: "percent", value: 60 }),
