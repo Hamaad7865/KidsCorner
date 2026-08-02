@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,6 +26,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -90,8 +93,11 @@ fun LockScreen(
      * greyed out with a reason than tapped and refused four digits later.
      */
     offline: Boolean,
+    /** The till is off looking for the shop right now. */
+    reconnecting: Boolean,
     onSubmit: (Cashier, String) -> Unit,
     onErrorShown: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val withPin = remember(cashiers) { cashiers.filter { it.hasPin } }
@@ -259,6 +265,55 @@ fun LockScreen(
                         color = Handoff.PinTextSoft,
                         modifier = Modifier.padding(top = 2.dp),
                     )
+                }
+
+                /*
+                 * A way out.
+                 *
+                 * Getting the line back is the only thing that helps here, and
+                 * without this the screen had no way to ask for it: the till
+                 * would find the shop on its own eventually — up to two minutes
+                 * to notice, twenty to re-pull the roster — which is a long
+                 * time to stand at a counter reading an explanation with no
+                 * button under it. Offered whenever the line is down, not only
+                 * when nobody can get in, because reconnecting is always the
+                 * better outcome.
+                 */
+                if (offline) {
+                    Button(
+                        onClick = onRetry,
+                        enabled = !reconnecting,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Handoff.PinPanel,
+                            contentColor = Handoff.PinText,
+                            disabledContainerColor = Handoff.PinPanel,
+                            // Full-strength while disabled, deliberately. The
+                            // button is only disabled to stop a second tap
+                            // landing on a request already in flight — it is
+                            // BUSY, not unavailable, and the spinner beside the
+                            // label already says which. Greying it would both
+                            // lie and drop the label to 4.45:1.
+                            disabledContentColor = Handoff.PinText,
+                        ),
+                        border = BorderStroke(1.dp, Handoff.PinPanelLine),
+                        contentPadding = PaddingValues(horizontal = 18.dp),
+                        modifier = Modifier.padding(top = 16.dp).height(44.dp),
+                    ) {
+                        if (reconnecting) {
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp),
+                                color = Handoff.PinTextSoft,
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        Text(
+                            if (reconnecting) "Looking for the shop…" else "Try again",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
 

@@ -163,8 +163,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         error = state.error,
                         lockedFor = state.lockedFor,
                         offline = !state.online,
+                        reconnecting = state.reconnecting,
                         onSubmit = vm::submitPin,
                         onErrorShown = vm::clearError,
+                        onRetry = vm::reconnect,
                     )
                 }
             }

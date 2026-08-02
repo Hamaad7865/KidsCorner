@@ -118,6 +118,14 @@ data class TillState(
     val error: String? = null,
     /** Seconds left on a PIN lockout, counted down for the keypad. */
     val lockedFor: Int = 0,
+    /**
+     * Somebody asked the till to go and look for the shop again.
+     *
+     * Its own flag rather than `busy`, which the lock screen reads as
+     * "checking a PIN" and would answer with the wrong spinner and the wrong
+     * word over an empty keypad.
+     */
+    val reconnecting: Boolean = false,
 
     val catalog: List<CatalogVariant> = emptyList(),
     val catalogLoading: Boolean = false,
@@ -351,6 +359,31 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 if (++beats % ROSTER_EVERY_BEATS == 0) refreshRoster()
             }
         }
+    }
+
+    /**
+     * Go and look for the shop now, because somebody at the till asked.
+     *
+     * The heartbeat gets there on its own, but on its own schedule: up to two
+     * minutes to notice the line at all and up to twenty to re-pull the
+     * roster. That is fine for a till nobody is standing at, and no use
+     * whatever to a cashier watching a queue build while the one name on
+     * screen is greyed out. This is the same work, on demand.
+     *
+     * Deliberately not `loadShop()`: that one is the cold start and can send
+     * the till back to the device-setup screen when credentials are dead.
+     * Pressing "Try again" on a lock screen should find the shop or change
+     * nothing — it should never sign the till out from under a cashier.
+     */
+    fun reconnect() = viewModelScope.launch {
+        if (_state.value.reconnecting) return@launch
+        _state.update { it.copy(reconnecting = true, error = null) }
+        refreshRoster()
+        _state.update { it.copy(reconnecting = false) }
+        // Whatever came back, the catalogue is worth having too — a till that
+        // has just found the shop should not still be selling this morning's
+        // prices off a cache.
+        if (_state.value.online) refreshCatalog()
     }
 
     /**

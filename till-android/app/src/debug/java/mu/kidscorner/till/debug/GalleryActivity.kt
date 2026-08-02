@@ -126,8 +126,10 @@ class GalleryActivity : ComponentActivity() {
                             error = null,
                             lockedFor = 0,
                             offline = false,
+                            reconnecting = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
+                            onRetry = {},
                         )
 
                         "pinError" -> LockScreen(
@@ -137,8 +139,10 @@ class GalleryActivity : ComponentActivity() {
                             error = "Wrong PIN.",
                             lockedFor = 0,
                             offline = false,
+                            reconnecting = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
+                            onRetry = {},
                         )
 
                         "pinChecking" -> LockScreen(
@@ -148,8 +152,10 @@ class GalleryActivity : ComponentActivity() {
                             error = null,
                             lockedFor = 0,
                             offline = false,
+                            reconnecting = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
+                            onRetry = {},
                         )
 
                         // The shop's line is down. Kevin greys out — he is the
@@ -163,8 +169,10 @@ class GalleryActivity : ComponentActivity() {
                             error = null,
                             lockedFor = 0,
                             offline = true,
+                            reconnecting = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
+                            onRetry = {},
                         )
 
                         // A till that has never synced: nobody can be admitted
@@ -176,8 +184,10 @@ class GalleryActivity : ComponentActivity() {
                             error = null,
                             lockedFor = 0,
                             offline = true,
+                            reconnecting = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
+                            onRetry = {},
                         )
 
                         "refund" -> RefundScreen(
