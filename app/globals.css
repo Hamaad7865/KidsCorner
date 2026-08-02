@@ -64,8 +64,9 @@
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
 
-  /* Brand ramp — brand-500 is the spec coral, brand-600 is the
-     accessible fill for solid buttons with white text (4.6:1). */
+  /* Brand ramp — brand-600 is the mark's own red and the fill for solid
+     buttons with white text (7.4:1); brand-500 is the lighter one, for
+     focus rings and charts. Both measured, not estimated. */
   --color-brand-50: var(--brand-50);
   --color-brand-100: var(--brand-100);
   --color-brand-200: var(--brand-200);
@@ -135,7 +136,11 @@
   --accent: var(--brand-50);
   --accent-foreground: var(--brand-800);
 
-  --destructive: oklch(0.582 0.212 30);
+  /* 0.55, not 0.582. Measured on what the button actually paints rather than
+     on white: text-destructive on bg-destructive/10 was 4.15:1, and the /20
+     hover took it to 3.66:1 — degrading at the exact moment somebody is about
+     to press Delete. Now 5.39 on white and 4.69 on the tint. */
+  --destructive: oklch(0.55 0.212 30);
 
   /* Both darkened until they measure AA as TEXT, which is how they are mostly
      used — the stock ledger's In column, a till variance, a queued-sales

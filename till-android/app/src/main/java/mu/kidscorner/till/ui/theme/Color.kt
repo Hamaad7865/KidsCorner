@@ -77,6 +77,6 @@ val DarkSurfaceBright = Color(0xFF413B40)
  * brand fill, a destructive one is this colour as text on its own tint.
  * Hue 30 against the brand's 17 is the difference between fire and wine.
  */
-val Destructive = Color(0xFFDC2D1D)
+val Destructive = Color(0xFFD11D0E)
 val Success = Color(0xFF298646)
 val Warning = Color(0xFFB16D10)

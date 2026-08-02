@@ -97,8 +97,9 @@ object Handoff {
     val PinPanelLineError = Color(0xFFFFC6BC)
     /** An unfilled dot's ring. */
     val PinDotEmpty = Color(0xFFCECBCE)
-    /** The shop line and "Checking PIN…". */
-    val PinTextSoft = Color(0xFF726E71)
+    /** The shop line and "Checking PIN…". Its own value rather than Muted2's:
+     *  it sits on PinGround, not on white, where 4.45:1 was a whisker under. */
+    val PinTextSoft = Color(0xFF686167)
     /** The sub-line under the heading. */
     val PinTextFaint = Color(0xFF827D81)
     /** A staff tile's role, and the welcome sub. */
@@ -143,8 +144,16 @@ object Handoff {
     /** #6B7E82 — tertiary text. */
     val Muted2 = Color(0xFF726E71)
 
-    /** #7A8C90 — labels under a heading. */
-    val Muted3 = Color(0xFF827D81)
+    /**
+     * #7A8C90 — labels under a heading, and the most-used muted tone on the
+     * till by a distance.
+     *
+     * Darkened from #827D81, which measured 4.04:1 on a card and 3.62:1
+     * inside an inset well. This carries plain label text on a screen read
+     * across a counter, so it has less margin to spare than a desktop page,
+     * not more. Now 5.10 and 4.57.
+     */
+    val Muted3 = Color(0xFF736C72)
 
     /** #8A9DA1 — the search icon, the sizes label. */
     val Muted4 = Color(0xFF928E91)
