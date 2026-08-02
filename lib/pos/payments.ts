@@ -60,14 +60,24 @@ export function withPayment<M extends string>(
  * Only cash produces change, and over-tendering on one row does not offset
  * another — a customer who hands over a note for part of a split does not get
  * the card portion back in coins.
+ *
+ * Measured PER ROW, which is what that sentence has always meant and what the
+ * tablet till has always done. It used to total the tendered figures and
+ * subtract the total cash owed, and those two differ the moment one cash row
+ * carries no tendered figure: its amount was subtracted from another row's
+ * note. Two cash rows of Rs 500, one taken without a tendered figure and one
+ * paid with a Rs 1,000 note, came out as no change due instead of Rs 500.
+ *
+ * Nothing writes that shape today — both tills always record a tendered
+ * figure on cash — so this is a latent disagreement rather than a wrong
+ * receipt in the wild. It is still worth being the same answer as the tablet,
+ * because this is the function that exists to BE the answer.
  */
 export function changeDue(payments: Payment<string>[]): number {
-  const cash = payments.filter((p) => p.method === "cash")
-  const tendered = cash
-    .filter((p) => p.tendered !== null)
-    .reduce((sum, p) => sum + (p.tendered ?? 0), 0)
-  const owed = cash.reduce((sum, p) => sum + p.amount, 0)
-  return round2(Math.max(0, tendered - owed))
+  const given = payments
+    .filter((p) => p.method === "cash" && p.tendered !== null)
+    .reduce((sum, p) => sum + Math.max(0, (p.tendered ?? 0) - p.amount), 0)
+  return round2(given)
 }
 
 /** What is still owed on the sale. */

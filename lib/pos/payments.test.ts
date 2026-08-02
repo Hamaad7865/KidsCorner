@@ -99,6 +99,27 @@ describe("changeDue", () => {
   it("sums across several cash rows", () => {
     expect(changeDue([cash(300, 500), cash(200, 200)])).toBe(200)
   })
+
+  it("does not let a cash row with no tendered figure eat another's change", () => {
+    // Rs 500 taken without recording what was handed over, then Rs 500 paid
+    // with a Rs 1,000 note. The note is worth Rs 500 change on its own row.
+    //
+    // Totalling the tendered figures and subtracting the total cash owed gave
+    // zero here — the first row's amount cancelled the second row's note —
+    // which disagreed with the tablet till, where the same split has always
+    // been measured a row at a time.
+    const rows: Payment[] = [
+      { method: "cash", amount: 500, tendered: null },
+      cash(500, 1_000),
+    ]
+    expect(changeDue(rows)).toBe(500)
+  })
+
+  it("does not let a short row eat a long one", () => {
+    // Rs 100 over on the first, Rs 100 under on the second. Under is not
+    // change owed back, so it cannot cancel the note that was.
+    expect(changeDue([cash(400, 500), cash(600, 500)])).toBe(100)
+  })
 })
 
 describe("outstandingOn", () => {

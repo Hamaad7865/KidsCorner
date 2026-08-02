@@ -5,6 +5,7 @@ import { PrintButton } from "@/components/pos/print-button"
 import { requireProfile } from "@/lib/auth/session"
 import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
+import { changeDue } from "@/lib/pos/payments"
 import { getShopIdentity } from "@/lib/pos/queries"
 import { createClient } from "@/lib/supabase/server"
 
@@ -54,11 +55,17 @@ export default async function ReceiptPage({
 
   const shop = typeof shopName?.value === "string" ? shopName.value : "Kids Corner"
   const payments = sale.sale_payments ?? []
-  const tendered = payments.reduce((sum, p) => sum + Number(p.tendered ?? 0), 0)
-  const cashDue = payments
-    .filter((p) => p.method === "cash")
-    .reduce((sum, p) => sum + Number(p.amount), 0)
-  const change = Math.max(0, tendered - cashDue)
+  // The shared answer, not a third one. This page used to total the tendered
+  // figures across EVERY payment — a card row carrying a tendered value would
+  // have counted as cash handed over — and subtract the cash owed. Both tills
+  // and this receipt now agree by construction.
+  const change = changeDue(
+    payments.map((p) => ({
+      method: p.method,
+      amount: Number(p.amount),
+      tendered: p.tendered === null ? null : Number(p.tendered),
+    })),
+  )
 
   return (
     <div className="bg-muted/40 min-h-full p-4 print:bg-white print:p-0">
