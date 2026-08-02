@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, Receipt } from "lucide-react"
 
+import { CustomerDialog } from "@/components/customers/customer-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { canManageCatalog } from "@/lib/auth/roles"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { getCustomer } from "@/lib/customers/queries"
 import { formatDate, formatDateTime, formatRs } from "@/lib/format"
@@ -37,7 +39,7 @@ export default async function CustomerDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireAdminProfile()
+  const profile = await requireAdminProfile()
 
   const { id } = await params
   const customerId = Number(id)
@@ -45,6 +47,10 @@ export default async function CustomerDetailPage({
 
   const customer = await getCustomer(customerId)
   if (!customer) notFound()
+
+  // Matches the RLS policy from migration 037 exactly. Anyone else sees the
+  // record and no button, rather than a button that saves nothing.
+  const canEdit = canManageCatalog(profile.role)
 
   const completed = customer.sales.filter((s) => s.status === "completed")
   const average =
@@ -58,15 +64,28 @@ export default async function CustomerDetailPage({
           Customers
         </Button>
 
-        <div className="space-y-1">
-          <h1 className="font-heading text-xl font-semibold">
-            {customer.fullName}
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {[customer.phone, customer.email].filter(Boolean).join(" · ") ||
-              "No contact details"}
-            {` · Added ${formatDate(customer.createdAt)}`}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="font-heading text-xl font-semibold">
+              {customer.fullName}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {[customer.phone, customer.email].filter(Boolean).join(" · ") ||
+                "No contact details"}
+              {` · Added ${formatDate(customer.createdAt)}`}
+            </p>
+          </div>
+          {canEdit ? (
+            <CustomerDialog
+              customer={{
+                id: customer.id,
+                fullName: customer.fullName,
+                phone: customer.phone,
+                email: customer.email,
+                notes: customer.notes,
+              }}
+            />
+          ) : null}
         </div>
       </div>
 
