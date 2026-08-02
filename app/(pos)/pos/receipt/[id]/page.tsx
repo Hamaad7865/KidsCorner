@@ -5,6 +5,7 @@ import { PrintButton } from "@/components/pos/print-button"
 import { requireProfile } from "@/lib/auth/session"
 import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
+import { getShopIdentity } from "@/lib/pos/queries"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = { title: "Receipt" }
@@ -29,7 +30,7 @@ export default async function ReceiptPage({
 
   const supabase = await createClient()
 
-  const [{ data: sale }, { data: shopName }] = await Promise.all([
+  const [{ data: sale }, { data: shopName }, identity] = await Promise.all([
     supabase
       .from("sales")
       .select(
@@ -43,6 +44,10 @@ export default async function ReceiptPage({
       .eq("id", saleId)
       .maybeSingle(),
     supabase.from("settings").select("value").eq("key", "shop_name").maybeSingle(),
+    // The same three the thermal receipt prints. Without this the browser
+    // receipt and the tablet's receipt described the same sale differently —
+    // and the browser one said "Mauritius" where the VAT number belongs.
+    getShopIdentity(),
   ])
 
   if (!sale) notFound()
@@ -63,7 +68,11 @@ export default async function ReceiptPage({
       <article className="mx-auto w-[72mm] bg-white p-3 font-mono text-[11px] leading-tight text-black shadow print:w-full print:shadow-none">
         <header className="text-center">
           <h1 className="text-sm font-bold uppercase">{shop}</h1>
-          <p>Mauritius</p>
+          {identity.address ? <p>{identity.address}</p> : <p>Mauritius</p>}
+          {identity.phone ? <p>{identity.phone}</p> : null}
+          {/* A VAT-registered business has to show its number on a VAT
+              invoice, and this page is one — it itemises the VAT. */}
+          {identity.vatNumber ? <p>VAT {identity.vatNumber}</p> : null}
           <p className="mt-1">{formatDateTime(sale.sale_date)}</p>
           <p>Sale {sale.sale_no}</p>
           {sale.profiles?.full_name ? <p>Served by {sale.profiles.full_name}</p> : null}

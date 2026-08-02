@@ -16,6 +16,7 @@ import { StaffPins } from "@/components/settings/staff-pins"
 import {
   getPaymentMethods,
   getRefundRequiresManager,
+  getShopIdentity,
   getShopName,
   getVatRate,
 } from "@/lib/pos/queries"
@@ -41,6 +42,7 @@ export default async function SettingsPage() {
     locations,
     barcodeSettings,
     barcodesMissing,
+    identity,
   ] = await Promise.all([
     getMasterData(),
     listStaffPinState(),
@@ -53,6 +55,7 @@ export default async function SettingsPage() {
     listLocations(),
     readBarcodeSettings(),
     countVariantsWithoutBarcode(),
+    getShopIdentity(),
   ])
 
   return (
@@ -67,6 +70,9 @@ export default async function SettingsPage() {
 
       <ShopSettings
         shopName={shopName}
+        shopAddress={identity.address ?? ""}
+        shopPhone={identity.phone ?? ""}
+        vatNumber={identity.vatNumber ?? ""}
         vatRate={vatRate}
         paymentMethods={paymentMethods}
         refundRequiresManager={refundRequiresManager}

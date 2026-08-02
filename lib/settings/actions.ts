@@ -43,10 +43,19 @@ const shopSettingsSchema = z.object({
     .array(z.enum(PAYMENT_METHODS))
     .min(1, "The till needs at least one payment method."),
   refundRequiresManager: z.boolean(),
+
+  // All three optional. A shop below the registration threshold has no VAT
+  // number, and forcing one would put an invented figure on every receipt.
+  shopAddress: z.string().trim().max(200, "Keep the address under 200 characters."),
+  shopPhone: z.string().trim().max(40, "That phone number is too long."),
+  vatNumber: z.string().trim().max(30, "That VAT number is too long."),
 })
 
 const SETTING_LABELS: Record<string, string> = {
   shop_name: "Shop name",
+  shop_address: "Shop address",
+  shop_phone: "Shop phone",
+  vat_number: "VAT number",
   vat_rate: "VAT rate",
   payment_methods: "Payment methods",
   refund_requires_manager: "Manager approval for returns",
@@ -86,10 +95,21 @@ export async function saveShopSettings(
       (v): v is string => typeof v === "string",
     ),
     refundRequiresManager: boolOf(formData, "refundRequiresManager"),
+    shopAddress: textOf(formData, "shopAddress"),
+    shopPhone: textOf(formData, "shopPhone"),
+    vatNumber: textOf(formData, "vatNumber"),
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { shopName, vatPercent, paymentMethods, refundRequiresManager } = parsed.data
+  const {
+    shopName,
+    vatPercent,
+    paymentMethods,
+    refundRequiresManager,
+    shopAddress,
+    shopPhone,
+    vatNumber,
+  } = parsed.data
   const supabase = await createClient()
 
   // Upserted one key at a time: `settings` is a key/value table, and doing them
@@ -102,6 +122,14 @@ export async function saveShopSettings(
     { key: "vat_rate", value: Math.round((vatPercent / 100) * 10_000) / 10_000 },
     { key: "payment_methods", value: paymentMethods },
     { key: "refund_requires_manager", value: refundRequiresManager },
+    // These three are what getShopIdentity has always read and nothing has
+    // ever written: the receipt printed with no address, no phone and no VAT
+    // number, and the dashboard's subtitle had no shop to name. They are not
+    // seeded by any migration, so the insert branch below is the path that
+    // creates them the first time an owner saves.
+    { key: "shop_address", value: shopAddress },
+    { key: "shop_phone", value: shopPhone },
+    { key: "vat_number", value: vatNumber },
   ]
 
   // Read the current values first, so the trail can name what moved. Changing
@@ -127,8 +155,9 @@ export async function saveShopSettings(
 
     if (error) return fail(error.message)
     if (data.length === 0) {
-      // The key is missing rather than the permission being wrong — migration
-      // 001 seeds all three, so this means the row was deleted.
+      // The key is missing rather than the permission being wrong. For the
+      // four migration 001 seeds that means the row was deleted; for the
+      // address, phone and VAT number it is simply the first save.
       const { error: insertError } = await supabase
         .from("settings")
         .insert({ key: row.key, value: row.value })

@@ -32,12 +32,26 @@ function SaveButton() {
 
 export function ShopSettings({
   shopName,
+  shopAddress,
+  shopPhone,
+  vatNumber,
   refundRequiresManager,
   vatRate,
   paymentMethods,
   canManage,
 }: {
   shopName: string
+  /**
+   * The three the receipt has always wanted and never had.
+   *
+   * `getShopIdentity` has read `shop_address`, `shop_phone` and `vat_number`
+   * since the printer was built. No migration seeds them and no screen wrote
+   * them, so every receipt this shop has printed carries a name and nothing
+   * else. Empty strings rather than nulls — they feed uncontrolled inputs.
+   */
+  shopAddress: string
+  shopPhone: string
+  vatNumber: string
   refundRequiresManager: boolean
   /** Stored as a fraction; shown as a percentage. */
   vatRate: number
@@ -55,8 +69,8 @@ export function ShopSettings({
       <div className="space-y-1">
         <h2 className="font-heading text-base font-medium">Shop</h2>
         <p className="text-muted-foreground text-sm">
-          The name on receipts, the VAT rate money is calculated with, and the
-          methods the till offers.
+          What prints at the top of every receipt, the VAT rate money is
+          calculated with, and the methods the till offers.
           {canManage ? "" : " Only the owner can change these."}
         </p>
       </div>
@@ -107,6 +121,58 @@ export function ShopSettings({
               Prices are VAT-<strong>inclusive</strong>: this is the portion
               extracted from a total, not added to it. Changing it affects new
               sales only — past sales keep the rate they were rung up at.
+            </p>
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="shop-address">Address</Label>
+            <Input
+              id="shop-address"
+              name="shopAddress"
+              defaultValue={shopAddress}
+              placeholder="Royal Road, Curepipe"
+              disabled={!canManage}
+              aria-invalid={Boolean(state.fieldErrors.shopAddress)}
+            />
+            {state.fieldErrors.shopAddress ? (
+              <p className="text-destructive text-sm">
+                {state.fieldErrors.shopAddress}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shop-phone">Phone</Label>
+            <Input
+              id="shop-phone"
+              name="shopPhone"
+              type="tel"
+              defaultValue={shopPhone}
+              placeholder="+230 …"
+              disabled={!canManage}
+              aria-invalid={Boolean(state.fieldErrors.shopPhone)}
+            />
+            {state.fieldErrors.shopPhone ? (
+              <p className="text-destructive text-sm">{state.fieldErrors.shopPhone}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="vat-number">VAT number</Label>
+            <Input
+              id="vat-number"
+              name="vatNumber"
+              defaultValue={vatNumber}
+              placeholder="VAT20123456"
+              disabled={!canManage}
+              aria-invalid={Boolean(state.fieldErrors.vatNumber)}
+            />
+            {state.fieldErrors.vatNumber ? (
+              <p className="text-destructive text-sm">{state.fieldErrors.vatNumber}</p>
+            ) : null}
+            <p className="text-muted-foreground text-xs">
+              Printed on every receipt. A VAT-registered business has to show
+              it; leave it blank if the shop is not registered.
             </p>
           </div>
         </div>
