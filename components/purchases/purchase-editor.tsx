@@ -90,15 +90,30 @@ function SaveButton({ isNew, disabled }: { isNew: boolean; disabled: boolean }) 
 export function PurchaseEditor({
   purchase,
   suppliers,
+  preselectedSupplierId,
 }: {
   purchase: PurchaseDetail | null
   suppliers: Supplier[]
+  /**
+   * Who the purchase is for, when the shop said so on the way in.
+   *
+   * The Suppliers page has always linked `/purchases/new?supplier=N` beside
+   * each row. Nothing read the parameter, so "New purchase" next to a named
+   * supplier opened a form saying "Choose a supplier" — the one question it
+   * had just been told the answer to. The page resolves it and only passes an
+   * id that is really selectable.
+   */
+  preselectedSupplierId?: number
 }) {
   const [state, formAction] = useActionState(savePurchase, IDLE_STATE)
   const isNew = purchase === null
 
   const [supplierId, setSupplierId] = useState(
-    purchase ? String(purchase.supplierId) : "",
+    purchase
+      ? String(purchase.supplierId)
+      : preselectedSupplierId
+        ? String(preselectedSupplierId)
+        : "",
   )
   const [lines, setLines] = useState<Line[]>(
     purchase?.lines.map((l) => ({

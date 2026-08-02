@@ -111,6 +111,22 @@ export type PurchaseListRow = {
 
 export const PURCHASE_LIST_LIMIT = 200
 
+/**
+ * One supplier's name, for a heading that says whose purchases these are.
+ *
+ * Null when the id names nobody, so a made-up `?supplier=` in the URL falls
+ * back to the plain heading rather than titling the page after nothing.
+ */
+export async function getSupplierName(id: number): Promise<string | null> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("suppliers")
+    .select("name")
+    .eq("id", id)
+    .maybeSingle()
+  return data?.name ?? null
+}
+
 export type PurchaseList = {
   rows: PurchaseListRow[]
   truncated: boolean
@@ -119,15 +135,19 @@ export type PurchaseList = {
 }
 
 /**
- * @param status Narrow to one status, or undefined for all of them.
+ * @param filters.status Narrow to one status, or undefined for all of them.
+ * @param filters.supplierId Narrow to one supplier.
  *
- * The counts are always for the whole table, not for the filtered slice —
- * a tab that says "Ordered 4" has to keep saying 4 while you are looking at
- * the received ones.
+ * The counts follow the supplier but NOT the status. A tab reading "On order
+ * 4" has to keep saying 4 while you are looking at the received ones — it is
+ * the thing you are about to click. Scoping them to the supplier is the
+ * opposite case: "On order 4" on a page showing one supplier's purchases
+ * would be counting somebody else's deliveries.
  */
 export async function listPurchases(
-  status?: PurchaseStatus,
+  filters: { status?: PurchaseStatus; supplierId?: number } = {},
 ): Promise<PurchaseList> {
+  const { status, supplierId } = filters
   const supabase = await createClient()
 
   let query = supabase
@@ -143,11 +163,12 @@ export async function listPurchases(
     .limit(PURCHASE_LIST_LIMIT + 1)
 
   if (status) query = query.eq("status", status)
+  if (supplierId !== undefined) query = query.eq("supplier_id", supplierId)
 
-  const [{ data, error }, statusRows] = await Promise.all([
-    query,
-    supabase.from("purchases").select("status"),
-  ])
+  let countQuery = supabase.from("purchases").select("status")
+  if (supplierId !== undefined) countQuery = countQuery.eq("supplier_id", supplierId)
+
+  const [{ data, error }, statusRows] = await Promise.all([query, countQuery])
 
   if (error) throw error
   if (statusRows.error) throw statusRows.error

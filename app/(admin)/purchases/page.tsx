@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Ban, Layers, PackageCheck, Plus, Truck } from "lucide-react"
+import { Ban, Layers, PackageCheck, Plus, Truck, X } from "lucide-react"
 
 import { TabLink } from "@/components/admin/tab-link"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +16,7 @@ import {
 import { requireAdminProfile } from "@/lib/auth/session"
 import type { PurchaseStatus } from "@/lib/db-enums"
 import { formatDate, formatQty, formatRs } from "@/lib/format"
-import { listPurchases } from "@/lib/purchases/queries"
+import { getSupplierName, listPurchases } from "@/lib/purchases/queries"
 
 export const metadata: Metadata = { title: "Purchases" }
 
@@ -42,6 +42,11 @@ function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
 }
 
+function positiveInt(value: string | undefined): number | undefined {
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 ? n : undefined
+}
+
 export default async function PurchasesPage({
   searchParams,
 }: {
@@ -57,13 +62,31 @@ export default async function PurchasesPage({
       ? statusParam
       : undefined
 
-  const { rows: purchases, truncated, counts } = await listPurchases(status)
+  const supplierId = positiveInt(first(params.supplier))
+
+  const [{ rows: purchases, truncated, counts }, supplierName] = await Promise.all([
+    listPurchases({ status, supplierId }),
+    supplierId === undefined ? Promise.resolve(null) : getSupplierName(supplierId),
+  ])
+
+  // Every tab keeps whichever supplier is being looked at. A tab that
+  // hard-codes `?status=received` silently throws the other filter away, and
+  // the shop is back to the whole list without having asked to be.
+  const tab = (next: PurchaseStatus | null) => {
+    const q = new URLSearchParams()
+    if (next) q.set("status", next)
+    if (supplierId !== undefined) q.set("supplier", String(supplierId))
+    const query = q.toString()
+    return query ? `/purchases?${query}` : "/purchases"
+  }
 
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="font-heading text-xl font-semibold">Purchases</h1>
+          <h1 className="font-heading text-xl font-semibold">
+            {supplierName ? `Purchases from ${supplierName}` : "Purchases"}
+          </h1>
           <p className="text-muted-foreground text-sm">
             Stock only goes up when you mark a purchase as received.
             {truncated && status === undefined
@@ -73,10 +96,28 @@ export default async function PurchasesPage({
                 : ""}
           </p>
         </div>
-        <Button render={<Link href="/purchases/new" />}>
-          <Plus aria-hidden />
-          New purchase
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {supplierId !== undefined ? (
+            <Button variant="outline" render={<Link href="/purchases" />}>
+              <X aria-hidden />
+              All suppliers
+            </Button>
+          ) : null}
+          <Button
+            render={
+              <Link
+                href={
+                  supplierId === undefined
+                    ? "/purchases/new"
+                    : `/purchases/new?supplier=${supplierId}`
+                }
+              />
+            }
+          >
+            <Plus aria-hidden />
+            New purchase
+          </Button>
+        </div>
       </header>
 
       {/* "On order" rather than "Draft". The status is `draft` in the
@@ -84,11 +125,11 @@ export default async function PurchasesPage({
           ordered, not a rough copy — and the dashboard already calls the
           same rows "awaiting delivery" and links straight into this tab. */}
       <div className="flex gap-1 border-b">
-        <TabLink href="/purchases" active={status === undefined} icon={Layers}>
+        <TabLink href={tab(null)} active={status === undefined} icon={Layers}>
           All
         </TabLink>
         <TabLink
-          href="/purchases?status=draft"
+          href={tab("draft")}
           active={status === "draft"}
           icon={Truck}
           count={counts.draft}
@@ -96,14 +137,14 @@ export default async function PurchasesPage({
           On order
         </TabLink>
         <TabLink
-          href="/purchases?status=received"
+          href={tab("received")}
           active={status === "received"}
           icon={PackageCheck}
         >
           Received
         </TabLink>
         <TabLink
-          href="/purchases?status=cancelled"
+          href={tab("cancelled")}
           active={status === "cancelled"}
           icon={Ban}
         >
@@ -129,26 +170,47 @@ export default async function PurchasesPage({
                 : "Purchases you cancel stay on record and appear here."}
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Button variant="outline" render={<Link href="/purchases" />}>
-              Show all purchases
+            <Button variant="outline" render={<Link href={tab(null)} />}>
+              Show every status
             </Button>
           </div>
         </div>
       ) : purchases.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center">
           <Truck className="text-muted-foreground mx-auto size-8" aria-hidden />
-          <p className="mt-3 font-medium">No purchases yet</p>
+          {/* "No purchases yet" would be a lie on a supplier who simply has
+              none — the shop may have dozens from everyone else. */}
+          <p className="mt-3 font-medium">
+            {supplierName
+              ? `Nothing ordered from ${supplierName} yet`
+              : "No purchases yet"}
+          </p>
           <p className="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
             Raise one to record what you’ve ordered, then receive it when the
             delivery arrives.
           </p>
           <div className="mt-4 flex justify-center gap-2">
-            <Button render={<Link href="/purchases/new" />}>
+            <Button
+              render={
+                <Link
+                  href={
+                    supplierId === undefined
+                      ? "/purchases/new"
+                      : `/purchases/new?supplier=${supplierId}`
+                  }
+                />
+              }
+            >
               <Plus aria-hidden />
               New purchase
             </Button>
-            <Button variant="outline" render={<Link href="/suppliers" />}>
-              Manage suppliers
+            <Button
+              variant="outline"
+              render={
+                <Link href={supplierId === undefined ? "/suppliers" : "/purchases"} />
+              }
+            >
+              {supplierId === undefined ? "Manage suppliers" : "All suppliers"}
             </Button>
           </div>
         </div>

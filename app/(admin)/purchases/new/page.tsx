@@ -10,10 +10,28 @@ import { listSuppliers } from "@/lib/purchases/queries"
 
 export const metadata: Metadata = { title: "New purchase" }
 
-export default async function NewPurchasePage() {
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+export default async function NewPurchasePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   await requireAdminProfile()
   const suppliers = await listSuppliers()
   const hasSuppliers = suppliers.some((s) => s.is_active)
+
+  // Resolved here rather than trusted: an id off the URL only preselects if
+  // it names a supplier that is actually in the dropdown. A retired one, or a
+  // number somebody typed, falls through to "Choose a supplier" instead of
+  // setting a value the select cannot show.
+  const raw = searchParams ? first((await searchParams).supplier) : undefined
+  const asked = Number(raw)
+  const preselected = suppliers.find(
+    (s) => s.is_active && Number.isInteger(asked) && s.id === asked,
+  )
 
   return (
     <div className="space-y-6">
@@ -23,7 +41,9 @@ export default async function NewPurchasePage() {
           Purchases
         </Button>
         <div className="space-y-1">
-          <h1 className="font-heading text-xl font-semibold">New purchase</h1>
+          <h1 className="font-heading text-xl font-semibold">
+            {preselected ? `New purchase from ${preselected.name}` : "New purchase"}
+          </h1>
           <p className="text-muted-foreground text-sm">
             Saved as a draft. Nothing reaches stock until you receive it.
           </p>
@@ -33,7 +53,11 @@ export default async function NewPurchasePage() {
       {hasSuppliers ? (
         <Card>
           <CardContent>
-            <PurchaseEditor purchase={null} suppliers={suppliers} />
+            <PurchaseEditor
+              purchase={null}
+              suppliers={suppliers}
+              preselectedSupplierId={preselected?.id}
+            />
           </CardContent>
         </Card>
       ) : (

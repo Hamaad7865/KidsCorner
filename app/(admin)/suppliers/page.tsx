@@ -70,7 +70,16 @@ export default async function SuppliersPage() {
                         {initialsOf(supplier.name)}
                       </span>
                       <div className="min-w-0">
-                        <div className="truncate font-medium">{supplier.name}</div>
+                        {/* The name is the way into what they have actually
+                            sent us. "Spend this year" was a figure with
+                            nothing behind it — the purchases making it up
+                            were three clicks and a scan away. */}
+                        <Link
+                          href={`/purchases?supplier=${supplier.id}`}
+                          className="hover:text-brand-700 block truncate font-medium hover:underline"
+                        >
+                          {supplier.name}
+                        </Link>
                         <div className="text-muted-foreground truncate text-xs">
                           {supplier.town ?? supplier.address ?? "—"}
                         </div>
@@ -107,13 +116,21 @@ export default async function SuppliersPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        render={<Link href={`/purchases/new?supplier=${supplier.id}`} />}
-                      >
-                        New purchase
-                      </Button>
+                      {/* Not offered for a retired supplier: the editor's
+                          dropdown lists active ones only, so the button would
+                          have opened a form that could not name the supplier
+                          it was opened for. */}
+                      {supplier.is_active ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          render={
+                            <Link href={`/purchases/new?supplier=${supplier.id}`} />
+                          }
+                        >
+                          New purchase
+                        </Button>
+                      ) : null}
                       <SupplierDialog supplier={supplier} iconOnly />
                     </div>
                   </TableCell>
