@@ -11,7 +11,7 @@ import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
 import { getOpenShift, getShiftTotals } from "@/lib/pos/queries"
 
-export const metadata: Metadata = { title: "Shift" }
+export const metadata: Metadata = { title: "End of day" }
 
 export default async function ShiftPage() {
   const profile = await requireProfile()
@@ -31,7 +31,7 @@ export default async function ShiftPage() {
       </Button>
 
       <div>
-        <h1 className="font-heading text-2xl font-semibold">Close the till</h1>
+        <h1 className="font-heading text-2xl font-semibold">End of day</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Open since {formatDateTime(shift.openedAt)}
           {shift.openedBy ? ` by ${shift.openedBy}` : ""}.

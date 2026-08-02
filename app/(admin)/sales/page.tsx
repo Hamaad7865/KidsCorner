@@ -228,11 +228,18 @@ export default async function SalesPage({
                         <Badge variant="outline" className="text-muted-foreground">
                           Void
                         </Badge>
+                      ) : sale.partReturned ? (
+                        <Badge variant="outline" className="text-warning-foreground">
+                          Part returned
+                        </Badge>
                       ) : null}
-                      {/* A refunded sale can still be opened: partial returns
-                          leave it completed, and the screen shows what has
-                          already been credited either way. */}
-                      {sale.status !== "void" ? (
+                      {/* Only while there is something left to bring back.
+                          `refunded` is set by create_credit_note when every
+                          unit has come back, so the button was landing on a
+                          page whose only content is "Nothing left to credit".
+                          A partial return leaves the sale completed, which is
+                          the case the button is for. */}
+                      {sale.status === "completed" ? (
                         <Button
                           variant="ghost"
                           size="sm"

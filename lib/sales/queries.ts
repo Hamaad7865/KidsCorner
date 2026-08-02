@@ -19,10 +19,25 @@ export type SaleRow = {
   saleDate: string
   total: number
   status: SaleStatus
+  /**
+   * Units, not lines. Three of one shirt is three items — which is what the
+   * customer carried out, what "items per sale" above the list already means,
+   * and what "Items sold" on the dashboard means. It counted lines until
+   * somebody put the three figures side by side.
+   */
   itemCount: number
   cashierName: string | null
   customerName: string | null
   methods: string[]
+  /**
+   * Some of it has come back, but not all — the sale is still `completed`,
+   * because that is only flipped once every unit returns.
+   *
+   * Worth a marker in the list: the way a return starts is a customer at the
+   * counter with a receipt, and whether part of it was already credited
+   * changes what happens next.
+   */
+  partReturned: boolean
 }
 
 export type SalesList = { rows: SaleRow[]; truncated: boolean }
@@ -40,8 +55,9 @@ export async function listSales(filters: {
       `id, sale_no, sale_date, total, status,
        profiles ( full_name ),
        customers ( full_name ),
-       sale_items ( id ),
-       sale_payments ( method )`,
+       sale_items ( qty ),
+       sale_payments ( method ),
+       credit_notes ( id )`,
     )
     .order("sale_date", { ascending: false })
     .order("id", { ascending: false })
@@ -68,10 +84,12 @@ export async function listSales(filters: {
     saleDate: row.sale_date,
     total: Number(row.total),
     status: isSaleStatus(row.status) ? row.status : "completed",
-    itemCount: (row.sale_items ?? []).length,
+    itemCount: (row.sale_items ?? []).reduce((sum, i) => sum + i.qty, 0),
     cashierName: row.profiles?.full_name ?? null,
     customerName: row.customers?.full_name ?? null,
     methods: [...new Set((row.sale_payments ?? []).map((p) => p.method))],
+    partReturned:
+      row.status === "completed" && (row.credit_notes ?? []).length > 0,
   }))
 
   return { rows, truncated: all.length > SALES_PAGE_SIZE }

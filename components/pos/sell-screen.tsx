@@ -286,7 +286,11 @@ export function SellScreen({
         </header>
 
         <div className="border-b px-4 py-2">
-          <TillToolbar cashiers={cashiers} fallbackName={cashierName} />
+          <TillToolbar
+            cashiers={cashiers}
+            fallbackName={cashierName}
+            shiftId={shiftId}
+          />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">

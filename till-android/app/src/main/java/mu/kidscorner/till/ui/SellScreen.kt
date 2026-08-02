@@ -1188,7 +1188,7 @@ private fun CartPane(
         ) {
             FooterLink("Cash in/out", Modifier.weight(1f), onOpenMovement)
             FooterLink("Past sales", Modifier.weight(1f), onOpenHistory)
-            if (tillOpen) FooterLink("Close till", Modifier.weight(1f), onCloseTill)
+            if (tillOpen) FooterLink("End of day", Modifier.weight(1f), onCloseTill)
         }
     }
 }

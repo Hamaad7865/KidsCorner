@@ -87,7 +87,10 @@ export default async function SaleDetailPage({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {sale.status !== "void" ? (
+          {/* Nothing to offer once every unit has come back — the Returns
+              table further down this page is already the answer, and the
+              button would only reach a form that refuses. */}
+          {sale.status === "completed" ? (
             <Button
               variant="outline"
               render={<Link href={`/sales/${sale.id}/return`} />}

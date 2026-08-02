@@ -6,6 +6,8 @@ import { AlertCircle, ArrowDownLeft, ArrowUpRight, LoaderCircle } from "lucide-r
 import { toast } from "sonner"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Banknote } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -28,12 +30,20 @@ import { cn } from "@/lib/utils"
  * get the sign wrong, and the ledger is append-only so a wrong row has to be
  * corrected with another one.
  */
-export function TillMovementDialog({ shiftId }: { shiftId: number }) {
+export function TillMovementDialog({
+  shiftId,
+  size = "default",
+}: {
+  shiftId: number
+  /** "sm" for the sell screen's toolbar, where it sits beside Hold and Held. */
+  size?: "sm" | "default"
+}) {
   const [open, setOpen] = useState(false)
 
   return (
     <>
-      <Button variant="outline" onClick={() => setOpen(true)}>
+      <Button variant="outline" size={size} onClick={() => setOpen(true)}>
+        <Banknote aria-hidden />
         Cash in / out
       </Button>
 

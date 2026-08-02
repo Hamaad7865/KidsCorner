@@ -9,7 +9,7 @@ import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs, shopToday } from "@/lib/format"
 import { listSales } from "@/lib/sales/queries"
 
-export const metadata: Metadata = { title: "Recent sales" }
+export const metadata: Metadata = { title: "Past sales" }
 
 /** How far back the till can look without going to the back office. */
 const DAYS_BACK = 7
@@ -58,7 +58,7 @@ export default async function PosSalesPage({
           <ArrowLeft aria-hidden />
           Back to till
         </Button>
-        <h1 className="font-heading text-lg font-semibold">Recent sales</h1>
+        <h1 className="font-heading text-lg font-semibold">Past sales</h1>
       </div>
 
       {/* A plain GET form so this works with no client JS, and so a scanner

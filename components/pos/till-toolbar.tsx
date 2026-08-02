@@ -5,12 +5,14 @@ import Link from "next/link"
 import {
   Delete,
   KeyRound,
+  MoonStar,
   PauseCircle,
   Receipt,
   RefreshCw,
   WifiOff,
 } from "lucide-react"
 
+import { TillMovementDialog } from "@/components/pos/till-movement-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -34,9 +36,12 @@ import { cn } from "@/lib/utils"
 export function TillToolbar({
   cashiers,
   fallbackName,
+  shiftId,
 }: {
   cashiers: Cashier[]
   fallbackName: string
+  /** The open shift, for the two controls that act on the drawer. */
+  shiftId: number
 }) {
   const [pinOpen, setPinOpen] = useState(false)
   const [heldOpen, setHeldOpen] = useState(false)
@@ -104,7 +109,19 @@ export function TillToolbar({
           reach it. */}
       <Button variant="outline" size="sm" render={<Link href="/pos/sales" />}>
         <Receipt aria-hidden />
-        Receipts
+        Past sales
+      </Button>
+
+      {/* These two were unreachable. Cash in/out and closing the drawer both
+          live on /pos/shift, and nothing in the whole web till linked to it —
+          a cashier could take money all day and then have no way to count it
+          out short of typing the URL. The Android till has had both on its
+          own footer since it was built. */}
+      <TillMovementDialog shiftId={shiftId} size="sm" />
+
+      <Button variant="outline" size="sm" render={<Link href="/pos/shift" />}>
+        <MoonStar aria-hidden />
+        End of day
       </Button>
 
       <Dialog open={pinOpen} onOpenChange={setPinOpen}>
