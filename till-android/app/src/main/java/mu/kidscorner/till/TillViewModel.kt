@@ -344,6 +344,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             while (isActive) {
                 delay(QUEUE_HEARTBEAT_MS)
                 drainQueue()
+                noticeRemoteClose()
             }
         }
     }
@@ -677,6 +678,46 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearMovementResult() =
         _state.update { it.copy(movementDone = false, movementError = null) }
+
+    /**
+     * Has the back office closed this till out from under us?
+     *
+     * "Close till" in Point of sale ends the shift on the server. The tablet
+     * read its shift once, at bootstrap, and never again — so it went on
+     * showing "Shift open" and went on selling, and every one of those sales
+     * landed in the closed shift as a late sale. `late_sales` caught them,
+     * which is migration 015 working as designed, but an owner who pressed a
+     * button called Close till had no way to tell it had not reached the till.
+     *
+     * The queue heartbeat is already awake every two minutes and already
+     * talking to the server, so this costs one extra call on a till that is
+     * usually idle.
+     *
+     * It changes the chrome and nothing else. It does NOT interrupt a payment:
+     * migration 015's own reasoning is that refusing a sale is worse than
+     * recording a late one, because by then the shop has the customer's money.
+     * The cashier finishes what they are holding and sees the till is closed.
+     */
+    private suspend fun noticeRemoteClose() {
+        _state.value.shop?.shift ?: return
+        val server = repo.shift().getOrNull() ?: return
+
+        // NO open shift at all, and nothing finer. Comparing ids would be the
+        // obvious test and it is wrong: getOpenShift is scoped to the SHOP, not
+        // to this device — it returns the most recently opened shift in the
+        // building. With two tills running, each would see the other's id, and
+        // this would close a perfectly live till every two minutes.
+        //
+        // The cost is that a shop with two tills open will not notice one of
+        // them being closed remotely, because the server still reports an open
+        // shift. Partial and always right beats complete and sometimes wrong.
+        // `shifts.device_id` exists, so scoping the query is the real fix —
+        // it is shared with the web till, which has no device, so it is a
+        // wider change than this.
+        if (server.shift == null) {
+            _state.update { it.copy(shop = it.shop?.copy(shift = null), shiftTotals = null) }
+        }
+    }
 
     private fun refreshShiftTotals() = viewModelScope.launch {
         repo.shift().onSuccess { state ->
