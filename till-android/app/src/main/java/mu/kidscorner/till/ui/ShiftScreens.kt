@@ -67,8 +67,20 @@ fun OpenShiftScreen(
     cashierName: String,
     busy: Boolean,
     error: String?,
+    /**
+     * The shop cannot be reached.
+     *
+     * Unlike the sell screen, this one genuinely cannot proceed without it: a
+     * drawer is a row on the server, and every sale names its id. So this says
+     * so before the cashier counts a float and presses a button that cannot
+     * work — but it does NOT disable Start shift, because `online` only turns
+     * true when a call succeeds, and refusing to let anybody try would strand
+     * a till whose line came back a moment ago.
+     */
+    offline: Boolean,
     onOpen: (Double) -> Unit,
     onLock: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var entry by remember { mutableStateOf("") }
@@ -189,9 +201,25 @@ fun OpenShiftScreen(
 
                 // `text-align:center;font-size:11.5px;color:#8A9DA1;margin-top:11px`
                 Text(
-                    error ?: "$shopName · this figure is what the drawer is measured against",
+                    when {
+                        error != null -> error
+                        // Said before the float is counted, not after the
+                        // button fails. Amber rather than scarlet: the line
+                        // being down is not the cashier doing something wrong.
+                        offline -> "No connection. A drawer is opened on the shop's " +
+                            "server — every sale names it."
+                        else -> "$shopName · this figure is what the drawer is measured against"
+                    },
                     fontSize = 11.5.sp,
-                    color = if (error != null) Handoff.Danger else Handoff.Muted4,
+                    // Set explicitly: the default leading at this size wraps
+                    // the offline sentence onto two widely-spaced lines with
+                    // one word stranded on the second.
+                    lineHeight = 16.sp,
+                    color = when {
+                        error != null -> Handoff.Danger
+                        offline -> Handoff.WarnText
+                        else -> Handoff.Muted4
+                    },
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 )
@@ -199,20 +227,37 @@ fun OpenShiftScreen(
                 // Not in the handoff, which has no way back off this screen —
                 // but a cashier who opened the wrong till needs one, and it is
                 // drawn as a link rather than a button so it does not compete
-                // with Start shift.
-                Text(
-                    "Back to the PIN screen",
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Handoff.Muted3,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(enabled = !busy, onClick = onLock)
-                        .padding(vertical = 6.dp),
-                )
+                // with Start shift. Beside it, while the line is down, the only
+                // other thing that can help.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(
+                        "Back to the PIN screen",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Handoff.Muted3,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = !busy, onClick = onLock)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
+                    if (offline) {
+                        Text(
+                            "Look for the shop again",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Handoff.WarnText,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !busy, onClick = onRetry)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
             }
         }
     }

@@ -275,8 +275,24 @@ class GalleryActivity : ComponentActivity() {
                             cashierName = "Priya Ramdin",
                             busy = false,
                             error = null,
+                            offline = false,
                             onOpen = {},
                             onLock = {},
+                            onRetry = {},
+                        )
+
+                        // Signed in offline, with no drawer open. The one thing
+                        // an outage genuinely stops, said before the float is
+                        // counted rather than after the button fails.
+                        "openShiftOffline" -> OpenShiftScreen(
+                            shopName = "Kids Corner",
+                            cashierName = "Priya Ramdin",
+                            busy = false,
+                            error = null,
+                            offline = true,
+                            onOpen = {},
+                            onLock = {},
+                            onRetry = {},
                         )
 
                         "closeShift" -> CloseShiftScreen(
@@ -564,7 +580,7 @@ private fun Menu(onPick: (String) -> Unit) {
 }
 
 private val SCREENS = listOf(
-    "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "sell", "sellEmpty", "payment", "openShift", "closeShift", "closed", "complete",
+    "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "openShiftOffline", "sell", "sellEmpty", "payment", "openShift", "closeShift", "closed", "complete",
     "customer", "held", "approval", "movement",
     "setup", "offline", "printer", "receipt", "settings", "refund", "actions", "note", "custom", "basket", "txns", "toast",
 )

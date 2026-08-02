@@ -176,8 +176,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 cashierName = screen.cashier.fullName,
                 busy = state.busy,
                 error = state.error,
+                offline = !state.online,
                 onOpen = vm::openShift,
                 onLock = vm::lock,
+                onRetry = vm::reconnect,
             )
 
             is TillScreen.Selling -> {

@@ -581,7 +581,26 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             }
             .onFailure { cause ->
                 _state.update {
-                    it.copy(busy = false, error = cause.message ?: "Could not open the till.")
+                    it.copy(
+                        busy = false,
+                        /*
+                         * "Failed to connect to /10.0.2.2:3001" is what the
+                         * transport says and it is no use to anybody holding a
+                         * cash bag. When the line is what failed, say what
+                         * happened and what to do instead of naming a socket.
+                         *
+                         * Read AFTER the call, not before: `online` is set by
+                         * whether calls actually succeed, so this attempt is
+                         * the freshest evidence there is.
+                         */
+                        error = if (it.online) {
+                            cause.message ?: "Could not open the till."
+                        } else {
+                            "No connection, so the till can't be opened yet. " +
+                                "Try again when the line is back — the float you " +
+                                "counted is still here."
+                        },
+                    )
                 }
             }
     }
