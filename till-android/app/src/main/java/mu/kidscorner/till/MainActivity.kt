@@ -451,20 +451,36 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onDismiss = { overlay = Overlay.None },
         )
 
-        Overlay.Approval -> ManagerApprovalDialog(
-            managers = managers,
-            reason = state.error ?: "This discount needs an owner or manager.",
-            busy = state.busy,
-            onApprove = { managerId, pin ->
-                overlay = Overlay.None
-                vm.clearApprovalPrompt()
-                vm.retryFrozenSale(Approval(managerId, pin))
-            },
-            onDismiss = {
-                overlay = Overlay.None
-                vm.clearApprovalPrompt()
-            },
-        )
+        // One prompt, two things it can be authorising. `pendingRefund` is what
+        // says which — without it a manager's PIN typed for a return would be
+        // handed to `retryFrozenSale`, which would either do nothing or replay
+        // a sale nobody asked it to.
+        Overlay.Approval -> {
+            val forRefund = state.pendingRefund != null
+            ManagerApprovalDialog(
+                managers = managers,
+                reason = state.let { if (forRefund) it.historyError else it.error }
+                    ?: if (forRefund) "This return needs an owner or manager."
+                       else "This discount needs an owner or manager.",
+                busy = state.busy,
+                onApprove = { managerId, pin ->
+                    overlay = Overlay.None
+                    if (forRefund) {
+                        vm.retryRefund(Approval(managerId, pin))
+                    } else {
+                        vm.clearApprovalPrompt()
+                        vm.retryFrozenSale(Approval(managerId, pin))
+                    }
+                },
+                onDismiss = {
+                    overlay = Overlay.None
+                    // Dropping the prompt drops the return with it. A refused
+                    // refund that stayed pending would re-open this dialog the
+                    // next time anything set `needsApproval`.
+                    if (forRefund) vm.clearPendingRefund() else vm.clearApprovalPrompt()
+                },
+            )
+        }
     }
 
     // Back closes whatever is open, then steps back from payment, and does

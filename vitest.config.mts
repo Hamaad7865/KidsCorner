@@ -15,6 +15,11 @@ import { defineConfig } from "vitest/config"
  * there. Anything that needs a click or a layout is a different kind of test
  * and would need a different runner.
  *
+ * Route handlers under `app/` are in scope too. They are plain async functions
+ * over a Request, and the JSON they return is a contract the Android till
+ * decodes — a renamed key there is silent on both sides until a shop turns the
+ * matching setting on.
+ *
  * `.mts` because the config is ESM and the package is not — the alternative,
  * `"type": "module"` in package.json, changes how every other tool in this
  * project reads it.
@@ -26,7 +31,7 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts", "components/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "components/**/*.test.ts", "app/**/*.test.ts"],
     // `next build` already type-checks, so the suite stays fast enough to run
     // on every save.
     typecheck: { enabled: false },

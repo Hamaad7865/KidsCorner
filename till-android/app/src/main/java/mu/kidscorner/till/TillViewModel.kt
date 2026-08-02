@@ -159,6 +159,15 @@ data class TillState(
 
     /** A completed return, held until the cashier dismisses it. */
     val refundDone: RefundResponse? = null,
+    /**
+     * A return the server refused until a manager approves it.
+     *
+     * Held so the approval prompt has something to resubmit. It also tells the
+     * prompt WHICH act it is authorising: `needsApproval` is shared with the
+     * sale path, and without this the dialog would take a manager's PIN for a
+     * refund and retry a frozen sale with it.
+     */
+    val pendingRefund: RefundRequest? = null,
 
     /** What would come out of the printer, as monospaced text. */
     val receiptPreview: String? = null,
@@ -848,8 +857,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val items = qtyByLine.filterValues { it > 0 }.map { (id, qty) -> RefundItem(id, qty) }
         if (items.isEmpty()) return@launch
 
-        _state.update { it.copy(busy = true, historyError = null) }
-        repo.refund(
+        postRefund(
             RefundRequest(
                 saleId = sale.id,
                 shiftId = _state.value.shop?.shift?.id,
@@ -859,12 +867,47 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 items = items,
             ),
         )
+    }
+
+    /**
+     * Resubmits a refused return with a manager's PIN.
+     *
+     * The request is replayed exactly as it was, so what the manager authorises
+     * is what the cashier filled in — rebuilding it from the screen would let
+     * the two drift apart between the refusal and the approval.
+     */
+    fun retryRefund(approval: Approval) {
+        val pending = _state.value.pendingRefund ?: return
+        _state.update { it.copy(needsApproval = false) }
+        viewModelScope.launch { postRefund(pending.copy(approval = approval)) }
+    }
+
+    fun clearPendingRefund() =
+        _state.update { it.copy(pendingRefund = null, needsApproval = false) }
+
+    private suspend fun postRefund(request: RefundRequest) {
+        _state.update { it.copy(busy = true, historyError = null) }
+        repo.refund(request)
             .onSuccess { response ->
                 val cashier = cashierOf(_state.value.screen)
                 val went = response.ok && cashier != null
                 _state.update {
-                    if (!went || cashier == null) {
-                        it.copy(busy = false, historyError = response.error ?: "The return did not go through.")
+                    if (response.needsApproval) {
+                        // Held, not discarded: the prompt resubmits this exact
+                        // request once a manager has typed their PIN. The PIN
+                        // itself is never kept — only the return it authorises.
+                        it.copy(
+                            busy = false,
+                            pendingRefund = request.copy(approval = null),
+                            needsApproval = true,
+                            historyError = response.error,
+                        )
+                    } else if (!went || cashier == null) {
+                        it.copy(
+                            busy = false,
+                            pendingRefund = null,
+                            historyError = response.error ?: "The return did not go through.",
+                        )
                     } else {
                         it.copy(
                             busy = false,
@@ -872,6 +915,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             selectedSale = null,
                             history = emptyList(),
                             refundDone = response,
+                            pendingRefund = null,
+                            needsApproval = false,
                         )
                     }
                 }
@@ -880,12 +925,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 // once, and `toast` writes to the same flow — so from in there
                 // it fired twice and the outer copy, built from the state as it
                 // was before, threw the message away again.
-                if (went) toast("Refunded ${formatRs(response.total)}")
+                if (went && !response.needsApproval) toast("Refunded ${formatRs(response.total)}")
             }
             .onFailure { cause ->
                 _state.update {
                     it.copy(
                         busy = false,
+                        pendingRefund = null,
                         historyError = cause.message ?: "The return did not go through.",
                     )
                 }

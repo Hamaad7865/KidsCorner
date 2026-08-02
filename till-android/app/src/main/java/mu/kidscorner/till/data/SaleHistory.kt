@@ -130,6 +130,14 @@ data class RefundRequest(
     /** Off means faulty: refunded, but the goods do not rejoin the shelf. */
     val restock: Boolean = true,
     val items: List<RefundItem>,
+    /**
+     * A manager's PIN, sent only when the shop has asked for one.
+     *
+     * Never held on to. It travels with the one request that needs it and is
+     * dropped, exactly as the sale path treats its own approval — a PIN written
+     * to a shared till's disk is a PIN anybody holding the tablet can read.
+     */
+    val approval: Approval? = null,
 )
 
 @Serializable
@@ -138,6 +146,14 @@ data class RefundItem(val saleItemId: Int, val qty: Int)
 @Serializable
 data class RefundResponse(
     val ok: Boolean = false,
+    /**
+     * The server wants a manager before it will pay anything back.
+     *
+     * Decided server-side and never by the device: only the settings row knows
+     * whether this shop asks for approval, and a till that guessed would either
+     * nag for nothing or skip a check the shop wanted.
+     */
+    val needsApproval: Boolean = false,
     val creditNo: String = "",
     val total: Double = 0.0,
     val refundMethod: String = "",
