@@ -180,7 +180,11 @@ export function ReturnForm({
                   <Button
                     type="button"
                     variant="outline"
-                    size="icon-sm"
+                    // size-control, not icon-sm: a fixed 28px opts out of the
+                    // density tokens, so this form was built at mouse size and
+                    // stayed there when the till started using it. 36px in the
+                    // back office as before, 48px on a touch screen.
+                    className="size-control"
                     onClick={() =>
                       setLineQty(line.saleItemId, value - 1, line.qtyReturnable)
                     }
@@ -194,7 +198,11 @@ export function ReturnForm({
                   <Button
                     type="button"
                     variant="outline"
-                    size="icon-sm"
+                    // size-control, not icon-sm: a fixed 28px opts out of the
+                    // density tokens, so this form was built at mouse size and
+                    // stayed there when the till started using it. 36px in the
+                    // back office as before, 48px on a touch screen.
+                    className="size-control"
                     onClick={() =>
                       setLineQty(line.saleItemId, value + 1, line.qtyReturnable)
                     }
@@ -230,7 +238,7 @@ export function ReturnForm({
             name="refundMethod"
             value={method}
             onChange={(event) => setMethod(event.target.value)}
-            className="border-input h-9 w-full rounded-lg border bg-transparent px-3 text-sm"
+            className="border-input h-control w-full rounded-lg border bg-transparent px-3 text-sm"
           >
             {REFUND_METHODS.map((m) => (
               <option key={m.value} value={m.value}>

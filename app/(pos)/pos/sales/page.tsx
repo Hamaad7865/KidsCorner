@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { ArrowLeft, Printer, Receipt, Search } from "lucide-react"
+import { ArrowLeft, Printer, Receipt, RotateCcw, Search } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -107,14 +107,17 @@ export default async function PosSalesPage({
       ) : (
         <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {sales.map((sale) => (
-            <li key={sale.id}>
-              {/* The whole row is the reprint. On a touch screen a small icon
-                  button beside a wide row is the thing people miss. */}
+            // Two targets, both large. The row stays the reprint — a small
+            // icon button beside a wide row is the thing people miss on a
+            // touch screen — and Return sits beside it as its own full-height
+            // key rather than nested inside the anchor, which would be invalid
+            // HTML and would swallow the tap.
+            <li key={sale.id} className="flex items-stretch gap-2">
               <a
                 href={`/pos/receipt/${sale.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="bg-card hover:border-brand-500 hover:bg-accent flex min-h-tap items-center gap-4 rounded-lg border p-4 transition-colors"
+                className="bg-card hover:border-brand-500 hover:bg-accent flex min-h-tap flex-1 items-center gap-4 rounded-lg border p-4 transition-colors"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
@@ -162,6 +165,20 @@ export default async function PosSalesPage({
                   </div>
                 </div>
               </a>
+
+              {/* Only while something can still come back. `refunded` means
+                  every unit already has, and a void sale has nothing to
+                  return — the same rule the back office list follows. */}
+              {sale.status === "completed" ? (
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-tap shrink-0 px-5"
+                  render={<Link href={`/pos/sales/${sale.id}/return`} />}
+                >
+                  <RotateCcw aria-hidden />
+                  Return
+                </Button>
+              ) : null}
             </li>
           ))}
         </ul>
