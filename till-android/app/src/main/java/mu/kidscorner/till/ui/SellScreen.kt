@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -273,6 +274,8 @@ fun SellScreen(
         if (scanHit != null) emptyList() else groupsFor(query, catalog)
     }
     val tabs = remember(catalog) { tabsFor(catalog) }
+    /** What "All" is worth — the same set the grid draws from, uncapped. */
+    val allProducts = remember(catalog) { catalog.distinctBy { it.productId }.size }
     val tiles = remember(tab, catalog) { tilesFor(tab, catalog) }
 
     fun add(variant: CatalogVariant) {
@@ -323,6 +326,7 @@ fun SellScreen(
             CategoryRail(
                 open = railOpen,
                 tabs = tabs,
+                allCount = allProducts,
                 selected = tab,
                 onToggle = { railOpen = !railOpen },
                 onSelect = { tab = it },
@@ -352,7 +356,11 @@ fun SellScreen(
                         onAdd = { add(it); query = "" },
                     )
                 } else {
-                    TileGrid(groups = tiles, onPick = ::open)
+                    TileGrid(
+                        groups = tiles,
+                        total = if (tab == null) allProducts else tabs.firstOrNull { it.first == tab }?.third ?: tiles.size,
+                        onPick = ::open,
+                    )
                 }
             }
 
@@ -649,7 +657,12 @@ private fun Tab(label: String, count: Int, selected: Boolean, onClick: () -> Uni
 
 /** `repeat(4,1fr); grid-auto-rows:136px; gap:10px` — fixed four across. */
 @Composable
-private fun TileGrid(groups: List<ProductGroup>, onPick: (ProductGroup) -> Unit) {
+private fun TileGrid(
+    groups: List<ProductGroup>,
+    /** How many the category actually holds, so a capped grid can say so. */
+    total: Int = groups.size,
+    onPick: (ProductGroup) -> Unit,
+) {
     LazyVerticalGrid(
         // Adaptive, as Carfectionist has it: the middle column is 42fr of
         // whatever the tablet is, and a fixed count would either crush the
@@ -659,6 +672,21 @@ private fun TileGrid(groups: List<ProductGroup>, onPick: (ProductGroup) -> Unit)
         verticalArrangement = Arrangement.spacedBy(9.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
+        // A capped grid has to say it is capped. MAX_TILES was invisible while
+        // this lived in an overlay somebody opened on purpose; it is the middle
+        // column all day now, and a cashier who cannot find a product needs to
+        // know the grid stopped rather than that the shop stopped stocking it.
+        if (total > groups.size) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    "Showing the first ${groups.size} of $total — search or pick a category for the rest.",
+                    fontSize = 12.sp,
+                    color = Handoff.Muted3,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
+        }
+
         items(groups, key = { it.productId }) { group ->
             val out = group.stock <= 0
             Surface(
@@ -2014,6 +2042,8 @@ private fun ScanHitRow(variant: CatalogVariant, code: String, onAdd: () -> Unit)
 private fun CategoryRail(
     open: Boolean,
     tabs: List<Triple<Int, String, Int>>,
+    /** Every product the grid would show under "All". */
+    allCount: Int,
     selected: Int?,
     onToggle: () -> Unit,
     onSelect: (Int?) -> Unit,
@@ -2094,7 +2124,12 @@ private fun CategoryRail(
 
         LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
             item {
-                RailRow("All", tabs.sumOf { it.third }, selected == null) { onSelect(null) }
+                // Counted from the catalogue, not by summing the rows below:
+                // those come from `tabsFor`, which drops anything with no
+                // category, and the grid does not. Summing them would print a
+                // number the tiles disagree with the moment one product has no
+                // category — a figure that is right until it quietly is not.
+                RailRow("All", allCount, selected == null) { onSelect(null) }
             }
             items(shown, key = { it.first }) { (id, name, count) ->
                 RailRow(name, count, selected == id) { onSelect(id) }
