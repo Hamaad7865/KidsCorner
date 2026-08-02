@@ -3,6 +3,7 @@ import Link from "next/link"
 import { Download } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { TabLink } from "@/components/admin/tab-link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -203,19 +204,9 @@ export default async function ReportsPage({
 
       <div className="flex flex-wrap gap-1 border-b">
         {REPORTS.map((r) => (
-          <Link
-            key={r.key}
-            href={link(r.key)}
-            aria-current={active === r.key ? "page" : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-              active === r.key
-                ? "border-brand-600 text-foreground"
-                : "text-muted-foreground hover:text-foreground border-transparent",
-            )}
-          >
+          <TabLink key={r.key} href={link(r.key)} active={active === r.key}>
             {r.label}
-          </Link>
+          </TabLink>
         ))}
       </div>
 

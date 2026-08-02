@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { TabLink } from "@/components/admin/tab-link"
 import { Button } from "@/components/ui/button"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { formatDateTime, formatRs, shopToday } from "@/lib/format"
@@ -111,32 +112,13 @@ export default async function ActivityPage({
       </form>
 
       <div className="flex flex-wrap gap-1 border-b">
-        <Link
-          href={link()}
-          aria-current={category === undefined ? "page" : undefined}
-          className={cn(
-            "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-            category === undefined
-              ? "border-brand-600 text-foreground"
-              : "text-muted-foreground hover:text-foreground border-transparent",
-          )}
-        >
+        <TabLink href={link()} active={category === undefined}>
           Everything
-        </Link>
+        </TabLink>
         {ACTIVITY_CATEGORIES.map((c) => (
-          <Link
-            key={c.key}
-            href={link(c.key)}
-            aria-current={category === c.key ? "page" : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-              category === c.key
-                ? "border-brand-600 text-foreground"
-                : "text-muted-foreground hover:text-foreground border-transparent",
-            )}
-          >
+          <TabLink key={c.key} href={link(c.key)} active={category === c.key}>
             {c.label}
-          </Link>
+          </TabLink>
         ))}
       </div>
 

@@ -69,7 +69,7 @@ export default async function SettingsPage() {
         shopName={shopName}
         vatRate={vatRate}
         paymentMethods={paymentMethods}
-          refundRequiresManager={refundRequiresManager}
+        refundRequiresManager={refundRequiresManager}
         canManage={profile.role === "owner"}
       />
 

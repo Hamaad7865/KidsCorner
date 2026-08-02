@@ -247,6 +247,20 @@ fun HeldSalesDialog(
     onDiscard: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    /**
+     * Which sale's bin has been tapped once.
+     *
+     * Discarding is instant and there is no undo: the parked basket is gone
+     * and the customer who is off finding another size comes back to nothing.
+     * The bin sat directly beside Resume, both under a thumb. Arming it on the
+     * first tap is the same answer "Clear sale?" already uses on the sell
+     * screen, and it costs a deliberate second tap rather than a dialog.
+     *
+     * Holding the id rather than a boolean means arming one row disarms any
+     * other by construction.
+     */
+    var arming by remember { mutableStateOf<String?>(null) }
+
     HandoffDialog(
         title = "Held sales",
         subtitle = "Parked carts stay on this till until the end of the shift.",
@@ -323,17 +337,48 @@ fun HeldSalesDialog(
                             HandoffButton(
                                 label = "Resume",
                                 enabled = !cartBusy,
-                                onClick = { onResume(sale.id) },
+                                onClick = {
+                                    arming = null
+                                    onResume(sale.id)
+                                },
                             )
+                            val armed = arming == sale.id
                             Surface(
-                                onClick = { onDiscard(sale.id) },
+                                onClick = {
+                                    if (armed) {
+                                        arming = null
+                                        onDiscard(sale.id)
+                                    } else {
+                                        arming = sale.id
+                                    }
+                                },
                                 shape = RoundedCornerShape(11.dp),
-                                color = Color.Transparent,
-                                contentColor = Handoff.Fainter,
-                                modifier = Modifier.size(48.dp),
+                                color = if (armed) Handoff.DangerTint else Color.Transparent,
+                                contentColor =
+                                    if (armed) Handoff.Danger else Handoff.Fainter,
+                                border =
+                                    if (armed) BorderStroke(1.dp, Handoff.DangerLine) else null,
+                                modifier =
+                                    if (armed) Modifier.height(48.dp) else Modifier.size(48.dp),
                             ) {
-                                Box(Modifier.fillMaxSize(), Alignment.Center) {
-                                    Icon(Icons.Default.Delete, "Discard", Modifier.size(17.dp))
+                                Box(
+                                    Modifier.fillMaxHeight()
+                                        .padding(horizontal = if (armed) 14.dp else 0.dp),
+                                    Alignment.Center,
+                                ) {
+                                    if (armed) {
+                                        Text(
+                                            "Discard?",
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            "Discard",
+                                            Modifier.size(17.dp),
+                                        )
+                                    }
                                 }
                             }
                         }

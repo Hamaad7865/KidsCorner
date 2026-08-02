@@ -23,7 +23,9 @@ export function TabLink({
 }: {
   href: string
   active: boolean
-  icon: React.ComponentType<{ className?: string }>
+  /** Optional: Reports and Activity carry eleven and seven tabs respectively,
+   *  and a row of icons that long stops distinguishing anything. */
+  icon?: React.ComponentType<{ className?: string }>
   /** Shown as a badge when above zero. Zero is left off — a tab that reads
    *  "Cancelled 0" is noise, and its absence says the same thing. */
   count?: number
@@ -40,7 +42,7 @@ export function TabLink({
           : "text-muted-foreground hover:text-foreground border-transparent",
       )}
     >
-      <Icon className="size-4" aria-hidden />
+      {Icon ? <Icon className="size-4" aria-hidden /> : null}
       {children}
       {count !== undefined && count > 0 ? (
         <Badge variant="secondary" className="ml-1">

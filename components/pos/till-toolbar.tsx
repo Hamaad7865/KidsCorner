@@ -303,6 +303,17 @@ function HeldList({ onDone }: { onDone: () => void }) {
   const resumeSale = useCart((s) => s.resumeSale)
   const dropHeld = useCart((s) => s.dropHeld)
 
+  /**
+   * Which parked sale's Discard has been clicked once.
+   *
+   * Discarding is instant and there is no undo, and the button sits directly
+   * beside Resume — one mis-tap and a customer off finding another size comes
+   * back to an empty basket. Arming on the first click costs a deliberate
+   * second one; the id rather than a boolean means arming one row disarms
+   * any other for free.
+   */
+  const [arming, setArming] = useState<string | null>(null)
+
   if (held.length === 0) {
     return <p className="text-muted-foreground text-sm">Nothing is held.</p>
   }
@@ -331,6 +342,7 @@ function HeldList({ onDone }: { onDone: () => void }) {
               <Button
                 size="sm"
                 onClick={() => {
+                  setArming(null)
                   resumeSale(sale.id)
                   onDone()
                 }}
@@ -338,12 +350,23 @@ function HeldList({ onDone }: { onDone: () => void }) {
                 Resume
               </Button>
               <Button
-                variant="ghost"
+                variant={arming === sale.id ? "destructive" : "ghost"}
                 size="sm"
-                onClick={() => dropHeld(sale.id)}
-                aria-label={`Discard ${sale.label}`}
+                onClick={() => {
+                  if (arming === sale.id) {
+                    setArming(null)
+                    dropHeld(sale.id)
+                  } else {
+                    setArming(sale.id)
+                  }
+                }}
+                aria-label={
+                  arming === sale.id
+                    ? `Confirm discarding ${sale.label}`
+                    : `Discard ${sale.label}`
+                }
               >
-                Discard
+                {arming === sale.id ? "Discard?" : "Discard"}
               </Button>
             </div>
           </li>
