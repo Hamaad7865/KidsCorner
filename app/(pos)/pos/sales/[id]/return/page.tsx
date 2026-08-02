@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { requireProfile } from "@/lib/auth/session"
 import { formatDateTime, formatRs } from "@/lib/format"
+import { listCashiers } from "@/lib/pos/actions"
 import { getOpenShift } from "@/lib/pos/queries"
 import { getSaleForReturn } from "@/lib/returns/queries"
 
@@ -38,9 +39,10 @@ export default async function TillReturnPage({
   const saleId = Number(id)
   if (!Number.isInteger(saleId) || saleId <= 0) notFound()
 
-  const [sale, shift] = await Promise.all([
+  const [sale, shift, cashiers] = await Promise.all([
     getSaleForReturn(saleId),
     getOpenShift(),
+    listCashiers(),
   ])
   if (!sale) notFound()
 
@@ -95,7 +97,16 @@ export default async function TillReturnPage({
       ) : null}
 
       <div className="bg-card rounded-lg border p-4">
-        <ReturnForm sale={sale} shiftId={shift?.id ?? null} />
+        <ReturnForm
+          sale={sale}
+          shiftId={shift?.id ?? null}
+          // Only the shop's own owners and managers, and only when it has
+          // asked for approval — the form shows the keypad on the server's
+          // say-so, not on a guess made here.
+          managers={cashiers.filter(
+            (c) => c.role === "owner" || c.role === "manager",
+          )}
+        />
       </div>
     </div>
   )

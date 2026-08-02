@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { isAdminRole } from "@/lib/auth/roles"
+import { getRefundRequiresManager } from "@/lib/pos/queries"
+import { verifyApproval } from "@/lib/pos/sale-core"
 import { getSessionProfile } from "@/lib/auth/session"
 import {
   boolOf,
@@ -47,6 +49,15 @@ const creditNoteSchema = z.object({
    * matching the RPC, which also defaults to restocking.
    */
   restock: z.boolean().default(true),
+  /**
+   * A manager's PIN, when the shop has asked for one and the person raising
+   * the return is not one themselves. Posted as JSON because it is two fields
+   * that only ever travel together.
+   */
+  approval: z
+    .object({ managerId: z.uuid(), pin: z.string() })
+    .nullish()
+    .transform((v) => v ?? null),
   items: z
     .array(
       z.object({
@@ -78,41 +89,62 @@ export async function createCreditNote(
     return fail("The return lines could not be read. Refresh and try again.")
   }
 
+  const approvalRaw = formData.get("approval")
+  let rawApproval: unknown = null
+  if (typeof approvalRaw === "string" && approvalRaw.trim() !== "") {
+    try {
+      rawApproval = JSON.parse(approvalRaw)
+    } catch {
+      return fail("That approval could not be read. Try again.")
+    }
+  }
+
   const parsed = creditNoteSchema.safeParse({
     saleId,
     shiftId: idOf(formData, "shiftId"),
     reason: textOf(formData, "reason"),
     refundMethod: textOf(formData, "refundMethod"),
     restock: boolOf(formData, "restock"),
+    approval: rawApproval,
     items: rawItems,
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { shiftId, reason, refundMethod, restock, items } = parsed.data
+  const { shiftId, reason, refundMethod, restock, approval, items } = parsed.data
 
   const supabase = await createClient()
+
+  /**
+   * Who authorised this, when the shop wants somebody to.
+   *
+   * An owner or manager raising a return authorises it by being one — they are
+   * standing at the screen. A cashier is not, so when the setting is on they
+   * hand the keypad over and a manager's PIN is verified here, exactly the way
+   * /api/till/refund does it for the tablet. Same helper, so the two tills
+   * cannot drift on who may give money back.
+   *
+   * Checked here as well as in the database, and the order matters: the RPC
+   * would refuse anyway, but only after taking the row lock and reading every
+   * line. Asking first turns that into a sentence the cashier can act on.
+   * The database remains the thing that enforces it; this is the courtesy.
+   */
+  let approvedBy: string | null = isAdminRole(profile.role) ? profile.id : null
+  if (approvedBy === null && (await getRefundRequiresManager(supabase))) {
+    const verified = await verifyApproval(supabase, approval, "return")
+    if ("error" in verified) {
+      // Keyed so the form knows to show the keypad rather than only the text.
+      return fail(verified.error, { needsApproval: "1" })
+    }
+    approvedBy = verified.managerId
+  }
 
   /**
    * Same nullability gap as `complete_sale`: the generated types declare
    * `p_shift_id` and `p_cashier_id` non-nullable because `supabase gen types`
    * cannot see that the SQL parameters accept NULL. A return raised outside an
-   * open shift genuinely has no shift. Cast here rather than editing
+   * open shift genuinely has no shift. Cast below rather than editing
    * database.types.ts, so a regen does not undo it.
    */
-  /**
-   * The approver, when the shop has asked for one (migration 036).
-   *
-   * No PIN dialog here, unlike the till. This page lives under `(admin)` and
-   * `requireAdminProfile` has already turned away anyone who is not an owner or
-   * a manager — the person clicking the button IS the approval, and they signed
-   * in with a password to get here. Asking them for a second credential would
-   * be theatre.
-   *
-   * Sent unconditionally: the database ignores it while the setting is off, and
-   * a null here would fail closed the moment somebody turned it on.
-   */
-  const approvedBy = isAdminRole(profile.role) ? profile.id : null
-
   const args = {
     p_sale_id: parsed.data.saleId,
     p_shift_id: shiftId,

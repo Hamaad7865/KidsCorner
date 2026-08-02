@@ -1,11 +1,12 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useState } from "react"
+import { useActionState, useEffect, useMemo, useRef, useState } from "react"
 import { useFormStatus } from "react-dom"
 import { useRouter } from "next/navigation"
 import { AlertCircle, LoaderCircle, Minus, Plus } from "lucide-react"
 import { toast } from "sonner"
 
+import { ManagerApproval } from "@/components/pos/manager-approval"
 import { ColourSwatch } from "@/components/settings/colour-swatch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { formatRs, round2 } from "@/lib/format"
 import { IDLE_STATE } from "@/lib/forms"
 import { createCreditNote } from "@/lib/returns/actions"
+import type { Cashier } from "@/lib/pos/sale-core"
 import type { SaleForReturn } from "@/lib/returns/queries"
 import { cn } from "@/lib/utils"
 
@@ -52,11 +54,22 @@ function SubmitButton({ count, amount }: { count: number; amount: number }) {
 export function ReturnForm({
   sale,
   shiftId,
+  managers = [],
 }: {
   sale: SaleForReturn
   shiftId: number | null
+  /**
+   * Owners and managers who can authorise, for the shops that require it.
+   *
+   * Empty in the back office, where nobody needs to: `requireAdminProfile`
+   * has already turned away anyone who is not one, so the person clicking the
+   * button IS the approval and asking for a second credential would be
+   * theatre. The till passes a real list, because a cashier is standing there.
+   */
+  managers?: Cashier[]
 }) {
   const router = useRouter()
+  const formRef = useRef<HTMLFormElement>(null)
   const [state, formAction] = useActionState(createCreditNote, IDLE_STATE)
   const [qty, setQty] = useState<Record<number, number>>({})
   const [method, setMethod] = useState("cash")
@@ -70,6 +83,9 @@ export function ReturnForm({
    * is why nothing ever failed.
    */
   const [restock, setRestock] = useState(true)
+
+  /** The manager's PIN, once one has been typed. Never held beyond this submit. */
+  const [approval, setApproval] = useState<{ managerId: string; pin: string } | null>(null)
 
   useEffect(() => {
     if (state.status === "success") {
@@ -104,6 +120,35 @@ export function ReturnForm({
     }))
   }
 
+  // Asked for by the server, not guessed at here: the shop's setting lives in
+  // one place and this reacts to it rather than keeping a second copy.
+  const needsApproval = Boolean(state.fieldErrors.needsApproval)
+
+  if (needsApproval && managers.length > 0) {
+    return (
+      <div className="space-y-4">
+        <Alert>
+          <AlertCircle aria-hidden />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+        <ManagerApproval
+          managers={managers}
+          reason="return"
+          pending={false}
+          onApprove={(managerId, pin) => {
+            // Stored, then the form is submitted again with it attached. The
+            // quantities and the reason are still in state, so the manager
+            // approves the return that was actually built rather than a fresh
+            // empty one.
+            setApproval({ managerId, pin })
+            requestAnimationFrame(() => formRef.current?.requestSubmit())
+          }}
+          onCancel={() => setApproval(null)}
+        />
+      </div>
+    )
+  }
+
   if (sale.fullyReturned) {
     return (
       <Alert>
@@ -117,10 +162,13 @@ export function ReturnForm({
   }
 
   return (
-    <form action={formAction} className="space-y-5" noValidate>
+    <form ref={formRef} action={formAction} className="space-y-5" noValidate>
       <input type="hidden" name="saleId" value={sale.id} />
       {shiftId !== null ? (
         <input type="hidden" name="shiftId" value={shiftId} />
+      ) : null}
+      {approval ? (
+        <input type="hidden" name="approval" value={JSON.stringify(approval)} />
       ) : null}
       <input
         type="hidden"
