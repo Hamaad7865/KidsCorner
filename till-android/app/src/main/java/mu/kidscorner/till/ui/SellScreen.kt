@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -1181,11 +1183,11 @@ private fun CartPane(
             Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            FooterLink("Cash in/out", onOpenMovement)
-            FooterLink("Past sales", onOpenHistory)
-            if (tillOpen) FooterLink("Close till", onCloseTill)
+            FooterLink("Cash in/out", Modifier.weight(1f), onOpenMovement)
+            FooterLink("Past sales", Modifier.weight(1f), onOpenHistory)
+            if (tillOpen) FooterLink("Close till", Modifier.weight(1f), onCloseTill)
         }
     }
 }
@@ -1271,7 +1273,8 @@ private fun CartRow(
     onOpenPriceOverride: (Int) -> Unit,
 ) {
     val discounted = line.discount > 0
-    var discOpen by remember(line.variantId) { mutableStateOf(false) }
+    /** Which unit this line's offers are in — Carfectionist's %/Rs toggle. */
+    var discMode by remember(line.variantId) { mutableStateOf("percent") }
     /**
      * Carfectionist's line: closed by default, opened by tapping it.
      *
@@ -1435,25 +1438,34 @@ private fun CartRow(
             }
         }
 
-        // stepper.  48x44 keys either side of a 46px mono figure
+        // ── the expanded row, as Carfectionist has it ─────────────────────
+        //
+        // One row: stepper, a hairline, the % / Rs toggle, then the offers for
+        // whichever unit is chosen. Theirs reads
+        // `− qty +  │  [%|Rs]  0% 5% 10% 15% 20%` and that is the shape here.
+        //
+        // The offers were behind a Discount key that opened a panel of chips
+        // underneath — two taps to reach, and a second block of height on a
+        // line that had just been opened. Inline, the choice is made where the
+        // eye already is.
         if (open) Row(
-            Modifier.padding(top = 9.dp),
+            Modifier.padding(top = 9.dp).horizontalScroll(rememberScrollState()),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 Modifier
-                    .clip(RoundedCornerShape(11.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Handoff.Surface)
-                    .border(1.dp, Color(0xFFDFE7E8), RoundedCornerShape(11.dp)),
+                    .border(1.dp, Handoff.LineField, RoundedCornerShape(10.dp)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StepKey(Icons.Default.Remove, "Fewer") { onSetQty(line.variantId, line.qty - 1) }
                 Text(
                     line.qty.toString(),
-                    Modifier.widthIn(min = 44.dp),
+                    Modifier.widthIn(min = 34.dp),
                     fontFamily = PlexMono,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Handoff.Ink,
                     textAlign = TextAlign.Center,
@@ -1465,82 +1477,110 @@ private fun CartRow(
                 ) { onSetQty(line.variantId, line.qty + 1) }
             }
 
-            Spacer(Modifier.weight(1f))
+            // Their 1dp rule: the stepper and the discount are different jobs.
+            Box(Modifier.width(1.dp).height(22.dp).background(Handoff.Line))
 
-            // `l.openOverride` — `height:48px; padding:0 13px; radius:11`,
-            // amber-bordered once a price has been set by hand.
+            ModeToggle(percent = discMode == "percent") { discMode = it }
+
+            val gross = round2(line.unitPrice * line.qty)
+            val offers = if (discMode == "percent") LINE_DISCOUNTS_PCT else LINE_DISCOUNTS_AMT
+            offers.forEach { (label, spec) ->
+                val (kind, value) = spec
+                // Selected when this offer is what produced the figure on the
+                // line — compared on the amount, so bumping the quantity
+                // rescales a percentage without silently deselecting it.
+                val would = round2(
+                    minOf(if (kind == "percent") gross * value / 100 else value, gross),
+                )
+                val on = discounted && would == line.discount
+                OfferChip(label, on) {
+                    onLineDiscount(line.variantId, if (on) null else kind, value)
+                }
+            }
+
+            if (discounted) {
+                OfferChip("Clear", false) { onLineDiscount(line.variantId, null, 0.0) }
+            }
+
+            Box(Modifier.width(1.dp).height(22.dp).background(Handoff.Line))
+
+            // A hand-set price is the other way money comes off a line, so it
+            // keeps its place on the same row rather than in a menu.
             ToolButton(
                 label = "Price",
                 icon = Icons.Default.Sell,
-                modifier = Modifier.height(48.dp),
+                modifier = Modifier.height(34.dp),
                 border = if (line.priceOverride != null) Color(0xFFF2E1C4) else Handoff.LineField,
                 onClick = { onOpenPriceOverride(line.variantId) },
             )
-
-            Spacer(Modifier.width(8.dp))
-
-            // `l.toggleDisc` — opens this line's own chips, not a basket dialog.
-            ToolButton(
-                label = "Discount",
-                icon = Icons.Default.Sell,
-                modifier = Modifier.height(44.dp),
-                border = if (discounted) Handoff.DangerLine else Handoff.Line,
-                onClick = { discOpen = !discOpen },
-            )
         }
+        }
+    }
+}
 
-        // ── `l.discOptions` ────────────────────────────────────────────────
-        //
-        // `display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;padding:9px;
-        //  background:#F7FAFA;border:1px solid #E7EDEE;border-radius:11px`
-        // over 44px chips, the selected one solid `#B4402F`.
-        if (open && discOpen) {
-            Column(
+/**
+ * Carfectionist's `ModeToggle`: two segments, one lit.
+ *
+ * Which unit the offers beside it are in. A segmented pair rather than a
+ * dropdown because there are exactly two and both fit — and because a cashier
+ * needs to see which one is active without opening anything.
+ */
+@Composable
+private fun ModeToggle(percent: Boolean, onChange: (String) -> Unit) {
+    Row(
+        Modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(Handoff.Well)
+            .border(1.dp, Handoff.LineField, RoundedCornerShape(9.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf("percent" to "%", "amount" to "Rs").forEach { (kind, label) ->
+            val on = (kind == "percent") == percent
+            Box(
                 Modifier
-                    .padding(top = 9.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(Handoff.FieldWell)
-                    .border(1.dp, Handoff.LineIdle, RoundedCornerShape(11.dp))
-                    .padding(9.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (on) Handoff.AccentSolid else Color.Transparent)
+                    .clickable { onChange(kind) }
+                    .padding(horizontal = 11.dp),
+                Alignment.Center,
             ) {
-                val gross = round2(line.unitPrice * line.qty)
-                // One row per unit, not a wrapped list: 5 · 10 · 15 · 20 reads
-                // as a scale when it sits on one line and as an arbitrary pile
-                // when it wraps. The rupee offers get their own row underneath
-                // for the same reason.
-                listOf(LINE_DISCOUNTS_PCT, LINE_DISCOUNTS_AMT).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { (label, spec) ->
-                            val (kind, value) = spec
-                            // Selected when this chip is what produced the
-                            // figure on the line — compared on the amount, so a
-                            // quantity change that rescales 10% still reads as
-                            // 10% rather than silently deselecting.
-                            val would = round2(
-                                minOf(
-                                    if (kind == "percent") gross * value / 100 else value,
-                                    gross,
-                                ),
-                            )
-                            val on = discounted && would == line.discount
-                            DiscountChip(label, on) {
-                                onLineDiscount(line.variantId, if (on) null else kind, value)
-                                discOpen = false
-                            }
-                        }
-                    }
-                }
-                if (discounted) {
-                    DiscountChip("Remove discount", false, wide = true) {
-                        onLineDiscount(line.variantId, null, 0.0)
-                        discOpen = false
-                    }
-                }
+                Text(
+                    label,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (on) Color.White else Handoff.Muted2,
+                )
             }
         }
+    }
+}
 
-        }
+/** One offer. 34dp to sit level with the toggle and the stepper beside it. */
+@Composable
+private fun OfferChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Handoff.AccentTint else Handoff.Surface)
+            .border(
+                1.dp,
+                if (selected) Handoff.AccentSolid else Handoff.LineField,
+                RoundedCornerShape(9.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp),
+        Alignment.Center,
+    ) {
+        Text(
+            label,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) Handoff.AccentText else Handoff.Muted,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1910,9 +1950,22 @@ private fun CartFooter(
 }
 
 @Composable
-private fun FooterLink(label: String, onClick: () -> Unit) {
-    Surface(onClick = onClick, color = Color.Transparent, contentColor = Handoff.Muted2) {
-        Text(label, fontSize = 12.5.sp)
+private fun FooterLink(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    // Bordered keys, not bare text. Cash in/out, Past sales and Close till are
+    // three of the more consequential things this till does, and rendering them
+    // as underlined-looking prose left a cashier to discover by poking that
+    // they could be pressed at all.
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = Handoff.Surface,
+        contentColor = Handoff.Muted,
+        border = BorderStroke(1.dp, Handoff.Line),
+        modifier = modifier.height(38.dp),
+    ) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
     }
 }
 
