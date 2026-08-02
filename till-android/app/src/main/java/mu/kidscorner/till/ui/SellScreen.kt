@@ -1312,7 +1312,11 @@ private fun CartRow(
         Box(
             Modifier
                 .width(9.dp)
-                .heightIn(min = 86.dp)
+                // 86dp when the basket owned a full-height pane of its own.
+                // Sharing a card with the totals, that was six lines to 500dp;
+                // the band still runs the line's whole height and the tag still
+                // reads, there is just less air around it.
+                .heightIn(min = 60.dp)
                 .fillMaxHeight()
                 .background(parseHex(line.colourHex) ?: Handoff.Ghost),
         )
@@ -1320,7 +1324,7 @@ private fun CartRow(
         Column(
             Modifier
                 .weight(1f)
-                .padding(start = 13.dp, end = 11.dp, top = 11.dp, bottom = 11.dp),
+                .padding(start = 13.dp, end = 11.dp, top = 9.dp, bottom = 9.dp),
         ) {
         Row(
             Modifier.clickable { open = !open },
@@ -1655,14 +1659,21 @@ private fun CartFooter(
         Modifier
             .fillMaxWidth()
             .background(Color(0xFFFBFDFD))
-            .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
     ) {
         // ── the total, first and largest ──────────────────────────────────
         //
-        // This is the figure the cashier reads out and the customer checks, and
-        // it used to be 34sp at the bottom of a 500dp column. It leads now, in
-        // mono so the digits do not shift width as it changes, and in the one
-        // colour reserved for it.
+        // The figure the cashier reads out and the customer checks: mono so the
+        // digits do not shift width as it changes, and in the one colour
+        // reserved for it.
+        //
+        // It was 56sp and the PAY key 88dp, which was right when this block was
+        // a 468dp rail with nothing above it. Sharing a card with the basket,
+        // the two of them took roughly half the column and left a sliver for
+        // the lines — on a four-item sale you could not see what you were
+        // selling. Both are down to about Carfectionist's own scale, which
+        // leaves ~120dp for the lines and keeps the total the largest thing
+        // here by a distance.
         Text(
             "TOTAL",
             fontSize = 12.sp,
@@ -1673,10 +1684,10 @@ private fun CartFooter(
         Text(
             formatAmount(totals.total),
             fontFamily = PlexMono,
-            fontSize = 56.sp,
+            fontSize = 34.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-2).sp,
-            lineHeight = 60.sp,
+            letterSpacing = (-1).sp,
+            lineHeight = 38.sp,
             color = Handoff.AccentSolid,
         )
         Text(
@@ -1686,7 +1697,7 @@ private fun CartFooter(
             color = Handoff.Muted4,
         )
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(10.dp))
 
         if (totals.itemCount > 0 && tillOpen) {
             Surface(
@@ -1694,18 +1705,18 @@ private fun CartFooter(
                 shape = RoundedCornerShape(14.dp),
                 color = Handoff.AccentSolid,
                 contentColor = Color.White,
-                modifier = Modifier.fillMaxWidth().height(88.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
             ) {
                 Row(
-                    Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    Modifier.fillMaxSize().padding(horizontal = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("PAY", fontSize = 21.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("PAY", fontSize = 17.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp)
                     Text(
                         formatAmount(totals.total),
                         fontFamily = PlexMono,
-                        fontSize = 25.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
@@ -1716,23 +1727,23 @@ private fun CartFooter(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(88.dp)
+                    .height(56.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(Handoff.Blocked),
                 Alignment.Center,
             ) {
                 Text(
                     if (!tillOpen) "Open the till to sell" else "Scan something to sell",
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Handoff.BlockedText,
                 )
             }
         }
 
-        Spacer(Modifier.height(16.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
         Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
+        Spacer(Modifier.height(10.dp))
 
         // The customer, as a key rather than as grey text. Attaching one is a
         // deliberate act with a name attached to it afterwards, so it gets a
