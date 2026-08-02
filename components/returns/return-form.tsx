@@ -155,9 +155,15 @@ export function ReturnForm({
             <AlertCircle aria-hidden />
             <AlertDescription>{state.error}</AlertDescription>
           </Alert>
-          {/* Outside the form on purpose. Its keys are Buttons, and a Button
-              inside a form submits it — a manager typing a four-digit PIN
-              would post the return four times. */}
+          {/* Outside the form so the form can stay MOUNTED behind it. An
+              earlier version returned the keypad instead of the form, which
+              left formRef pointing at nothing and made the re-submit below a
+              silent no-op.
+
+              Not, as this comment first claimed, because a nested Button
+              would submit the form: Base UI's ButtonPrimitive emits
+              type="button" itself, so that hazard was never real. Checked by
+              rendering it. */}
           <ManagerApproval
             managers={managers}
             reason="return"
