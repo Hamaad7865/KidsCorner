@@ -111,7 +111,16 @@ async function runWrite(
   const supabase = await createClient()
   const { data, error } = await build(supabase)
 
-  if (error) return fail(describeDbError(error, table, displayName))
+  if (error) {
+    // 23503 is the one failure with an obvious next move — the row is still
+    // referenced, so deactivating is what the shop actually wants. Flagged in
+    // `fieldErrors` so the dialog can offer that button rather than only
+    // naming it, which is what it used to do.
+    return fail(
+      describeDbError(error, table, displayName),
+      error.code === "23503" ? { inUse: "1" } : {},
+    )
+  }
 
   // Every caller ends in `.select("id")`, so `data` is the rows actually
   // written. An UPDATE or DELETE whose filter matches nothing returns neither

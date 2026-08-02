@@ -85,6 +85,65 @@ function ToggleActiveButton({
   )
 }
 
+/**
+ * The offer the delete dialog makes when the row cannot be deleted.
+ *
+ * Its own form, and its own action. The dialog promised "you'll be offered
+ * deactivation instead" and then only ever printed a sentence saying so — the
+ * shop had to cancel out, find the row again and hunt for the eye icon. This
+ * is the offer.
+ */
+function DeactivateInstead({
+  kind,
+  id,
+  name,
+  onDone,
+}: {
+  kind: MasterKind
+  id: number
+  name: string
+  onDone: () => void
+}) {
+  const [state, formAction] = useActionState(setMasterRowActive, IDLE_STATE)
+
+  useEffect(() => {
+    if (state.status === "success") {
+      toast.success(`${name} deactivated.`)
+      onDone()
+    }
+    if (state.status === "error" && state.error) toast.error(state.error)
+  }, [state, name, onDone])
+
+  return (
+    <form action={formAction}>
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="id" value={id} />
+      {/* No `isActive` field: the server reads its absence as false, which is
+          the same convention ToggleActiveButton uses. */}
+      <DeactivateSubmit />
+    </form>
+  )
+}
+
+function DeactivateSubmit() {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" variant="outline" disabled={pending}>
+      {pending ? (
+        <>
+          <LoaderCircle className="animate-spin" aria-hidden />
+          Deactivating…
+        </>
+      ) : (
+        <>
+          <EyeOff aria-hidden />
+          Deactivate instead
+        </>
+      )}
+    </Button>
+  )
+}
+
 function DeleteConfirmForm({
   kind,
   id,
@@ -102,31 +161,57 @@ function DeleteConfirmForm({
     if (state.status === "success") onDeleted()
   }, [state, onDeleted])
 
+  // Set by runWrite on a 23503: the row is still referenced by real records.
+  const inUse = Boolean(state.fieldErrors.inUse)
+
+  // Two footers, one at a time, as SIBLINGS of the delete form rather than
+  // inside it — a <form> nested in a <form> is invalid HTML, and the browser
+  // resolves it by dropping the inner one, which would have made the offer a
+  // button that submitted the delete again.
   return (
-    <form action={formAction} className="space-y-4">
-      <input type="hidden" name="kind" value={kind} />
-      <input type="hidden" name="id" value={id} />
+    <>
+      <form action={formAction} className="space-y-4">
+        <input type="hidden" name="kind" value={kind} />
+        <input type="hidden" name="id" value={id} />
 
-      <AlertDialogHeader>
-        <AlertDialogTitle>Delete “{name}”?</AlertDialogTitle>
-        <AlertDialogDescription>
-          This can’t be undone. If anything already references it, the database
-          will refuse and you’ll be offered deactivation instead.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete “{name}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This can’t be undone. If anything already references it, the
+            database will refuse and offer deactivation instead.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
-      {state.error ? (
-        <Alert variant="destructive">
-          <AlertCircle aria-hidden />
-          <AlertDescription>{state.error}</AlertDescription>
-        </Alert>
+        {state.error ? (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden />
+            <AlertDescription>{state.error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {inUse ? null : (
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+            <DeleteSubmit />
+          </AlertDialogFooter>
+        )}
+      </form>
+
+      {/* Delete is gone once the database has refused: it would refuse
+          identically on every press, and leaving it there invites the shop to
+          keep pressing it. */}
+      {inUse ? (
+        <AlertDialogFooter className="mt-4">
+          <AlertDialogCancel type="button">Keep it</AlertDialogCancel>
+          <DeactivateInstead
+            kind={kind}
+            id={id}
+            name={name}
+            onDone={onDeleted}
+          />
+        </AlertDialogFooter>
       ) : null}
-
-      <AlertDialogFooter>
-        <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-        <DeleteSubmit />
-      </AlertDialogFooter>
-    </form>
+    </>
   )
 }
 
