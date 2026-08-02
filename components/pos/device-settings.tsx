@@ -106,7 +106,7 @@ export function DeviceSettings({ device }: { device: PosDevice }) {
               </div>
               <p className="text-muted-foreground mt-1 max-w-prose text-sm">
                 {device.isActive
-                  ? "Drops it off the list. Its past shifts and their variances stay attributed to it — a till that could be deleted would be a variance that belonged to nobody."
+                  ? "Bookkeeping only — the tablet carries on working. Use this for a till that has been replaced or that registered itself twice. Its past shifts and their variances stay attributed to it, because a till that could be deleted would be a variance that belonged to nobody."
                   : "Puts it back on the list. It will pick up where it left off the next time it checks in."}
               </p>
             </div>
