@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:consistency": "node scripts/check-consistency.mjs",
     "preflight": "node scripts/preflight.mjs",
     "cf:build": "npm run preflight && opennextjs-cloudflare build",
     "cf:deploy": "npm run cf:build && wrangler deploy",
