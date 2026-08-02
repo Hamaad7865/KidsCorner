@@ -389,7 +389,7 @@ export default async function StockPage({
                           "text-right font-medium tabular-nums",
                           row.qtyOnHand <= 0
                             ? "text-destructive"
-                            : "text-warning-foreground",
+                            : "text-warning",
                         )}
                       >
                         {row.qtyOnHand}

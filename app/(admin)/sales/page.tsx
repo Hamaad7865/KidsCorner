@@ -229,7 +229,7 @@ export default async function SalesPage({
                           Void
                         </Badge>
                       ) : sale.partReturned ? (
-                        <Badge variant="outline" className="text-warning-foreground">
+                        <Badge variant="outline" className="text-warning">
                           Part returned
                         </Badge>
                       ) : null}

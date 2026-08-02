@@ -61,7 +61,7 @@ export function StaffPins({
               <div className="text-muted-foreground text-xs">
                 <span className="capitalize">{person.role}</span>
                 {person.failedAttempts > 0 ? (
-                  <span className="text-warning-foreground">
+                  <span className="text-warning">
                     {" · "}
                     {person.failedAttempts} wrong{" "}
                     {person.failedAttempts === 1 ? "try" : "tries"}

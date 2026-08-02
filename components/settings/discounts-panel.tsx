@@ -90,7 +90,7 @@ export function DiscountsPanel({
                     </Badge>
                   ) : null}
                   {rule.requiresManager ? (
-                    <Badge variant="outline" className="text-warning-foreground">
+                    <Badge variant="outline" className="text-warning">
                       Manager
                     </Badge>
                   ) : null}

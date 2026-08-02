@@ -323,7 +323,7 @@ export default async function ReportsPage({
           </div>
 
           {collected.outstanding !== 0 ? (
-            <p className="text-warning-foreground text-sm">
+            <p className="text-warning text-sm">
               The period&rsquo;s sales total and its payments differ by{" "}
               {formatRs(collected.outstanding)}. Kids Corner takes full payment
               at the till, so this figure should always be zero — check the

@@ -224,7 +224,7 @@ function MatrixCell({
           className={cn(
             "font-medium tabular-nums",
             isOut && "text-destructive",
-            isLow && "text-warning-foreground",
+            isLow && "text-warning",
           )}
         >
           {variant.qtyOnHand}

@@ -187,7 +187,7 @@ export default async function ProductsPage({
                     <span
                       className={
                         product.lowStockCount > 0
-                          ? "text-warning-foreground font-medium"
+                          ? "text-warning font-medium"
                           : undefined
                       }
                       title={

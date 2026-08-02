@@ -62,7 +62,7 @@ export function TillToolbar({
       {!online || queued > 0 ? (
         <Badge
           variant="outline"
-          className="text-warning-foreground gap-1.5"
+          className="text-warning gap-1.5"
           title={
             queued > 0
               ? "Sales taken while the connection was down. They go through on their own."

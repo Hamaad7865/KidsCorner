@@ -702,7 +702,7 @@ function SummaryBar({
         <CheckCircle2 className="size-4" aria-hidden />
         {ready} ready
       </span>
-      <span className={newMasters > 0 ? "text-warning-foreground" : "text-muted-foreground"}>
+      <span className={newMasters > 0 ? "text-warning" : "text-muted-foreground"}>
         {newMasters} new master{newMasters === 1 ? "" : "s"} to create
       </span>
       <span className={errors > 0 ? "text-destructive" : "text-muted-foreground"}>
@@ -800,7 +800,7 @@ function PreviewTable({ summary }: { summary: ValidationSummary }) {
                     {hasError ? (
                       <span className="text-destructive">{row.errors.join(" ")}</span>
                     ) : needsMaster ? (
-                      <span className="text-warning-foreground">
+                      <span className="text-warning">
                         Will create:{" "}
                         {row.missing.map((m) => `${m.kind} “${m.name}”`).join(", ")}
                       </span>

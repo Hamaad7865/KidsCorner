@@ -284,7 +284,7 @@ export function PaymentPanel({
       <div className="mx-auto flex h-full w-full max-w-md flex-col justify-center gap-6 p-6">
         <div className="text-center">
           <AlertTriangle
-            className="text-warning-foreground mx-auto size-10"
+            className="text-warning mx-auto size-10"
             aria-hidden
           />
           <h2 className="mt-3 text-xl font-semibold">
@@ -477,7 +477,7 @@ export function PaymentPanel({
             <span
               className={cn(
                 "font-medium tabular-nums",
-                outstanding > 0 ? "text-warning-foreground" : "text-success",
+                outstanding > 0 ? "text-warning" : "text-success",
               )}
             >
               {formatRs(outstanding)}

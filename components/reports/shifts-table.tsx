@@ -80,7 +80,7 @@ export function ShiftsTable({ shifts }: { shifts: ShiftReport[] }) {
                           which is not a sentence. The two cases are
                           different events and now say so. */}
                       {s.unreported > 0 ? (
-                        <Badge variant="outline" className="text-warning-foreground">
+                        <Badge variant="outline" className="text-warning">
                           +{formatRs(s.unreported)} after
                         </Badge>
                       ) : s.unreported < 0 ? (
@@ -120,7 +120,7 @@ export function ShiftsTable({ shifts }: { shifts: ShiftReport[] }) {
                         "font-medium",
                         s.variance === 0
                           ? "text-success"
-                          : "text-warning-foreground",
+                          : "text-warning",
                       )}
                     >
                       {s.variance > 0 ? "+" : ""}
@@ -149,7 +149,7 @@ export function ShiftsTable({ shifts }: { shifts: ShiftReport[] }) {
                         this list. Claiming one is the other would be right
                         most of the time, which is the worst kind of wrong
                         on a reconciliation screen. */}
-                    <div className="text-warning-foreground text-xs font-semibold">
+                    <div className="text-warning text-xs font-semibold">
                       {s.lateCount} sale{s.lateCount === 1 ? "" : "s"} landed
                       after Z {s.zNo} was frozen, totalling{" "}
                       {formatRs(lateTotal(s))}

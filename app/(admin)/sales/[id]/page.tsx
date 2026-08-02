@@ -178,7 +178,7 @@ export default async function SaleDetailPage({
             {/* Only worth saying when it is not simply the total — a split that
                 does not add up is the kind of thing you want to notice here. */}
             {Math.abs(paid - sale.total) > 0.009 ? (
-              <div className="text-warning-foreground flex justify-between gap-4">
+              <div className="text-warning flex justify-between gap-4">
                 <dt>Payments recorded</dt>
                 <dd className="tabular-nums">{formatRs(paid)}</dd>
               </div>

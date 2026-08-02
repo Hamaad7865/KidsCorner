@@ -62,6 +62,17 @@ export function SellScreen({
   const remove = useCart((s) => s.remove)
   const clear = useCart((s) => s.clear)
 
+  /**
+   * Whether Clear has been pressed once.
+   *
+   * Emptying the cart is instant and cannot be undone, and this button sits
+   * in the cart header a few pixels from the quantity steppers. The tablet
+   * till has always armed it — "Clear sale?" — and the two held-sale lists
+   * were given the same treatment; this was the one place still one tap from
+   * losing a basket mid-queue.
+   */
+  const [confirmingClear, setConfirmingClear] = useState(false)
+
   const totals = cartTotals(lines, saleDiscount, vatRate)
 
   // Barcode lookup is exact and O(1): a scanner types fast and hits Enter, so
@@ -279,8 +290,19 @@ export function SellScreen({
             ) : null}
           </div>
           {lines.length > 0 ? (
-            <Button variant="ghost" size="sm" onClick={clear}>
-              Clear
+            <Button
+              variant={confirmingClear ? "destructive" : "ghost"}
+              size="sm"
+              onClick={() => {
+                if (confirmingClear) {
+                  clear()
+                  setConfirmingClear(false)
+                } else {
+                  setConfirmingClear(true)
+                }
+              }}
+            >
+              {confirmingClear ? "Clear sale?" : "Clear"}
             </Button>
           ) : null}
         </header>
@@ -315,7 +337,7 @@ export function SellScreen({
                       {formatRs(line.unitPrice)}
                     </div>
                     {line.qty > line.qtyOnHand ? (
-                      <div className="text-warning-foreground mt-1 text-xs">
+                      <div className="text-warning mt-1 text-xs">
                         Only {line.qtyOnHand} in stock — selling anyway will make
                         the count negative.
                       </div>
