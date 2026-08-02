@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { Factory } from "lucide-react"
+import { Factory, Search, X } from "lucide-react"
 
 import { SupplierDialog } from "@/components/purchases/supplier-dialog"
 import { ActiveBadge } from "@/components/settings/master-data-panel"
@@ -13,15 +13,27 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { formatDate, formatRs, initialsOf } from "@/lib/format"
 import { listSupplierRows } from "@/lib/purchases/queries"
 
 export const metadata: Metadata = { title: "Suppliers" }
 
-export default async function SuppliersPage() {
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value
+}
+
+export default async function SuppliersPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   await requireAdminProfile()
-  const suppliers = await listSupplierRows()
+  const params = await searchParams
+  const search = first(params.q)?.trim() || undefined
+  const suppliers = await listSupplierRows(search)
 
   return (
     <div className="space-y-6">
@@ -35,7 +47,52 @@ export default async function SuppliersPage() {
         <SupplierDialog supplier={null} />
       </header>
 
-      {suppliers.length === 0 ? (
+      {/* The one list in the back office without a search box. The global
+          search links here by name, so it needed one — a result row reading
+          "Tiny Threads Ltd" used to land on the whole list and lose the name
+          it had just been clicked for. */}
+      <form method="get" className="flex flex-wrap items-end gap-3">
+        <div className="flex-1 basis-64 space-y-2">
+          <Label htmlFor="supplier-search">Search</Label>
+          <div className="relative">
+            <Search
+              className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
+              aria-hidden
+            />
+            <Input
+              id="supplier-search"
+              name="q"
+              defaultValue={search ?? ""}
+              placeholder="Name, contact or town…"
+              className="pl-8"
+            />
+          </div>
+        </div>
+        <Button type="submit" variant="outline">
+          Search
+        </Button>
+        {search ? (
+          <Button variant="ghost" render={<Link href="/suppliers" />}>
+            <X aria-hidden />
+            Clear
+          </Button>
+        ) : null}
+      </form>
+
+      {suppliers.length === 0 && search ? (
+        <div className="rounded-lg border border-dashed p-10 text-center">
+          <Factory className="text-muted-foreground mx-auto size-8" aria-hidden />
+          <p className="mt-3 font-medium">Nobody matches “{search}”</p>
+          <p className="text-muted-foreground mx-auto mt-1 max-w-md text-sm">
+            Try part of the name, the contact, or the town they are in.
+          </p>
+          <div className="mt-4 flex justify-center">
+            <Button variant="outline" render={<Link href="/suppliers" />}>
+              Show all suppliers
+            </Button>
+          </div>
+        </div>
+      ) : suppliers.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center">
           <Factory className="text-muted-foreground mx-auto size-8" aria-hidden />
           <p className="mt-3 font-medium">No suppliers yet</p>

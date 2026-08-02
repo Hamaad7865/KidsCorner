@@ -43,11 +43,16 @@ export type SupplierRow = Supplier & {
  * would show money out that has not gone out, and the whole point of the
  * draft/received split is that stock and money move on receipt.
  */
-export async function listSupplierRows(): Promise<SupplierRow[]> {
+/**
+ * @param search Narrows by name. The global search links here with the
+ *   supplier's own name, because a result row that reads "Tiny Threads Ltd"
+ *   used to land on the whole list and lose the name it was clicked for.
+ */
+export async function listSupplierRows(search?: string): Promise<SupplierRow[]> {
   const supabase = await createClient()
   const yearStart = `${new Date().getFullYear()}-01-01`
 
-  const [suppliers, { data: history }] = await Promise.all([
+  const [all, { data: history }] = await Promise.all([
     listSuppliers(),
     supabase
       .from("purchases")
@@ -81,6 +86,19 @@ export async function listSupplierRows(): Promise<SupplierRow[]> {
     }
     bySupplier.set(row.supplier_id, entry)
   }
+
+  // Filtered here rather than in the query: there are at most 500 suppliers
+  // and the spend history has already been fetched for all of them, so a
+  // second round trip to narrow a list this size would cost more than it saves.
+  const term = search?.trim().toLowerCase()
+  const suppliers = term
+    ? all.filter(
+        (s) =>
+          s.name.toLowerCase().includes(term) ||
+          (s.contact_name ?? "").toLowerCase().includes(term) ||
+          (s.town ?? "").toLowerCase().includes(term),
+      )
+    : all
 
   return suppliers.map((supplier) => {
     const seen = bySupplier.get(supplier.id)

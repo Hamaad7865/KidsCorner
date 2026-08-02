@@ -131,8 +131,11 @@ export default async function SearchPage({
             <Group icon={Factory} title="Suppliers">
               {results.suppliers.map((supplier) => (
                 <li key={supplier.id}>
+                  {/* By name, not to the bare list. Customers next door have
+                      always linked to the customer; a supplier hit landed on
+                      every supplier and made you find the one you searched. */}
                   <Link
-                    href="/suppliers"
+                    href={`/suppliers?q=${encodeURIComponent(supplier.name)}`}
                     className="hover:bg-muted/50 flex items-center gap-3 rounded-lg border p-3 transition-colors"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium">
