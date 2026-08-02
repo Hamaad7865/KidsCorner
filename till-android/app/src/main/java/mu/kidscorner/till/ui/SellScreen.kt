@@ -1155,7 +1155,7 @@ private fun CartPane(
         // they are not what this rail is for, but a cashier fetching another
         // size needs them within reach.
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             ToolButton(
@@ -1164,13 +1164,13 @@ private fun CartPane(
                 enabled = lines.isNotEmpty(),
                 border = Handoff.LineStrong,
                 background = Handoff.Well2,
-                modifier = Modifier.weight(1f).height(48.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
                 onClick = onHold,
             )
             ToolButton(
                 label = "Held",
                 badge = heldCount.takeIf { it > 0 },
-                modifier = Modifier.weight(1f).height(48.dp),
+                modifier = Modifier.weight(1f).height(40.dp),
                 onClick = onOpenHeld,
             )
         }
@@ -1180,8 +1180,8 @@ private fun CartPane(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             FooterLink("Cash in/out", onOpenMovement)
             FooterLink("Past sales", onOpenHistory)
@@ -1674,28 +1674,40 @@ private fun CartFooter(
         // selling. Both are down to about Carfectionist's own scale, which
         // leaves ~120dp for the lines and keeps the total the largest thing
         // here by a distance.
-        Text(
-            "TOTAL",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.4.sp,
-            color = Handoff.Muted3,
-        )
-        Text(
-            formatAmount(totals.total),
-            fontFamily = PlexMono,
-            fontSize = 34.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-1).sp,
-            lineHeight = 38.sp,
-            color = Handoff.AccentSolid,
-        )
-        Text(
-            "incl. VAT ${(vatRate * 100).toInt()}%  ${formatAmount(totals.vat)}",
-            fontFamily = PlexMono,
-            fontSize = 12.5.sp,
-            color = Handoff.Muted4,
-        )
+        // Label beside the figure rather than stacked above it, and the VAT
+        // note on the same baseline. Three stacked lines cost ~30dp of a panel
+        // that has to share with the basket, and none of that height was
+        // telling anybody anything the one row does not.
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "TOTAL",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp,
+                    color = Handoff.Muted3,
+                )
+                Text(
+                    "incl. VAT ${(vatRate * 100).toInt()}%  ${formatAmount(totals.vat)}",
+                    fontFamily = PlexMono,
+                    fontSize = 11.5.sp,
+                    color = Handoff.Muted4,
+                )
+            }
+            Text(
+                formatAmount(totals.total),
+                fontFamily = PlexMono,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-1).sp,
+                lineHeight = 34.sp,
+                color = Handoff.AccentSolid,
+            )
+        }
 
         Spacer(Modifier.height(10.dp))
 
@@ -1741,56 +1753,56 @@ private fun CartFooter(
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
         Spacer(Modifier.height(10.dp))
-
-        // The customer, as a key rather than as grey text. Attaching one is a
-        // deliberate act with a name attached to it afterwards, so it gets a
-        // target a thumb can find.
-        Surface(
-            onClick = if (customer == null) onOpenCustomer else onDetachCustomer,
-            shape = RoundedCornerShape(11.dp),
-            color = if (customer == null) Handoff.Surface else Handoff.AccentTint,
-            contentColor = if (customer == null) Handoff.Muted else Handoff.AccentText,
-            border = BorderStroke(
-                1.dp,
-                if (customer == null) Handoff.Line else Handoff.AccentLine,
-            ),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-            ) {
-                Icon(Icons.Default.PersonOutline, null, Modifier.size(18.dp))
-                Text(
-                    customer?.fullName ?: "Attach a customer",
-                    fontSize = 14.sp,
-                    fontWeight = if (customer == null) FontWeight.Medium else FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (customer != null) {
-                    Icon(Icons.Default.Close, "Detach the customer", Modifier.size(16.dp))
-                }
-            }
-        }
-
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE7EDEE)))
         Spacer(Modifier.height(8.dp))
 
-        // ── the basket-discount chip and the note key ───────────────────────
+        // The customer key, the basket-discount chip and the note share ONE
+        // row. They were three full-width rows stacked, which is 110dp of a
+        // panel that has to leave room for the basket — and on a two-item sale
+        // the second line was already being clipped to pay for them.
         //
-        // `flex:1; height:48px; radius:11` beside a `flex:0 0 52px` note key.
-        // The chip goes coral-bordered on `#FDECEA` once a discount is on, and
-        // carries the figure and the reason: "Basket 10% · Staff discount".
-        // That is the whole state of it, readable without opening anything.
+        // The customer is still a key a thumb can find rather than grey text:
+        // attaching one is a deliberate act with a name on it afterwards.
         Row(
-            Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
+            Surface(
+                onClick = if (customer == null) onOpenCustomer else onDetachCustomer,
+                shape = RoundedCornerShape(11.dp),
+                color = if (customer == null) Handoff.Surface else Handoff.AccentTint,
+                contentColor = if (customer == null) Handoff.Muted else Handoff.AccentText,
+                border = BorderStroke(
+                    1.dp,
+                    if (customer == null) Handoff.Line else Handoff.AccentLine,
+                ),
+                modifier = Modifier.weight(1f).height(44.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Icon(Icons.Default.PersonOutline, null, Modifier.size(16.dp))
+                    Text(
+                        customer?.fullName ?: "Customer",
+                        fontSize = 13.sp,
+                        fontWeight = if (customer == null) FontWeight.Medium else FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (customer != null) {
+                        Icon(Icons.Default.Close, "Detach the customer", Modifier.size(15.dp))
+                    }
+                }
+            }
+
+            // The chip goes coral-bordered on `#FDECEA` once a discount is on,
+            // and carries the figure and the reason: "Basket 10% · Staff
+            // discount". That is the whole state of it, readable without
+            // opening anything.
             Surface(
                 onClick = onOpenDiscount,
                 shape = RoundedCornerShape(11.dp),
@@ -1800,7 +1812,7 @@ private fun CartFooter(
                     1.dp,
                     if (discount != null) Color(0xFFF2C8C1) else Handoff.Line,
                 ),
-                modifier = Modifier.weight(1f).height(48.dp),
+                modifier = Modifier.weight(1f).height(44.dp),
             ) {
                 Row(
                     Modifier.fillMaxHeight().padding(horizontal = 14.dp),
@@ -1825,7 +1837,7 @@ private fun CartFooter(
                 color = Handoff.Surface,
                 contentColor = if (note.isBlank()) Handoff.Muted else Handoff.AccentText,
                 border = BorderStroke(1.dp, Handoff.Line),
-                modifier = Modifier.width(52.dp).height(48.dp),
+                modifier = Modifier.width(46.dp).height(44.dp),
             ) {
                 Box(Modifier.fillMaxSize(), Alignment.Center) {
                     Icon(
@@ -1837,7 +1849,8 @@ private fun CartFooter(
             }
         }
 
-        TotalRow("Subtotal", formatAmount(totals.subtotal), 13.sp, Handoff.Muted2, Handoff.InkStrong)
+        Spacer(Modifier.height(9.dp))
+        TotalRow("Subtotal", formatAmount(totals.subtotal), 12.5.sp, Handoff.Muted2, Handoff.InkStrong)
 
         if (totals.lineDiscounts > 0) {
             TotalRow(
