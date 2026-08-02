@@ -183,7 +183,10 @@ fun VariantPickerDialog(
                                         color = if (inStock) Handoff.Surface else Handoff.Well2,
                                         border = BorderStroke(
                                             1.dp,
-                                            if (inStock) Handoff.LineSoft else Handoff.LineSoft,
+                                            // Fainter when there is none left, so the tile recedes
+                                            // with its fill rather than keeping a full-strength
+                                            // edge around something that cannot be tapped.
+                                            if (inStock) Handoff.LineSoft else Handoff.LineFaint,
                                         ),
                                         modifier = Modifier.weight(1f).height(56.dp),
                                     ) {
