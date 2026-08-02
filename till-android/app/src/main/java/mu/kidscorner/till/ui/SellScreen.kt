@@ -335,11 +335,18 @@ fun SellScreen(
             ) {
                 if (catalogLoading && catalog.isEmpty()) {
                     Centred { Text("Loading the catalogue…", fontSize = 14.sp, color = Handoff.Muted2) }
-                } else if (query.trim().length >= 2 || scanHit != null) {
+                } else if (scanHit != null) {
+                    // A barcode keyed in by hand resolves to exactly one
+                    // variant, so the fuzzy matches are dropped and that one
+                    // row is shown. Losing this on the way out of the Browse
+                    // overlay would have made a typed barcode report "Nothing
+                    // matches" for an item the till had already found.
+                    ScanHitRow(scanHit, query.trim()) { add(scanHit); query = "" }
+                } else if (query.trim().length >= 2) {
                     // Typing turns the middle column into results, exactly as
                     // tapping a category turns it into that category's tiles.
                     ResultRows(
-                        groups = if (scanHit != null) emptyList() else results,
+                        groups = results,
                         query = query.trim(),
                         onPick = ::open,
                         onAdd = { add(it); query = "" },
@@ -1227,13 +1234,29 @@ private fun CartRow(
 ) {
     val discounted = line.discount > 0
     var discOpen by remember(line.variantId) { mutableStateOf(false) }
+    /**
+     * Carfectionist's line: closed by default, opened by tapping it.
+     *
+     * The stepper, Price and Discount used to sit on every row whether anybody
+     * wanted them or not — roughly 90dp of controls per line, for actions taken
+     * on a small minority of them. A ten-item basket scrolled for no reason.
+     * Closed, a line says what it is and what it costs; the controls are one
+     * tap away on the line they belong to.
+     */
+    var open by remember(line.variantId) { mutableStateOf(false) }
 
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
             .clip(RoundedCornerShape(13.dp))
-            .background(if (isNew) Handoff.AccentTint else Handoff.Surface)
+            .background(
+                when {
+                    isNew -> Handoff.AccentTint
+                    open -> Handoff.Well
+                    else -> Handoff.Surface
+                },
+            )
             .border(
                 1.dp,
                 if (isNew) Handoff.AccentLine else Handoff.LineSoft,
@@ -1261,7 +1284,11 @@ private fun CartRow(
                 .weight(1f)
                 .padding(start = 13.dp, end = 11.dp, top = 11.dp, bottom = 11.dp),
         ) {
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.clickable { open = !open },
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Column(Modifier.weight(1f)) {
                 Text(
                     line.productName,
@@ -1367,7 +1394,7 @@ private fun CartRow(
         }
 
         // stepper.  48x44 keys either side of a 46px mono figure
-        Row(
+        if (open) Row(
             Modifier.padding(top = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1425,7 +1452,7 @@ private fun CartRow(
         // `display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;padding:9px;
         //  background:#F7FAFA;border:1px solid #E7EDEE;border-radius:11px`
         // over 44px chips, the selected one solid `#B4402F`.
-        if (discOpen) {
+        if (open && discOpen) {
             Column(
                 Modifier
                     .padding(top = 9.dp)
