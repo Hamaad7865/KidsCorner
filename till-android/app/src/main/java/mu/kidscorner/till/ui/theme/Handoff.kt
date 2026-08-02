@@ -100,8 +100,17 @@ object Handoff {
     /** The shop line and "Checking PIN…". Its own value rather than Muted2's:
      *  it sits on PinGround, not on white, where 4.45:1 was a whisker under. */
     val PinTextSoft = Color(0xFF686167)
-    /** The sub-line under the heading. */
-    val PinTextFaint = Color(0xFF827D81)
+    /**
+     * The "4-digit PIN" hint under the picked name, on the white panel.
+     *
+     * Was `#827D81`, which measured 4.04:1 there — the same value and the same
+     * shortfall `Muted3` was corrected for, spotted the same way once the
+     * contrast check was pointed at this screen. The sub-line under the
+     * heading, which used to share this, sits on PinGround and now uses
+     * PinTextSoft: two grounds want two greys, and one of them was reading as
+     * both.
+     */
+    val PinTextFaint = Color(0xFF736C72)
     /** A staff tile's role, and the welcome sub. */
     val PinTextRole = Color(0xFF928E91)
     /** The ink ON the accent: the KC mark's letters, the success tick. */

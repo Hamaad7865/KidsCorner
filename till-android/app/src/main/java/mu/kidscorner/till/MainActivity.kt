@@ -112,8 +112,11 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
 
     /** The cart line whose unit price is being set by hand, if any. */
 
+    // Stripped: this list is passed into the approval prompt and held in
+    // composition, and a manager's offline verifier has no business there.
     val managers = state.shop?.cashiers.orEmpty()
         .filter { it.role == "owner" || it.role == "manager" }
+        .map { it.withoutSecret() }
 
     Box(
         Modifier
@@ -159,6 +162,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         busy = state.busy,
                         error = state.error,
                         lockedFor = state.lockedFor,
+                        offline = !state.online,
                         onSubmit = vm::submitPin,
                         onErrorShown = vm::clearError,
                     )

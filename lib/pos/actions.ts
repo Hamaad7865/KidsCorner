@@ -14,6 +14,7 @@ import {
   textOf,
   type FormState,
 } from "@/lib/forms"
+import { mintDeviceVerifier } from "@/lib/pos/device-verifier"
 import { PIN_PATTERN, hashPin } from "@/lib/pos/pin"
 import {
   closeShiftFor,
@@ -216,7 +217,16 @@ export async function setCashierPin(
   const supabase = await createClient()
   const { data, error } = await supabase
     .from("profiles")
-    .update({ pin_code: clearing ? null : await hashPin(pin) })
+    .update({
+      pin_code: clearing ? null : await hashPin(pin),
+      // The tills' copy, minted here because this is one of only two places
+      // the plaintext PIN legitimately exists (the other is a successful
+      // sign-in). Written in the same statement as the hash so the two can
+      // never describe different PINs — migration 038's trigger drops a
+      // verifier whose PIN moved without it, which is the backstop for any
+      // caller that forgets, but this one does not need it.
+      pin_device_verifier: clearing ? null : await mintDeviceVerifier(pin),
+    })
     .eq("id", profileId)
     .select("id, full_name")
 

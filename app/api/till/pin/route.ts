@@ -53,6 +53,10 @@ export async function POST(request: Request) {
       ok: false,
       error: result.error,
       lockedFor: result.lockedFor ?? 0,
+      // Whether the digits were wrong, as opposed to the account being locked
+      // out or switched off. The tablet drops its offline verifier only on
+      // this, so a lockout cannot cost somebody their offline sign-in.
+      wrongPin: result.wrongPin ?? false,
     })
   }
 

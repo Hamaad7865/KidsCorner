@@ -160,6 +160,9 @@ const TILL = [
   ["ChangeLabel", "ChangeTint", "the CHANGE DUE label"],
   ["PinText", "PinPanel", "the PIN heading"],
   ["PinTextSoft", "PinGround", "the shop line on the lock screen"],
+  ["PinTextSoft", "PinGround", "the lock screen's instructions, and who cannot sign in offline"],
+  ["WarnText", "PinGround", "the lock screen saying the shop's line is down"],
+  ["PinTextFaint", "PinPanel", "the '4-digit PIN' caption under the picked name"],
   ["ScanGlyph", "ScanButton", "the barcode glyph"],
   ["ToastInk", "ScanButton", "a toast"],
 ]

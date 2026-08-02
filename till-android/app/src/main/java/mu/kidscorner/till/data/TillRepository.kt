@@ -18,6 +18,7 @@ class TillRepository(
     private val api: TillApi,
     private val auth: AuthClient,
     private val store: SessionStore,
+    private val gate: OfflineGate,
     private val catalog: CatalogDao,
     private val queue: SaleQueueDao,
 ) {
@@ -43,7 +44,21 @@ class TillRepository(
     suspend fun signIn(email: String, password: String): Result<Unit> =
         auth.signIn(email, password).map { store.save(it) }
 
-    fun signOut() = store.clear()
+    /**
+     * Forget this device entirely.
+     *
+     * Takes the offline gate with it: a tablet that is no longer this shop's
+     * till must not go on admitting its staff. Whether it is ALLOWED to happen
+     * is decided above — a queue still holding sales has nothing to replay
+     * under once the session is gone.
+     */
+    suspend fun signOut() {
+        store.clear()
+        gate.clear()
+    }
+
+    /** The last bootstrap the server served, for a start with no line. */
+    suspend fun cachedShop(): Bootstrap? = gate.cachedShop()
 
     suspend fun bootstrap(): Result<Bootstrap> = authed {
         api.bootstrap(
@@ -52,10 +67,83 @@ class TillRepository(
             model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
             appVersion = mu.kidscorner.till.BuildConfig.VERSION_NAME,
         )
+    }.onSuccess {
+        // The only thing that fetches the roster, so it is also the only thing
+        // that can keep one. Remembered whole, verifiers included.
+        gate.remember(it)
     }
 
-    suspend fun verifyPin(profileId: String, pin: String, deviceId: Int? = null): Result<PinResult> =
-        authed { api.verifyPin(it, profileId, pin, deviceId) }
+    /**
+     * Check a PIN, falling back to the tablet when the shop cannot be reached.
+     *
+     * The order is the point. The server is asked FIRST and its answer is
+     * final either way — a wrong PIN, a locked-out cashier, an account switched
+     * off in the back office are all decisions only it can make, and a stale
+     * verifier must never be allowed to overrule one. The local check happens
+     * only when nothing answered at all.
+     */
+    suspend fun verifyPin(profileId: String, pin: String, deviceId: Int? = null): Result<PinResult> {
+        val attempt = authed { api.verifyPin(it, profileId, pin, deviceId) }
+        val answer = attempt.getOrNull()
+
+        if (answer != null) {
+            if (answer.ok) {
+                // The server has spoken, so the offline miss count is spent.
+                gate.noteOnlineSuccess(profileId)
+            } else if (answer.wrongPin) {
+                // Refused digits that this tablet still accepts means the PIN
+                // was changed in the back office while it was not looking.
+                //
+                // `wrongPin`, not `!ok`: a locked-out or deactivated cashier is
+                // also refused, and their PIN may be perfectly correct —
+                // dropping the verifier then would cost them offline sign-in
+                // for nothing.
+                //
+                // This costs one PBKDF2 at the shipped iteration count, so a
+                // mistyped PIN takes about half a second longer to say so. Paid
+                // deliberately: it only lands on the wrong-PIN path, only when
+                // a verifier is actually held, and the alternative is a stale
+                // PIN that goes on opening this till.
+                gate.noteServerRefusal(profileId, pin)
+            }
+            return attempt
+        }
+
+        // Nothing answered. Either the line is down or the token could not be
+        // renewed — and an UnauthorizedException reaching here has already
+        // survived one refresh, so there is no session to sell under anyway.
+        if (attempt.exceptionOrNull() is UnauthorizedException) return attempt
+
+        return Result.success(
+            when (val local = gate.unlock(profileId, pin)) {
+                is OfflineGate.Unlock.Ok ->
+                    PinResult(ok = true, cashier = local.cashier, offline = true)
+
+                OfflineGate.Unlock.WrongPin ->
+                    PinResult(ok = false, error = "Wrong PIN.", wrongPin = true, offline = true)
+
+                is OfflineGate.Unlock.Locked -> PinResult(
+                    ok = false,
+                    error = PinThrottle.waitMessage(local.remainingMs),
+                    // Rounded UP, so a keypad counting this down never re-opens
+                    // a moment before the gate actually will.
+                    lockedFor = ((local.remainingMs + 999) / 1000).toInt(),
+                    offline = true,
+                )
+
+                // Short on purpose: it lands in the keypad's one-line caption,
+                // and the lock screen has already greyed this name out with
+                // the full reason underneath the tiles. Reaching this at all
+                // means the offline flag had not flipped yet when the tile was
+                // tapped.
+                OfflineGate.Unlock.Unknown -> PinResult(
+                    ok = false,
+                    error = "No connection — this till can't check that PIN yet.",
+                    offline = true,
+                )
+            },
+        )
+    }
 
     suspend fun completeSale(sale: SaleRequest): Result<SaleResult> =
         authed { api.completeSale(it, sale) }

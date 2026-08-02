@@ -28,6 +28,7 @@ import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.DiscountRule
 import mu.kidscorner.till.data.HeldSale
 import mu.kidscorner.till.data.MovementRequest
+import mu.kidscorner.till.data.OfflineGate
 import mu.kidscorner.till.data.RefundItem
 import mu.kidscorner.till.data.RefundRequest
 import mu.kidscorner.till.data.RefundResponse
@@ -250,6 +251,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         api = TillApi(http),
         auth = AuthClient(http),
         store = SessionStore(app),
+        gate = OfflineGate(app),
         catalog = db.catalog(),
         queue = db.queue(),
     )
@@ -338,6 +340,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         if (queuePump?.isActive == true) return
         queuePump = viewModelScope.launch {
             drainQueue()
+            var beats = 0
             // The alternative is a queue that only moves when the cashier
             // happens to ring something up. A till can sit idle for an hour
             // with a customer's sale unsent, and the shop would not know.
@@ -345,6 +348,37 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 delay(QUEUE_HEARTBEAT_MS)
                 drainQueue()
                 noticeRemoteClose()
+                if (++beats % ROSTER_EVERY_BEATS == 0) refreshRoster()
+            }
+        }
+    }
+
+    /**
+     * Re-pull the roster, so the offline gate does not go stale on its feet.
+     *
+     * Without this the roster was fetched exactly once, at app start, and a
+     * till in a shop that never restarts it would go on admitting somebody
+     * offline weeks after an owner cleared their PIN. Revocation that only
+     * takes effect when a tablet happens to be rebooted is not revocation.
+     *
+     * Quiet: no spinner, no error. Nothing here is anything a cashier asked
+     * for, and a failure just means the roster stays as it was, which is the
+     * correct outcome anyway.
+     */
+    private suspend fun refreshRoster() {
+        repo.bootstrap().onSuccess { fresh ->
+            _state.update {
+                it.copy(
+                    // The SHIFT is deliberately not taken from this answer.
+                    // `getOpenShift` is scoped to the shop rather than to this
+                    // device, so in a two-till shop it returns whichever
+                    // drawer was opened last — and adopting it here would move
+                    // a cashier's live basket onto the other till's shift
+                    // between one sale and the next. Which shift this till is
+                    // on is `noticeRemoteClose`'s business, and only its.
+                    shop = fresh.copy(shift = it.shop?.shift),
+                    deviceId = fresh.deviceId ?: it.deviceId,
+                )
             }
         }
     }
@@ -411,17 +445,50 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     cause is UnauthorizedException || cause is SessionEndedException
                 if (expired) repo.signOut()
 
+                /**
+                 * The last bootstrap the server served, when there is no new
+                 * one to be had.
+                 *
+                 * This is what makes an outage survivable across a restart.
+                 * Without it the keypad had no names to draw — bootstrap is the
+                 * only thing that fetches the roster — so a tablet that
+                 * rebooted mid-outage came up unable to admit anybody, holding
+                 * a sale queue nothing could be added to.
+                 *
+                 * Not used when the credentials are what died: a cached roster
+                 * would let somebody in to sell under a session that no longer
+                 * exists, and every sale they rang would be refused on replay.
+                 */
+                val remembered = if (expired) null else repo.cachedShop()
+
                 // Otherwise stay put: a shop whose line has dropped should see
                 // "could not reach the till server" over the keypad, not be
                 // thrown back to a password prompt it cannot answer without the
                 // owner.
                 _state.update {
+                    val shop = it.shop ?: remembered
                     it.copy(
                         busy = false,
-                        error = cause.message ?: "Could not reach the till server.",
+                        shop = shop,
+                        deviceId = it.deviceId ?: shop?.deviceId,
+                        // A till that can still work does not wear an error.
+                        // The keypad says the connection is down and that
+                        // sales will send later, which is the whole truth; a
+                        // red panel over the top of it says something worse
+                        // and is what teaches a shop to ignore red. The
+                        // message is kept for the case where there is nothing
+                        // cached and the screen genuinely cannot proceed.
+                        error = if (shop != null) {
+                            null
+                        } else {
+                            cause.message ?: "Could not reach the till server."
+                        },
                         screen = when {
                             expired -> TillScreen.DeviceSetup
-                            it.shop == null && !repo.isSignedIn -> TillScreen.DeviceSetup
+                            shop == null && !repo.isSignedIn -> TillScreen.DeviceSetup
+                            shop == null -> TillScreen.Locked
+                            // A remembered shop is enough to unlock and sell
+                            // into the queue, so the keypad is where to be.
                             it.shop == null -> TillScreen.Locked
                             else -> it.screen
                         },
@@ -1238,18 +1305,28 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                      * drawer that is already open is a dead end.
                      */
                     val open = _state.value.shop?.shift
-                        ?: repo.shift().getOrNull()?.shift
+                        // Not asked when the tablet just admitted this person
+                        // itself: the line is down, so the round trip can only
+                        // end in a timeout, and it would spend it with a
+                        // customer standing there.
+                        ?: if (result.offline) null else repo.shift().getOrNull()?.shift
 
                     _state.update {
                         it.copy(
                             busy = false,
+                            // Says the till is running on its own, over the
+                            // keypad and then in the chrome. Cleared on an
+                            // online sign-in, so it never lingers past the
+                            // outage that caused it.
                             error = null,
                             lockedFor = 0,
                             shop = if (open != null) it.shop?.copy(shift = open) else it.shop,
+                            // The verifier stays in the roster; screen state is
+                            // read by every composable and holds no secrets.
                             screen = if (open != null) {
-                                TillScreen.Selling(result.cashier)
+                                TillScreen.Selling(result.cashier.withoutSecret())
                             } else {
-                                TillScreen.OpeningShift(result.cashier)
+                                TillScreen.OpeningShift(result.cashier.withoutSecret())
                             },
                         )
                     }
@@ -1334,7 +1411,27 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun forgetDevice() {
+    /**
+     * Hand the tablet back — sign the device out and forget the shop.
+     *
+     * Refuses while the queue still holds sales. Signing out destroys the
+     * session those sales replay under and clears the roster that lets anybody
+     * back in, so this would turn takings the shop has already collected into
+     * rows nothing can ever send. The till has to drain first, which needs the
+     * line back — and if the line is back, draining takes seconds.
+     */
+    fun forgetDevice() = viewModelScope.launch {
+        val held = repo.queuedCount()
+        if (held > 0) {
+            _state.update {
+                it.copy(
+                    error = "$held sale${if (held == 1) "" else "s"} still waiting to be sent. " +
+                        "Send them before signing this till out, or they are lost.",
+                )
+            }
+            return@launch
+        }
+
         repo.signOut()
         _state.update { TillState(screen = TillScreen.DeviceSetup) }
     }
@@ -1980,6 +2077,16 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
          * cost on a tablet that is idle most of the day.
          */
         const val QUEUE_HEARTBEAT_MS = 120_000L
+
+        /**
+         * Beats between roster re-pulls — ten, so about twenty minutes.
+         *
+         * Not every beat: bootstrap is six queries and the roster changes
+         * about as often as somebody is hired. Twenty minutes is the longest a
+         * cleared PIN goes on opening this till offline, which is short enough
+         * to mean something and long enough to be free.
+         */
+        const val ROSTER_EVERY_BEATS = 10
 
         /**
          * Five minutes idle, checked every fifteen seconds.

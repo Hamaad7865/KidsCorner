@@ -125,6 +125,7 @@ class GalleryActivity : ComponentActivity() {
                             busy = false,
                             error = null,
                             lockedFor = 0,
+                            offline = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
                         )
@@ -135,6 +136,7 @@ class GalleryActivity : ComponentActivity() {
                             busy = false,
                             error = "Wrong PIN.",
                             lockedFor = 0,
+                            offline = false,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
                         )
@@ -145,6 +147,35 @@ class GalleryActivity : ComponentActivity() {
                             busy = true,
                             error = null,
                             lockedFor = 0,
+                            offline = false,
+                            onSubmit = { _, _ -> },
+                            onErrorShown = {},
+                        )
+
+                        // The shop's line is down. Kevin greys out — he is the
+                        // one this till holds no verifier for — and the reason
+                        // sits under the tiles rather than waiting to be
+                        // discovered at the keypad.
+                        "pinOffline" -> LockScreen(
+                            shopName = "Kids Corner · Curepipe",
+                            cashiers = SAMPLE_STAFF,
+                            busy = false,
+                            error = null,
+                            lockedFor = 0,
+                            offline = true,
+                            onSubmit = { _, _ -> },
+                            onErrorShown = {},
+                        )
+
+                        // A till that has never synced: nobody can be admitted
+                        // until the line comes back once.
+                        "pinOfflineCold" -> LockScreen(
+                            shopName = "Kids Corner · Curepipe",
+                            cashiers = SAMPLE_STAFF.map { it.copy(verifier = null) },
+                            busy = false,
+                            error = null,
+                            lockedFor = 0,
+                            offline = true,
                             onSubmit = { _, _ -> },
                             onErrorShown = {},
                         )
@@ -523,7 +554,7 @@ private fun Menu(onPick: (String) -> Unit) {
 }
 
 private val SCREENS = listOf(
-    "pin", "pinError", "pinChecking", "sell", "sellEmpty", "payment", "openShift", "closeShift", "closed", "complete",
+    "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "sell", "sellEmpty", "payment", "openShift", "closeShift", "closed", "complete",
     "customer", "held", "approval", "movement",
     "setup", "offline", "printer", "receipt", "settings", "refund", "actions", "note", "custom", "basket", "txns", "toast",
 )
@@ -713,11 +744,19 @@ private val SAMPLE_DETAIL = SaleDetail(
     prints = listOf(ReceiptPrint(1, "2026-07-29T14:32:40Z", by = "Priya Ramdin")),
 )
 
+/**
+ * Kevin has no verifier on purpose — he is the cashier whose PIN was set from
+ * Settings and who has not signed in on this till since, so the `pinOffline`
+ * screen shows both halves of the rule at once.
+ */
+private const val SAMPLE_VERIFIER =
+    "pbkdf2:sha256:1000:S2lkc0Nvcm5lclRpbGwhIQ==:AC4CSs7AfaJLrvK/10tjh3K/JebHyW4cydmO8KKHW8A="
+
 private val SAMPLE_STAFF = listOf(
-    Cashier("s1", "Priya Ramdin", "Owner", hasPin = true),
-    Cashier("s2", "Anjali Seenauth", "Cashier", hasPin = true),
+    Cashier("s1", "Priya Ramdin", "Owner", hasPin = true, verifier = SAMPLE_VERIFIER),
+    Cashier("s2", "Anjali Seenauth", "Cashier", hasPin = true, verifier = SAMPLE_VERIFIER),
     Cashier("s3", "Kevin Louis", "Cashier", hasPin = true),
-    Cashier("s4", "Fatima Bhugaloo", "Manager", hasPin = true),
+    Cashier("s4", "Fatima Bhugaloo", "Manager", hasPin = true, verifier = SAMPLE_VERIFIER),
 )
 
 private val SAMPLE_MANAGERS = listOf(

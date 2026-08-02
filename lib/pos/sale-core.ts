@@ -9,6 +9,7 @@ import {
   type DiscountRule,
 } from "@/lib/discounts/rules"
 import { round2, shopToday } from "@/lib/format"
+import { deviceVerifierMatches, mintDeviceVerifier } from "@/lib/pos/device-verifier"
 import { PIN_PATTERN, verifyPin } from "@/lib/pos/pin"
 import type { Database, Json } from "@/lib/supabase/database.types"
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -124,7 +125,21 @@ export async function authenticateCashier(
   // Which till the keypad was on, for the audit trail. Optional because a
   // caller that genuinely does not know must say so with a null, not invent one.
   deviceId?: number | null,
-): Promise<{ ok: true; cashier: Cashier } | { ok: false; error: string; lockedFor?: number }> {
+): Promise<
+  | { ok: true; cashier: Cashier }
+  /**
+   * `wrongPin` is set ONLY when the four digits themselves did not match —
+   * not when the account is locked out, deactivated, or has no PIN at all.
+   *
+   * The tablet needs that distinction and cannot infer it: after a miss that
+   * trips the lockout, `lockedFor` is above zero for a wrong PIN and for a
+   * right one alike. It drops its offline verifier when the server rejects a
+   * PIN the verifier accepts — that is how a PIN changed in the back office
+   * stops opening tills — and doing that on a lockout would throw away a
+   * perfectly good verifier for a PIN that was correct.
+   */
+  | { ok: false; error: string; lockedFor?: number; wrongPin?: boolean }
+> {
   if (!PIN_PATTERN.test(pin)) return { ok: false, error: "Enter a 4-digit PIN." }
 
   // Checked before the hash is computed: a locked-out profile should cost an
@@ -136,7 +151,7 @@ export async function authenticateCashier(
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, pin_code, is_active")
+    .select("id, full_name, role, pin_code, is_active, pin_device_verifier")
     .eq("id", profileId)
     .maybeSingle()
 
@@ -163,7 +178,25 @@ export async function authenticateCashier(
       ok: false,
       error: seconds > 0 ? waitMessage(seconds) : "Wrong PIN.",
       lockedFor: seconds,
+      wrongPin: true,
     }
+  }
+
+  /**
+   * The PIN is proven correct and briefly in hand, which is the only moment
+   * the tills' offline verifier can be minted. Backfills everyone whose PIN
+   * predates migration 038, and repairs a verifier that a PIN change dropped.
+   *
+   * Best-effort, like the audit line below it: a shop must never be unable to
+   * open its till because a column could not be written. The cost of skipping
+   * is that offline sign-in waits for the next successful one.
+   */
+  if (!(await deviceVerifierMatches(pin, data.pin_device_verifier))) {
+    await supabase
+      .from("profiles")
+      .update({ pin_device_verifier: await mintDeviceVerifier(pin) })
+      .eq("id", profileId)
+      .then(() => undefined, () => undefined)
   }
 
   // The operator event Carfectionist's traceability shows. Recorded after the
@@ -206,6 +239,50 @@ export async function listCashiers(supabase: TillClient): Promise<Cashier[]> {
     fullName: row.full_name,
     role: row.role,
     hasPin: Boolean(row.pin_code),
+  }))
+}
+
+/** A cashier plus the hash a till may keep, so its keypad works with no line. */
+export type DeviceCashier = Cashier & {
+  /**
+   * Null when this person cannot yet be admitted offline: no PIN, or a PIN
+   * older than migration 038 that has not been used online since. The till
+   * says so on the tile rather than failing at the keypad.
+   */
+  verifier: string | null
+}
+
+/**
+ * The same roster, for a device that has to survive an outage.
+ *
+ * Split from [listCashiers] rather than adding a field to it, because
+ * `listCashiers` also feeds web pages — the till's return screen renders a
+ * manager list from it — and a browser has no use for a verifier it cannot
+ * go offline with. Sending one there would put a hash of every manager's PIN
+ * into a page's HTML for no benefit at all.
+ *
+ * So this one exists to be called from exactly one place: /api/till/bootstrap,
+ * which is behind the device's bearer token.
+ */
+export async function listCashiersForDevice(
+  supabase: TillClient,
+): Promise<DeviceCashier[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, pin_code, pin_device_verifier")
+    .eq("is_active", true)
+    .order("full_name")
+
+  if (error) return []
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    fullName: row.full_name,
+    role: row.role,
+    hasPin: Boolean(row.pin_code),
+    // Belt and braces with migration 038's trigger: a verifier with no PIN
+    // behind it would unlock a till offline that the online path refuses,
+    // because offline there is nothing else to check.
+    verifier: row.pin_code ? row.pin_device_verifier : null,
   }))
 }
 

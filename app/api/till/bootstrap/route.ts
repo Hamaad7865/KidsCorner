@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireTillSession } from "@/lib/api/till-session"
-import { listCashiers } from "@/lib/pos/sale-core"
+import { listCashiersForDevice } from "@/lib/pos/sale-core"
 import {
   getOpenShift,
   getPaymentMethods,
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     getVatRate(supabase),
     getPaymentMethods(supabase),
     getOpenShift(supabase),
-    listCashiers(supabase),
+    listCashiersForDevice(supabase),
     // For the receipt header. Absent keys come back null and the receipt omits
     // the line — a Mauritian VAT receipt is required to carry the shop's
     // registration number, so this being blank is a compliance gap the shop
@@ -69,9 +69,18 @@ export async function GET(request: Request) {
     vatRate,
     paymentMethods: paymentMethods.length > 0 ? paymentMethods : ["cash"],
     shift,
-    // Only staff with a PIN can be picked on the lock screen. The hash is not
-    // in here — `listCashiers` reduces it to a boolean precisely so a decompiled
-    // APK yields nothing to attack offline.
+    /**
+     * Who may be picked on the lock screen, and — for a tablet only — the
+     * verifier that lets the keypad work through an outage.
+     *
+     * `pin_code` is still not in here and never will be: that is the value
+     * this server authenticates against. What travels is a second derivation
+     * of the PIN (lib/pos/device-verifier.ts), useful only for saying yes or
+     * no on the device, revocable from the back office, and worthless against
+     * this endpoint. It rides on bootstrap rather than a route of its own
+     * because a device that cannot reach bootstrap has nothing to sync
+     * anyway, and one round trip is the whole point of this endpoint.
+     */
     cashiers,
   })
 }

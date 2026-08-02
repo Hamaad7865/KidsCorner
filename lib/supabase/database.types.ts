@@ -535,6 +535,7 @@ export type Database = {
           id: string
           is_active: boolean
           pin_code: string | null
+          pin_device_verifier: string | null
           pin_failed_count: number
           pin_last_used_at: string | null
           pin_locked_until: string | null
@@ -546,6 +547,7 @@ export type Database = {
           id: string
           is_active?: boolean
           pin_code?: string | null
+          pin_device_verifier?: string | null
           pin_failed_count?: number
           pin_last_used_at?: string | null
           pin_locked_until?: string | null
@@ -557,6 +559,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           pin_code?: string | null
+          pin_device_verifier?: string | null
           pin_failed_count?: number
           pin_last_used_at?: string | null
           pin_locked_until?: string | null

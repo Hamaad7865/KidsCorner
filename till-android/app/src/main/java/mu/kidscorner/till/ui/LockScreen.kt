@@ -82,12 +82,25 @@ fun LockScreen(
     busy: Boolean,
     error: String?,
     lockedFor: Int,
+    /**
+     * The shop cannot be reached, so this keypad is answering for itself.
+     *
+     * It changes who may be picked: with no line the till can only admit
+     * somebody it holds a verifier for, and a name it cannot check is better
+     * greyed out with a reason than tapped and refused four digits later.
+     */
+    offline: Boolean,
     onSubmit: (Cashier, String) -> Unit,
     onErrorShown: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val withPin = remember(cashiers) { cashiers.filter { it.hasPin } }
-    var selected by remember(withPin) { mutableStateOf(withPin.firstOrNull()) }
+    val admissible = remember(withPin, offline) {
+        if (offline) withPin.filter { it.verifier != null } else withPin
+    }
+    // Re-picked when the list of who can get in changes, so a name the till
+    // has just lost the ability to check cannot stay selected under the keypad.
+    var selected by remember(admissible) { mutableStateOf(admissible.firstOrNull()) }
     var pin by remember { mutableStateOf("") }
     var wait by remember { mutableIntStateOf(lockedFor) }
 
@@ -171,11 +184,28 @@ fun LockScreen(
                     color = Handoff.PinText,
                 )
                 Text(
-                    "Tap your name, then key in your 4-digit PIN. " +
-                        "Switching takes about three seconds.",
+                    if (offline) {
+                        "No connection. This till is working on its own — sign in as " +
+                            "usual and sales will send when the line is back."
+                    } else {
+                        "Tap your name, then key in your 4-digit PIN. " +
+                            "Switching takes about three seconds."
+                    },
                     fontSize = 13.5.sp,
                     lineHeight = 20.25.sp,
-                    color = Handoff.PinTextFaint,
+                    // Amber, not scarlet: nothing is wrong. The till is doing
+                    // the thing it was built to do, and a red banner over the
+                    // keypad every time the shop's line hiccups would teach a
+                    // cashier to ignore red. WarnText, not WarnLine — the
+                    // latter is the colour of an amber BORDER and measures
+                    // 1.18:1 as ink, which is not a colour choice, it is an
+                    // invisible sentence.
+                    //
+                    // PinTextSoft, not PinTextFaint, for the ordinary case:
+                    // this is the one line telling a cashier what to do, and
+                    // PinTextFaint is 3.58:1 on this ground — under AA. The
+                    // check now holds both pairs to it.
+                    color = if (offline) Handoff.WarnText else Handoff.PinTextSoft,
                     modifier = Modifier.padding(top = 7.dp, bottom = 20.dp),
                 )
 
@@ -189,7 +219,11 @@ fun LockScreen(
                             CashierTile(
                                 cashier = cashier,
                                 selected = selected?.id == cashier.id,
-                                enabled = !busy,
+                                // Shown either way. A name that vanishes from
+                                // the till reads as "I have been sacked"; a
+                                // name that is there but greyed, with the
+                                // reason underneath, reads as what it is.
+                                enabled = !busy && cashier in admissible,
                                 modifier = Modifier.weight(1f),
                             ) {
                                 selected = cashier
@@ -207,7 +241,23 @@ fun LockScreen(
                     Text(
                         "Nobody has a PIN set yet. An owner sets them in Settings.",
                         fontSize = 13.sp,
-                        color = Handoff.PinTextFaint,
+                        // The only thing on screen explaining an empty column,
+                        // so it is held to the same bar as the instructions.
+                        color = Handoff.PinTextSoft,
+                    )
+                } else if (offline && admissible.size < withPin.size) {
+                    Text(
+                        if (admissible.isEmpty()) {
+                            "Nobody here can sign in without the shop's connection yet. " +
+                                "Everyone needs to sign in on this till once while it is online."
+                        } else {
+                            "The greyed names need the connection back — they have not " +
+                                "signed in on this till since their PIN was set."
+                        },
+                        fontSize = 13.sp,
+                        lineHeight = 19.5.sp,
+                        color = Handoff.PinTextSoft,
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
@@ -371,13 +421,27 @@ private fun CashierTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    /*
+     * `enabled` on a Surface only stops the tap and the ripple. Every colour
+     * below is explicit, so a tile that could not be used looked exactly like
+     * one that could — and the lock screen's own sentence about "the greyed
+     * names" was describing something that was not on the screen. It is drawn
+     * here instead, in the till's existing disabled vocabulary.
+     */
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(14.dp),
-        color = if (selected) Handoff.PinPanelOn else Handoff.PinPanel,
-        contentColor = Handoff.PinTextBright,
-        border = BorderStroke(1.dp, if (selected) Brand500 else Handoff.PinPanelLine),
+        color = when {
+            !enabled -> Handoff.Blocked
+            selected -> Handoff.PinPanelOn
+            else -> Handoff.PinPanel
+        },
+        contentColor = if (enabled) Handoff.PinTextBright else Handoff.BlockedText,
+        border = BorderStroke(
+            1.dp,
+            if (selected && enabled) Brand500 else Handoff.PinPanelLine,
+        ),
         modifier = modifier.height(72.dp),
     ) {
         Box {
@@ -408,7 +472,10 @@ private fun CashierTile(
                         initialsOf(cashier.fullName),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Handoff.PinTextBright,
+                        // Explicit, so it overrides the Surface's contentColor
+                        // — which is exactly why it has to be told about
+                        // `enabled` as well.
+                        color = if (enabled) Handoff.PinTextBright else Handoff.BlockedText,
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -420,7 +487,11 @@ private fun CashierTile(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(cashier.role, fontSize = 11.sp, color = Handoff.PinTextRole)
+                    Text(
+                        cashier.role,
+                        fontSize = 11.sp,
+                        color = if (enabled) Handoff.PinTextRole else Handoff.BlockedText,
+                    )
                 }
             }
 

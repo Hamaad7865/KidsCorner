@@ -43,7 +43,28 @@ data class Cashier(
     val fullName: String,
     val role: String,
     val hasPin: Boolean,
-)
+    /**
+     * The hash this tablet checks a PIN against when there is no line — see
+     * [PinHasher]. Served only to a signed-in device, and null for somebody
+     * the server cannot vouch for offline yet: no PIN, or a PIN not used
+     * online since the shop grew this column.
+     *
+     * Not `profiles.pin_code`. That one never leaves the server.
+     */
+    val verifier: String? = null,
+) {
+    /**
+     * The same person with nothing secret attached.
+     *
+     * Screen state is held for the life of the ViewModel and read by every
+     * composable; a verifier has no business being in there. This is what the
+     * UI carries — the roster keeps the full record.
+     */
+    fun withoutSecret(): Cashier = if (verifier == null) this else copy(verifier = null)
+
+    /** So a stray log line or crash report cannot print the verifier. */
+    override fun toString(): String = "Cashier($fullName, $role, hasPin=$hasPin)"
+}
 
 @Serializable
 data class OpenShift(
@@ -85,6 +106,18 @@ data class PinResult(
     val cashier: Cashier? = null,
     val error: String? = null,
     val lockedFor: Int = 0,
+    /**
+     * The four digits were wrong — as opposed to the account being locked out,
+     * deactivated, or having no PIN. Only this drops a held verifier, because
+     * `lockedFor` is above zero either way once a miss trips the lockout.
+     */
+    val wrongPin: Boolean = false,
+    /**
+     * This answer came from the tablet, not the shop. Never sent by the
+     * server; set by [TillRepository] when it falls back to [OfflineGate], so
+     * the screen can say the till is running on its own for now.
+     */
+    val offline: Boolean = false,
 )
 
 @Serializable
