@@ -70,7 +70,7 @@ export function ReturnForm({
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
-  const [state, formAction] = useActionState(createCreditNote, IDLE_STATE)
+  const [state, formAction, isPending] = useActionState(createCreditNote, IDLE_STATE)
   const [qty, setQty] = useState<Record<number, number>>({})
   const [method, setMethod] = useState("cash")
 
@@ -161,7 +161,11 @@ export function ReturnForm({
           <ManagerApproval
             managers={managers}
             reason="return"
-            pending={false}
+            // The real thing, not a hard-coded false. While the approved
+            // return is in flight the keys have to be dead: the keypad sits
+            // outside the form, so useFormStatus cannot see it, and a second
+            // PIN typed into a live keypad would queue a second credit note.
+            pending={isPending}
             onApprove={(managerId, pin) => setApproval({ managerId, pin })}
             onCancel={() => setApproval(null)}
           />
@@ -177,173 +181,173 @@ export function ReturnForm({
         className={showKeypad ? "hidden" : "space-y-5"}
         noValidate
       >
-      <input type="hidden" name="saleId" value={sale.id} />
-      {shiftId !== null ? (
-        <input type="hidden" name="shiftId" value={shiftId} />
-      ) : null}
-      {approval ? (
-        <input type="hidden" name="approval" value={JSON.stringify(approval)} />
-      ) : null}
-      <input
-        type="hidden"
-        name="items"
-        value={JSON.stringify(
-          picked.map((e) => ({ saleItemId: e.line.saleItemId, qty: e.qty })),
-        )}
-      />
-
-      {state.error ? (
-        <Alert variant="destructive">
-          <AlertCircle aria-hidden />
-          <AlertDescription>{state.error}</AlertDescription>
-        </Alert>
-      ) : null}
-
-      {shiftId === null ? (
-        <Alert>
-          <AlertCircle aria-hidden />
-          <AlertDescription>
-            No till is open, so this credit note won&rsquo;t be attached to a
-            shift. A cash refund raised now will not show in any drawer count —
-            open the till first if cash is going back.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <ul className="divide-y rounded-lg border">
-        {sale.lines.map((line) => {
-          const value = Math.min(qty[line.saleItemId] ?? 0, line.qtyReturnable)
-          const exhausted = line.qtyReturnable === 0
-          return (
-            <li
-              key={line.saleItemId}
-              className={cn("flex items-center gap-3 p-3", exhausted && "opacity-50")}
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <ColourSwatch hex={line.colourHex} name={line.colourName} />
-                  <span className="truncate font-medium">{line.productName}</span>
-                </div>
-                <div className="text-muted-foreground mt-0.5 text-xs">
-                  {line.sizeLabel} · {line.colourName} · {formatRs(line.unitPaid)}{" "}
-                  each
-                </div>
-                <div className="text-muted-foreground text-xs">
-                  {line.qtySold} sold
-                  {line.qtyReturned > 0 ? ` · ${line.qtyReturned} returned` : ""}
-                  {exhausted ? "" : ` · ${line.qtyReturnable} returnable`}
-                </div>
-              </div>
-
-              {exhausted ? (
-                <span className="text-muted-foreground text-xs">Fully returned</span>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    // size-control, not icon-sm: a fixed 28px opts out of the
-                    // density tokens, so this form was built at mouse size and
-                    // stayed there when the till started using it. 36px in the
-                    // back office as before, 48px on a touch screen.
-                    className="size-control"
-                    onClick={() =>
-                      setLineQty(line.saleItemId, value - 1, line.qtyReturnable)
-                    }
-                    aria-label={`Return one fewer ${line.productName}`}
-                  >
-                    <Minus aria-hidden />
-                  </Button>
-                  <span className="w-8 text-center font-medium tabular-nums">
-                    {value}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    // size-control, not icon-sm: a fixed 28px opts out of the
-                    // density tokens, so this form was built at mouse size and
-                    // stayed there when the till started using it. 36px in the
-                    // back office as before, 48px on a touch screen.
-                    className="size-control"
-                    onClick={() =>
-                      setLineQty(line.saleItemId, value + 1, line.qtyReturnable)
-                    }
-                    aria-label={`Return one more ${line.productName}`}
-                  >
-                    <Plus aria-hidden />
-                  </Button>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="refund-reason">Reason</Label>
-          <Input
-            id="refund-reason"
-            name="reason"
-            placeholder="e.g. Wrong size, faulty stitching"
-            aria-invalid={Boolean(state.fieldErrors.reason)}
-          />
-          {state.fieldErrors.reason ? (
-            <p className="text-destructive text-sm">{state.fieldErrors.reason}</p>
-          ) : null}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="refund-method">Refund by</Label>
-          <select
-            id="refund-method"
-            name="refundMethod"
-            value={method}
-            onChange={(event) => setMethod(event.target.value)}
-            className="border-input h-control w-full rounded-lg border bg-transparent px-3 text-sm"
-          >
-            {REFUND_METHODS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Posted explicitly rather than relying on a checkbox's absence, so the
-          value is always in the payload whichever way it is set. */}
-      <input type="hidden" name="restock" value={restock ? "true" : ""} />
-
-      <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+        <input type="hidden" name="saleId" value={sale.id} />
+        {shiftId !== null ? (
+          <input type="hidden" name="shiftId" value={shiftId} />
+        ) : null}
+        {approval ? (
+          <input type="hidden" name="approval" value={JSON.stringify(approval)} />
+        ) : null}
         <input
-          type="checkbox"
-          checked={restock}
-          onChange={(event) => setRestock(event.target.checked)}
-          className="accent-primary mt-0.5 size-4"
+          type="hidden"
+          name="items"
+          value={JSON.stringify(
+            picked.map((e) => ({ saleItemId: e.line.saleItemId, qty: e.qty })),
+          )}
         />
-        <span className="text-sm">
-          <span className="font-medium">Put items back into stock</span>
-          <span className="text-muted-foreground mt-0.5 block text-xs">
-            {restock
-              ? "Stock goes back on the shelf count immediately."
-              : "Faulty stock stays out — write it off with a stock adjustment."}
-          </span>
-        </span>
-      </label>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <div className="text-sm">
-          <span className="text-muted-foreground">Refund </span>
-          <span className="text-lg font-semibold tabular-nums">
-            {formatRs(refundTotal)}
-          </span>
-          {method === "exchange" && refundTotal > 0 ? (
-            <span className="text-muted-foreground"> (no money moves)</span>
-          ) : null}
+        {state.error ? (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden />
+            <AlertDescription>{state.error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        {shiftId === null ? (
+          <Alert>
+            <AlertCircle aria-hidden />
+            <AlertDescription>
+              No till is open, so this credit note won&rsquo;t be attached to a
+              shift. A cash refund raised now will not show in any drawer count —
+              open the till first if cash is going back.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        <ul className="divide-y rounded-lg border">
+          {sale.lines.map((line) => {
+            const value = Math.min(qty[line.saleItemId] ?? 0, line.qtyReturnable)
+            const exhausted = line.qtyReturnable === 0
+            return (
+              <li
+                key={line.saleItemId}
+                className={cn("flex items-center gap-3 p-3", exhausted && "opacity-50")}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <ColourSwatch hex={line.colourHex} name={line.colourName} />
+                    <span className="truncate font-medium">{line.productName}</span>
+                  </div>
+                  <div className="text-muted-foreground mt-0.5 text-xs">
+                    {line.sizeLabel} · {line.colourName} · {formatRs(line.unitPaid)}{" "}
+                    each
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    {line.qtySold} sold
+                    {line.qtyReturned > 0 ? ` · ${line.qtyReturned} returned` : ""}
+                    {exhausted ? "" : ` · ${line.qtyReturnable} returnable`}
+                  </div>
+                </div>
+
+                {exhausted ? (
+                  <span className="text-muted-foreground text-xs">Fully returned</span>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      // size-control, not icon-sm: a fixed 28px opts out of the
+                      // density tokens, so this form was built at mouse size and
+                      // stayed there when the till started using it. 36px in the
+                      // back office as before, 48px on a touch screen.
+                      className="size-control"
+                      onClick={() =>
+                        setLineQty(line.saleItemId, value - 1, line.qtyReturnable)
+                      }
+                      aria-label={`Return one fewer ${line.productName}`}
+                    >
+                      <Minus aria-hidden />
+                    </Button>
+                    <span className="w-8 text-center font-medium tabular-nums">
+                      {value}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      // size-control, not icon-sm: a fixed 28px opts out of the
+                      // density tokens, so this form was built at mouse size and
+                      // stayed there when the till started using it. 36px in the
+                      // back office as before, 48px on a touch screen.
+                      className="size-control"
+                      onClick={() =>
+                        setLineQty(line.saleItemId, value + 1, line.qtyReturnable)
+                      }
+                      aria-label={`Return one more ${line.productName}`}
+                    >
+                      <Plus aria-hidden />
+                    </Button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="refund-reason">Reason</Label>
+            <Input
+              id="refund-reason"
+              name="reason"
+              placeholder="e.g. Wrong size, faulty stitching"
+              aria-invalid={Boolean(state.fieldErrors.reason)}
+            />
+            {state.fieldErrors.reason ? (
+              <p className="text-destructive text-sm">{state.fieldErrors.reason}</p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="refund-method">Refund by</Label>
+            <select
+              id="refund-method"
+              name="refundMethod"
+              value={method}
+              onChange={(event) => setMethod(event.target.value)}
+              className="border-input h-control w-full rounded-lg border bg-transparent px-3 text-sm"
+            >
+              {REFUND_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <SubmitButton count={picked.length} amount={refundTotal} />
-      </div>
+
+        {/* Posted explicitly rather than relying on a checkbox's absence, so the
+            value is always in the payload whichever way it is set. */}
+        <input type="hidden" name="restock" value={restock ? "true" : ""} />
+
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+          <input
+            type="checkbox"
+            checked={restock}
+            onChange={(event) => setRestock(event.target.checked)}
+            className="accent-primary mt-0.5 size-4"
+          />
+          <span className="text-sm">
+            <span className="font-medium">Put items back into stock</span>
+            <span className="text-muted-foreground mt-0.5 block text-xs">
+              {restock
+                ? "Stock goes back on the shelf count immediately."
+                : "Faulty stock stays out — write it off with a stock adjustment."}
+            </span>
+          </span>
+        </label>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <div className="text-sm">
+            <span className="text-muted-foreground">Refund </span>
+            <span className="text-lg font-semibold tabular-nums">
+              {formatRs(refundTotal)}
+            </span>
+            {method === "exchange" && refundTotal > 0 ? (
+              <span className="text-muted-foreground"> (no money moves)</span>
+            ) : null}
+          </div>
+          <SubmitButton count={picked.length} amount={refundTotal} />
+        </div>
       </form>
     </>
   )
