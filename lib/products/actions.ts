@@ -172,6 +172,37 @@ export async function updateVariant(
     .eq("id", id)
     .maybeSingle()
 
+  // Who already has this barcode, if anyone. The unique index refuses a
+  // duplicate either way — this is the friendly half, and the difference
+  // matters: "already used by another variant" leaves a shopkeeper holding a
+  // scanner with nothing to do next, while naming the garment ends it.
+  //
+  // A pre-check rather than a parse of the constraint violation, because
+  // reading which column failed out of an error string is exactly what
+  // migration 008 went out of its way to avoid. Two people saving the same
+  // barcode at once still land on the index, which is the backstop working.
+  if (barcode) {
+    const { data: clash } = await supabase
+      .from("product_variants")
+      .select("id, products ( name ), sizes ( label ), colours ( name )")
+      .eq("barcode", barcode)
+      .neq("id", id)
+      .maybeSingle()
+
+    if (clash) {
+      const what = [
+        clash.products?.name,
+        clash.colours?.name,
+        clash.sizes?.label,
+      ].filter(Boolean).join(" · ")
+      return fail(null, {
+        barcode: what
+          ? `That barcode is already on ${what}.`
+          : "That barcode is already on another variant.",
+      })
+    }
+  }
+
   const { data, error } = await supabase
     .from("product_variants")
     .update({
