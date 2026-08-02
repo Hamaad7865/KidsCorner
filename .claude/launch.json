@@ -3,8 +3,9 @@
   "configurations": [
     {
       "name": "kids-corner-dev",
+      "//": "-H 0.0.0.0 is what lets the Android till reach this. Without it Next binds to :: (IPv6) only, and the emulator's 10.0.2.2 is IPv4 — so the tablet's requests to /api/till/* hang until they time out, while the same URL works perfectly in a browser on this machine.",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3001", "-H", "0.0.0.0"],
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "3001"],
       "port": 3001
     }
   ]
