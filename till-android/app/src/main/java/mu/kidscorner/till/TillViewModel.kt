@@ -42,6 +42,7 @@ import mu.kidscorner.till.data.TillApi
 import mu.kidscorner.till.data.ZTotals
 import mu.kidscorner.till.data.TillDatabase
 import mu.kidscorner.till.data.TillRepository
+import mu.kidscorner.till.data.SessionEndedException
 import mu.kidscorner.till.data.UnauthorizedException
 import mu.kidscorner.till.data.cartTotals
 import mu.kidscorner.till.data.formatRs
@@ -399,7 +400,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 // go and check the Wi-Fi while the actual fix was to sign in,
                 // with no way to reach that screen. Dead credentials are cleared
                 // so the device asks for a sign-in it can actually be given.
-                val expired = cause is UnauthorizedException
+                // A finished account is as dead as a dead refresh token: an
+                // owner switched this person off in the back office, and no
+                // amount of staying on the sell screen will let them complete
+                // a sale. Before this, the 403 arrived as a generic error and
+                // the cashier kept scanning into a basket that could never be
+                // paid for.
+                val expired =
+                    cause is UnauthorizedException || cause is SessionEndedException
                 if (expired) repo.signOut()
 
                 // Otherwise stay put: a shop whose line has dropped should see

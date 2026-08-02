@@ -71,10 +71,19 @@ export async function requireTillSession(
   // An auth user with no profile row (or an unrecognised role) has no place in
   // the app — treated as signed out rather than guessing a role.
   if (!profile || !isRole(profile.role)) {
-    return { response: apiError("This account has no till access.", 403) }
+    // `sessionEnded` rather than a bare 403. The till receives 403 for two
+    // different kinds of thing — this, and "that shift is not reachable" from
+    // shift/close and shift/movement — and only one of them means the person
+    // holding the tablet should be signed out. Blanket-treating 403 as fatal
+    // would log a cashier out for a stale shift.
+    return {
+      response: apiError("This account has no till access.", 403, { sessionEnded: true }),
+    }
   }
   if (!profile.is_active) {
-    return { response: apiError("This account has been deactivated.", 403) }
+    return {
+      response: apiError("This account has been deactivated.", 403, { sessionEnded: true }),
+    }
   }
 
   return {

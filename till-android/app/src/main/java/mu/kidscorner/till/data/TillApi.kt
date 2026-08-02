@@ -88,7 +88,12 @@ data class PinResult(
 )
 
 @Serializable
-private data class ApiError(val ok: Boolean = false, val error: String? = null)
+private data class ApiError(
+    val ok: Boolean = false,
+    val error: String? = null,
+    /** Set by the server when the account itself is finished — see below. */
+    val sessionEnded: Boolean = false,
+)
 
 // ------------------------------------------------------------------- sale
 
@@ -181,6 +186,20 @@ data class SaleResult(
 
 /** A 401 specifically — the caller refreshes and retries rather than giving up. */
 class UnauthorizedException(message: String) : Exception(message)
+
+/**
+ * The account is gone, not the token.
+ *
+ * An owner deactivating a member of staff in the back office is a 403, and so
+ * is "that shift is not reachable" from shift/close — the same status for a
+ * thing that ends the session and a thing that does not. The server marks the
+ * first kind, so this is thrown only for that.
+ *
+ * Separate from UnauthorizedException on purpose: refreshing would succeed
+ * (Supabase does not know the profile was switched off) and the retry would
+ * come back 403 again. There is nothing to retry.
+ */
+class SessionEndedException(message: String) : Exception(message)
 
 class TillApi(private val http: HttpClient) {
 
@@ -313,13 +332,14 @@ class TillApi(private val http: HttpClient) {
      * as text only on those paths, so it is never consumed twice.
      */
     private suspend inline fun <reified T> HttpResponse.decode(): T {
-        if (status == HttpStatusCode.Unauthorized) {
-            throw UnauthorizedException(readError(status, bodyAsText()))
-        }
-        if (!status.isSuccess()) {
-            throw IllegalStateException(readError(status, bodyAsText()))
-        }
-        return body()
+        if (status.isSuccess()) return body()
+        // Read once, then decide. bodyAsText() on an already-consumed body is
+        // how the "never consumed twice" note above stops being true.
+        val text = bodyAsText()
+        val message = readError(status, text)
+        if (sessionIsOver(text)) throw SessionEndedException(message)
+        if (status == HttpStatusCode.Unauthorized) throw UnauthorizedException(message)
+        throw IllegalStateException(message)
     }
 
     private fun HttpRequestBuilder.bearer(token: String) {
@@ -376,5 +396,10 @@ class TillApi(private val http: HttpClient) {
             val parsed = runCatching { errorJson.decodeFromString<ApiError>(body) }.getOrNull()
             return parsed?.error ?: "The till server answered ${status.value}."
         }
+
+        /** Whether the body carries the server's `sessionEnded` marker. */
+        fun sessionIsOver(body: String): Boolean =
+            runCatching { errorJson.decodeFromString<ApiError>(body) }
+                .getOrNull()?.sessionEnded == true
     }
 }
