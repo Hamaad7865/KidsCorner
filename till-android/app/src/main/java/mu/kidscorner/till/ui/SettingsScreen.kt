@@ -113,6 +113,12 @@ fun SettingsScreen(
             Spacer(Modifier.weight(1f))
 
             // `height:48px; padding:0 16px; background:#0C2429; radius:11`
+            //
+            // The last thing on this screen that was blocked without saying
+            // why. The three switches below now name their reason and the
+            // peripheral cards say "No driver on this till yet"; this sat at
+            // the far corner, greyed, next to none of them. It says it itself
+            // until there is a drawer to open.
             Surface(
                 onClick = { },
                 enabled = false,
@@ -128,7 +134,7 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Default.Inbox, null, Modifier.size(17.dp))
                     Text(
-                        "Open drawer (no sale)",
+                        "Open drawer — none connected",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -316,14 +322,16 @@ private fun PeripheralCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
-                        Box(
-                            Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (card.live && card.on) Handoff.Accent else Handoff.Ghost,
-                                ),
-                        )
+                        // No status light. "Connected" carried a red dot — the
+                        // same inversion the chrome bar had, where the healthy
+                        // state was drawn in the colour every status light on
+                        // earth uses for down. There is nothing to replace it
+                        // with either: five of these six cards say "Not set up"
+                        // and none of them CAN be set up, so a dot on each
+                        // would be five lights flagging a state nobody can act
+                        // on. The word does the work, and a live card is
+                        // already the only one with a Test print button and a
+                        // paper width under it.
                         Text(
                             when {
                                 !card.live -> "Not set up"
@@ -332,7 +340,7 @@ private fun PeripheralCard(
                             },
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (card.live && card.on) Handoff.AccentText else Handoff.Muted4,
+                            color = if (card.live && card.on) Handoff.Ink else Handoff.Muted4,
                         )
                         if (card.model.isNotBlank()) {
                             Text(

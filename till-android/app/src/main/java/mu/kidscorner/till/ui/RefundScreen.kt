@@ -344,12 +344,17 @@ fun RefundScreen(
                 .background(Handoff.Surface)
                 .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 18.dp),
         ) {
+            // Coloured once there is something to give back. It opened as a
+            // 44sp red "−Rs 0.00" — the headline of the screen, in the loudest
+            // colour the palette owns, stating a refund of nothing. The size
+            // is kept so the figure does not jump when it arrives; only the
+            // weight of the colour waits for a reason.
             Text(
                 "REFUND TOTAL",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.1.sp,
-                color = Handoff.ChangeLabel,
+                color = if (total > 0) Handoff.ChangeLabel else Handoff.Muted3,
             )
             Text(
                 "−${formatRs(total)}",
@@ -358,7 +363,7 @@ fun RefundScreen(
                 lineHeight = 48.4.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-1.76).sp,
-                color = Handoff.ChangeFigure,
+                color = if (total > 0) Handoff.ChangeFigure else Handoff.Faint,
                 modifier = Modifier.padding(top = 2.dp),
             )
             Text(
