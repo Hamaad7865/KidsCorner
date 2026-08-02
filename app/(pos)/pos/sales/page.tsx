@@ -127,6 +127,16 @@ export default async function PosSalesPage({
                       <Badge variant="outline" className="text-muted-foreground">
                         Void
                       </Badge>
+                    ) : sale.partReturned ? (
+                      // The back office's sales list grew this badge earlier
+                      // and this screen did not, which left the two lists
+                      // describing the same sale differently. It matters more
+                      // here: this screen exists for the moment somebody walks
+                      // up holding a receipt, and whether part of it has
+                      // already come back is the first thing to know.
+                      <Badge variant="outline" className="text-warning">
+                        Part returned
+                      </Badge>
                     ) : null}
                   </div>
                   <div className="text-muted-foreground mt-0.5 truncate text-sm">
