@@ -2578,6 +2578,12 @@ CREATE POLICY read_all ON customers
     FOR SELECT TO authenticated
     USING (true);
 
+DROP POLICY IF EXISTS update_customers ON customers;
+CREATE POLICY update_customers ON customers
+    FOR UPDATE TO authenticated
+    USING ((current_role_of_user() = ANY (ARRAY['owner'::text, 'manager'::text])))
+    WITH CHECK ((current_role_of_user() = ANY (ARRAY['owner'::text, 'manager'::text])));
+
 DROP POLICY IF EXISTS manage ON discounts;
 CREATE POLICY manage ON discounts
     FOR ALL TO authenticated
