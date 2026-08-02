@@ -280,6 +280,25 @@ export async function getShopIdentity(client?: TillClient): Promise<{
   }
 }
 
+/**
+ * Does this shop want a manager to sign off a return?
+ *
+ * Off unless it has been switched on, which is how the shop worked before the
+ * setting existed. The database enforces it either way (migration 036) — this
+ * read is only so the screens can ASK for a PIN rather than let a cashier fill
+ * in a whole return and then be refused by the server.
+ */
+export async function getRefundRequiresManager(client?: TillClient): Promise<boolean> {
+  const supabase = await clientFor(client)
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "refund_requires_manager")
+    .maybeSingle()
+
+  return data?.value === true
+}
+
 /** VAT rate from settings, falling back to the spec's 15%. */
 export async function getVatRate(client?: TillClient): Promise<number> {
   const supabase = await clientFor(client)

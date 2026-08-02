@@ -216,12 +216,23 @@ export async function listCashiers(supabase: TillClient): Promise<Cashier[]> {
  * money off a sale is worth no less protection than one guarding the till, and
  * without a shared counter this would be the soft way in.
  */
-async function verifyApproval(
+/**
+ * Checks a manager's PIN, and says who it belonged to.
+ *
+ * Exported so the refund path uses this and not a second implementation of the
+ * same idea — one that might forget the lockout, or check the PIN before the
+ * role and let a cashier's own PIN through.
+ *
+ * `what` only names the act in the messages a person reads. Everything the
+ * function actually enforces is identical either way.
+ */
+export async function verifyApproval(
   supabase: TillClient,
   approval: { managerId: string; pin: string } | null | undefined,
+  what: "discount" | "return" = "discount",
 ): Promise<{ managerId: string } | { error: string }> {
   if (!approval) {
-    return { error: "A manager needs to approve this discount." }
+    return { error: `A manager needs to approve this ${what}.` }
   }
   if (!PIN_PATTERN.test(approval.pin)) {
     return { error: "Enter the manager's 4-digit PIN." }
@@ -243,7 +254,7 @@ async function verifyApproval(
   // schema, so the generator widens it to string — narrowed here rather than
   // cast, so an unrecognised value fails closed.
   if (!isRole(profile.role) || !isAdminRole(profile.role)) {
-    return { error: "Only an owner or manager can approve a discount." }
+    return { error: `Only an owner or manager can approve a ${what}.` }
   }
   if (!profile.pin_code) {
     return { error: "That manager has no PIN set — an owner sets it in Settings." }

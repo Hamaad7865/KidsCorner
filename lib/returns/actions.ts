@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
+import { isAdminRole } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import {
   fieldErrorsOf,
@@ -88,10 +89,25 @@ export async function createCreditNote(
    * open shift genuinely has no shift. Cast here rather than editing
    * database.types.ts, so a regen does not undo it.
    */
+  /**
+   * The approver, when the shop has asked for one (migration 036).
+   *
+   * No PIN dialog here, unlike the till. This page lives under `(admin)` and
+   * `requireAdminProfile` has already turned away anyone who is not an owner or
+   * a manager — the person clicking the button IS the approval, and they signed
+   * in with a password to get here. Asking them for a second credential would
+   * be theatre.
+   *
+   * Sent unconditionally: the database ignores it while the setting is off, and
+   * a null here would fail closed the moment somebody turned it on.
+   */
+  const approvedBy = isAdminRole(profile.role) ? profile.id : null
+
   const args = {
     p_sale_id: parsed.data.saleId,
     p_shift_id: shiftId,
     p_cashier_id: profile.id,
+    p_approved_by: approvedBy,
     p_reason: reason,
     p_refund_method: refundMethod,
     // Merged by sale item, exactly as the till API does. The RPC's

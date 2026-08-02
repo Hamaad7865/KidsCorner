@@ -32,11 +32,13 @@ function SaveButton() {
 
 export function ShopSettings({
   shopName,
+  refundRequiresManager,
   vatRate,
   paymentMethods,
   canManage,
 }: {
   shopName: string
+  refundRequiresManager: boolean
   /** Stored as a fraction; shown as a percentage. */
   vatRate: number
   paymentMethods: string[]
@@ -144,6 +146,38 @@ export function ShopSettings({
               {state.fieldErrors.paymentMethods}
             </p>
           ) : null}
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Returns</legend>
+          <label
+            className={cn(
+              "flex cursor-pointer items-start gap-3 rounded-lg border p-3 select-none",
+              "focus-within:ring-ring focus-within:ring-2",
+              !canManage && "cursor-not-allowed opacity-60",
+            )}
+          >
+            <input
+              type="checkbox"
+              name="refundRequiresManager"
+              defaultChecked={refundRequiresManager}
+              disabled={!canManage}
+              className="accent-brand-600 mt-0.5"
+            />
+            <span className="space-y-1">
+              <span className="block text-sm font-medium">
+                A manager must approve a return
+              </span>
+              <span className="text-muted-foreground block text-xs">
+                Off by default, and off is how this shop has always worked: any
+                cashier can hand money back. A discount already needs a
+                manager&rsquo;s PIN, and a refund moves more money than a
+                discount does — out of the drawer, against a sale that may be
+                weeks old. Switch it on and the till asks for a PIN before it
+                pays anything back, and records who said yes.
+              </span>
+            </span>
+          </label>
         </fieldset>
 
         {canManage ? (

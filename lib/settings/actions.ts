@@ -7,6 +7,7 @@ import { logAudits } from "@/lib/activity/audit"
 import { getSessionProfile } from "@/lib/auth/session"
 import { PAYMENT_METHODS } from "@/lib/db-enums"
 import {
+  boolOf,
   fieldErrorsOf,
   formFail as fail,
   formOk,
@@ -41,12 +42,14 @@ const shopSettingsSchema = z.object({
   paymentMethods: z
     .array(z.enum(PAYMENT_METHODS))
     .min(1, "The till needs at least one payment method."),
+  refundRequiresManager: z.boolean(),
 })
 
 const SETTING_LABELS: Record<string, string> = {
   shop_name: "Shop name",
   vat_rate: "VAT rate",
   payment_methods: "Payment methods",
+  refund_requires_manager: "Manager approval for returns",
 }
 
 /**
@@ -61,6 +64,7 @@ function describe(key: string, value: unknown): string {
     const rate = Number(value)
     return Number.isFinite(rate) ? `${(rate * 100).toFixed(2).replace(/\.?0+$/, "")}%` : "—"
   }
+  if (typeof value === "boolean") return value ? "required" : "not required"
   if (Array.isArray(value)) return value.join(", ") || "none"
   return value === null || value === undefined || value === "" ? "—" : String(value)
 }
@@ -81,10 +85,11 @@ export async function saveShopSettings(
     paymentMethods: formData.getAll("paymentMethods").filter(
       (v): v is string => typeof v === "string",
     ),
+    refundRequiresManager: boolOf(formData, "refundRequiresManager"),
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { shopName, vatPercent, paymentMethods } = parsed.data
+  const { shopName, vatPercent, paymentMethods, refundRequiresManager } = parsed.data
   const supabase = await createClient()
 
   // Upserted one key at a time: `settings` is a key/value table, and doing them
@@ -96,6 +101,7 @@ export async function saveShopSettings(
     // divides by (1 + rate), so float noise here would drift every VAT figure.
     { key: "vat_rate", value: Math.round((vatPercent / 100) * 10_000) / 10_000 },
     { key: "payment_methods", value: paymentMethods },
+    { key: "refund_requires_manager", value: refundRequiresManager },
   ]
 
   // Read the current values first, so the trail can name what moved. Changing

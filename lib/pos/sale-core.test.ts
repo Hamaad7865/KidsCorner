@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import { settleDiscounts, type TillClient } from "./sale-core"
+import { settleDiscounts, type TillClient,
+  verifyApproval,
+} from "./sale-core"
 import { hashPin } from "./pin"
 
 /**
@@ -319,5 +321,97 @@ describe("settleDiscounts", () => {
       )
       expect("applied" in result).toBe(true)
     })
+  })
+})
+
+// ─────────────────────────────────────────────── approving a return
+
+/**
+ * The same PIN check the till already uses for a discount, pointed at a refund.
+ *
+ * It matters that this is the SAME function and not a second one: a separate
+ * implementation is where the lockout gets forgotten, or the PIN gets checked
+ * before the role and a cashier's own PIN approves a cashier's own refund.
+ */
+function approverClient(
+  role: string,
+  pinHash: string | null,
+  isActive = true,
+): TillClient {
+  return {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => ({
+            data: { id: MANAGER_ID, role, is_active: isActive, pin_code: pinHash },
+            error: null,
+          }),
+        }),
+      }),
+    }),
+    rpc: () => ({ data: 0, error: null }),
+  } as unknown as TillClient
+}
+
+describe("verifyApproval for a return", () => {
+  it("names the act in words a cashier reads, not 'discount'", async () => {
+    const result = await verifyApproval(approverClient("manager", null), null, "return")
+    expect(result).toEqual({ error: "A manager needs to approve this return." })
+  })
+
+  it("accepts a manager's correct PIN and reports who it was", async () => {
+    const hash = await hashPin("4321")
+    const result = await verifyApproval(
+      approverClient("manager", hash),
+      { managerId: MANAGER_ID, pin: "4321" },
+      "return",
+    )
+    expect(result).toEqual({ managerId: MANAGER_ID })
+  })
+
+  it("refuses a cashier before it ever looks at the PIN", async () => {
+    // The order is the point. Checking the PIN first would let a cashier who
+    // types their own PIN correctly approve their own refund.
+    const hash = await hashPin("4321")
+    const result = await verifyApproval(
+      approverClient("cashier", hash),
+      { managerId: MANAGER_ID, pin: "4321" },
+      "return",
+    )
+    expect(result).toEqual({ error: "Only an owner or manager can approve a return." })
+  })
+
+  it("refuses a deactivated manager", async () => {
+    const hash = await hashPin("4321")
+    const result = await verifyApproval(
+      approverClient("manager", hash, false),
+      { managerId: MANAGER_ID, pin: "4321" },
+      "return",
+    )
+    expect(result).toEqual({ error: "That account is deactivated." })
+  })
+
+  it("refuses a wrong PIN", async () => {
+    const hash = await hashPin("4321")
+    const result = await verifyApproval(
+      approverClient("manager", hash),
+      { managerId: MANAGER_ID, pin: "0000" },
+      "return",
+    )
+    expect(result).toEqual({ error: "Wrong PIN." })
+  })
+
+  it("refuses anything that is not four digits without touching the database", async () => {
+    const result = await verifyApproval(
+      approverClient("manager", null),
+      { managerId: MANAGER_ID, pin: "12" },
+      "return",
+    )
+    expect(result).toEqual({ error: "Enter the manager's 4-digit PIN." })
+  })
+
+  it("still says 'discount' when that is what is being approved", async () => {
+    const result = await verifyApproval(approverClient("manager", null), null)
+    expect(result).toEqual({ error: "A manager needs to approve this discount." })
   })
 })

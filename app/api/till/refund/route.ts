@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
+import { getRefundRequiresManager } from "@/lib/pos/queries"
+import { verifyApproval } from "@/lib/pos/sale-core"
 
 /**
  * A return against a past sale, written as a credit note.
@@ -24,6 +26,15 @@ const bodySchema = z.object({
   reason: z.string().trim().min(1, "Pick a reason for the return."),
   refundMethod: z.enum(["cash", "card", "juice", "myt_money", "exchange"]),
   restock: z.boolean().default(true),
+  /**
+   * A manager's PIN, when the shop has asked for one. Ignored otherwise, so a
+   * till running an older build against a shop that has not turned the setting
+   * on behaves exactly as it always did.
+   */
+  approval: z
+    .object({ managerId: z.uuid(), pin: z.string() })
+    .nullish()
+    .transform((v) => v ?? null),
   items: z
     .array(
       z.object({
@@ -53,7 +64,28 @@ export async function POST(request: Request) {
     })
   }
 
-  const { saleId, shiftId, reason, refundMethod, restock, items } = parsed.data
+  const { saleId, shiftId, reason, refundMethod, restock, items, approval } = parsed.data
+
+  /**
+   * The manager, when this shop wants one (migration 036).
+   *
+   * Checked here as well as in the database, and the order matters: the RPC
+   * would refuse an unapproved return anyway, but only after taking the row
+   * lock and reading every line. Asking first means a till that has not
+   * collected a PIN gets a sentence it can act on — "a manager needs to
+   * approve this return" — instead of a lock contended for nothing.
+   *
+   * The database remains the thing that actually enforces it. This is the
+   * courtesy; that is the rule.
+   */
+  let approvedBy: string | null = null
+  if (await getRefundRequiresManager(session.supabase)) {
+    const verified = await verifyApproval(session.supabase, approval, "return")
+    if ("error" in verified) {
+      return NextResponse.json({ ok: false, error: verified.error, needsApproval: true })
+    }
+    approvedBy = verified.managerId
+  }
 
   // Two lines naming the same sale item would each pass the RPC's
   // already-returned check on their own and together exceed what was sold, so
@@ -72,6 +104,9 @@ export async function POST(request: Request) {
     p_refund_method: refundMethod,
     p_items: [...merged].map(([sale_item_id, qty]) => ({ sale_item_id, qty })),
     p_restock: restock,
+    // Never a value the client asserted: this is the id `verifyApproval` just
+    // proved holds the PIN that was typed.
+    p_approved_by: approvedBy,
   } as never)
 
   if (error) {

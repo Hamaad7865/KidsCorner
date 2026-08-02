@@ -13,7 +13,12 @@ import {
 import { MasterDataTabs } from "@/components/settings/master-data-tabs"
 import { ShopSettings } from "@/components/settings/shop-settings"
 import { StaffPins } from "@/components/settings/staff-pins"
-import { getPaymentMethods, getShopName, getVatRate } from "@/lib/pos/queries"
+import {
+  getPaymentMethods,
+  getRefundRequiresManager,
+  getShopName,
+  getVatRate,
+} from "@/lib/pos/queries"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { listDiscounts } from "@/lib/discounts/queries"
 import { listStaffPinState } from "@/lib/pos/actions"
@@ -31,6 +36,7 @@ export default async function SettingsPage() {
     shopName,
     vatRate,
     paymentMethods,
+    refundRequiresManager,
     accessGrid,
     locations,
     barcodeSettings,
@@ -42,6 +48,7 @@ export default async function SettingsPage() {
     getShopName(),
     getVatRate(),
     getPaymentMethods(),
+    getRefundRequiresManager(),
     getAccessGrid(),
     listLocations(),
     readBarcodeSettings(),
@@ -62,6 +69,7 @@ export default async function SettingsPage() {
         shopName={shopName}
         vatRate={vatRate}
         paymentMethods={paymentMethods}
+          refundRequiresManager={refundRequiresManager}
         canManage={profile.role === "owner"}
       />
 
