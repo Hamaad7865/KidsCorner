@@ -96,8 +96,22 @@ class OfflineGate(context: Context) {
      * held stays held.
      */
     suspend fun remember(shop: Bootstrap) = io {
+        /*
+         * AN EMPTY ROSTER IS A FAILURE, NOT A STAFF PURGE.
+         *
+         * `listCashiersForDevice` returns [] when its query errors — an RLS
+         * hiccup, a blip mid-request — and the route answers 200 around it,
+         * because a till that cannot list staff should still get its
+         * catalogue. Cached as-is, that one bad answer would wipe every
+         * verifier this tablet holds and lock the shop out of its own till
+         * for the rest of the outage. A shop with no active staff at all is
+         * not a state that exists: the till is signed in as one of them.
+         *
+         * So the rest of the answer is kept — it is fresh and correct — and
+         * the roster held over. The next good bootstrap replaces it.
+         */
         prefs.edit()
-            .putString(KEY_SHOP, json.encodeToString(shop))
+            .putString(KEY_SHOP, json.encodeToString(merge(cachedShop(), shop)))
             .putLong(KEY_SHOP_AT, System.currentTimeMillis())
             .apply()
     }
@@ -228,6 +242,19 @@ class OfflineGate(context: Context) {
          * cashier sent to count a float for a drawer that is already open,
          * which ends in two shifts and a reconciliation nobody asked for.
          */
+        /**
+         * What to keep when a fresh bootstrap arrives — see [remember] for why
+         * an empty roster is treated as a failed answer rather than an answer.
+         * Lifted out because it is a rule, and because it is the kind of guard
+         * that gets dropped in a rewrite and noticed months later.
+         */
+        fun merge(previous: Bootstrap?, fresh: Bootstrap): Bootstrap =
+            if (fresh.cashiers.isEmpty() && !previous?.cashiers.isNullOrEmpty()) {
+                fresh.copy(cashiers = previous.cashiers)
+            } else {
+                fresh
+            }
+
         fun freshen(shop: Bootstrap, today: LocalDate): Bootstrap {
             val opened = shop.shift?.openedAt ?: return shop
             val on = localDateOf(opened) ?: return shop

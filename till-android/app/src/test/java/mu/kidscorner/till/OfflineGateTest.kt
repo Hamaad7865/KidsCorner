@@ -74,6 +74,40 @@ class OfflineGateTest {
         assertNull(OfflineGate.freshen(shopWithShiftOpenedAt(null), LocalDate.now()).shift)
     }
 
+    // ------------------------------------------------------ a bad answer
+
+    @Test
+    fun `an empty roster is a failed answer, not a staff purge`() {
+        // listCashiersForDevice returns [] when its query errors, and the
+        // route answers 200 around it so a till that cannot list staff still
+        // gets its catalogue. Cached as-is, that one blip would wipe every
+        // verifier on the tablet and lock the shop out of its own till for the
+        // rest of the outage.
+        val held = shopWithShiftOpenedAt("2026-08-03T05:12:00Z")
+        val blip = held.copy(cashiers = emptyList(), shopName = "Kids Corner Curepipe")
+
+        val merged = OfflineGate.merge(held, blip)
+        assertEquals(1, merged.cashiers.size)
+        assertEquals(verifier, merged.cashiers[0].verifier)
+        // The rest of the answer was fine and is taken.
+        assertEquals("Kids Corner Curepipe", merged.shopName)
+    }
+
+    @Test
+    fun `a real roster always replaces the held one`() {
+        val held = shopWithShiftOpenedAt(null)
+        val fresh = held.copy(cashiers = listOf(priya(v = null)))
+        // Including when it revokes: a verifier gone null on the server is the
+        // whole point of serving the roster, and must not be second-guessed.
+        assertNull(OfflineGate.merge(held, fresh).cashiers[0].verifier)
+    }
+
+    @Test
+    fun `a first sync has nothing to hold over`() {
+        val fresh = shopWithShiftOpenedAt(null).copy(cashiers = emptyList())
+        assertTrue(OfflineGate.merge(null, fresh).cashiers.isEmpty())
+    }
+
     // --------------------------------------------------------------- the PIN
 
     @Test
