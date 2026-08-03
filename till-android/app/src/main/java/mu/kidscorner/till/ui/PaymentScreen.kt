@@ -53,6 +53,14 @@ import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.round2
 import mu.kidscorner.till.ui.theme.Handoff
 import mu.kidscorner.till.ui.theme.PlexMono
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.automirrored.filled.Backspace
+import androidx.compose.ui.text.style.TextOverflow
+import mu.kidscorner.till.data.nowDayAndClock
 
 /**
  * `atPay` — reproduced from the handoff.
@@ -128,540 +136,332 @@ fun PaymentScreen(
         if (completes) onConfirm(next, change) else method = paymentMethods.firstOrNull() ?: "cash"
     }
 
-    Row(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    // Which display card the numpad is feeding. Carfectionist lets a deposit
+    // be typed into AMOUNT; here the amount follows what is outstanding until
+    // a split is on, so the pad rests on the tender.
+    var padOnAmount by remember { mutableStateOf(false) }
+    val onAmount = padOnAmount && !isCash
 
-        // ═══════════════════════════════════════════════ the working column ══
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .padding(start = 16.dp, end = 16.dp, top = 13.dp, bottom = 15.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+    Column(
+        modifier.fillMaxSize().background(Handoff.Canvas).padding(14.dp),
+    ) {
+        // ═══════════════════════════════════════════════════════ the header ══
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // ── header: a 44px "Back to sale" then the title stack ──────────
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Surface(
-                    onClick = onCancel,
-                    enabled = !busy && !frozen,
-                    shape = RoundedCornerShape(11.dp),
-                    color = Handoff.Surface,
-                    contentColor = Handoff.InkStrong,
-                    border = BorderStroke(1.dp, Handoff.Line),
-                    modifier = Modifier.height(48.dp),
-                ) {
-                    Row(
-                        Modifier.padding(start = 11.dp, end = 14.dp).fillMaxHeight(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(16.dp))
-                        Text("Back to sale", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Column {
-                    Text(
-                        "Take payment",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.16).sp,
-                        color = Handoff.Ink,
-                    )
-                    Text(
-                        cashierName,
-                        fontFamily = PlexMono,
-                        fontSize = 11.sp,
-                        letterSpacing = 0.55.sp,
-                        color = Handoff.Muted3,
-                    )
-                }
-            }
-
-            // ── due card: `padding:14px 20px; radius:14px`, figure 52px mono ─
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                onClick = onCancel,
+                enabled = !busy && !frozen,
+                shape = RoundedCornerShape(11.dp),
                 color = Handoff.Surface,
-                border = BorderStroke(1.dp, Handoff.LineSoft),
-                modifier = Modifier.fillMaxWidth(),
+                contentColor = Handoff.InkStrong,
+                border = BorderStroke(1.dp, Handoff.Line),
+                modifier = Modifier.height(46.dp),
             ) {
                 Row(
-                    Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    Modifier.padding(start = 11.dp, end = 14.dp).fillMaxHeight(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (paid > 0) "REMAINING TO PAY" else "TOTAL DUE",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.1.sp,
-                            color = Handoff.Muted3,
-                        )
-                        Text(
-                            formatRs(outstanding),
-                            fontFamily = PlexMono,
-                            fontSize = 46.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-1.84).sp,
-                            lineHeight = 48.3.sp,
-                            color = Handoff.InkFigure,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                    if (payments.isNotEmpty()) {
-                        Box(
-                            Modifier.width(1.dp).height(46.dp).background(Handoff.LineSoft),
-                        )
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                "Total ${formatRs(totals.total)}",
-                                fontSize = 11.5.sp,
-                                color = Handoff.Muted3,
-                            )
-                            Text(
-                                "Paid ${formatRs(paid)}",
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Handoff.AccentText,
-                                modifier = Modifier.padding(top = 3.dp),
-                            )
-                        }
-                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null, Modifier.size(16.dp))
+                    Text("Back", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
-
-            // ── methods: `repeat(4,1fr); gap:10px` ──────────────────────────
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp),
-                modifier = Modifier.height(if (paymentMethods.size > 4) 153.dp else 72.dp),
-            ) {
-                items(paymentMethods) { candidate ->
-                    MethodTile(
-                        method = candidate,
-                        selected = method == candidate,
-                        enabled = !busy && !frozen,
-                        onClick = { method = candidate },
-                    )
-                }
-            }
-
-            // ── the pad beside the quick amounts and the change panel ───────
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-
-                Column(
-                    Modifier.width(296.dp).fillMaxHeight(),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    // `height:56px; padding:0 16px; border:1px solid #DAE3E4`
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Handoff.Surface)
-                            .border(1.dp, Handoff.Line, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (isCash) "CASH TENDERED" else "AMOUNT",
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = 0.69.sp,
-                            color = Handoff.Muted3,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            if (entry.isBlank()) "0" else formatAmount(entered),
-                            fontFamily = PlexMono,
-                            fontSize = 23.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            letterSpacing = (-0.46).sp,
-                            color = if (entry.isBlank()) Handoff.Faint else Handoff.InkFigure,
-                        )
-                    }
-
-                    HandoffPad(
-                        enabled = !busy && !frozen,
-                        onKey = { entry = entry.appendPadKey(it) },
-                        onBackspace = { entry = entry.dropLast(1) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-
-                    // `repeat(2,1fr); gap:7px` — four 56px quick amounts.
-                    val quick = if (isCash) {
-                        listOf(
-                            "Exact ${formatRs(outstanding)}" to outstanding,
-                            "Rs 100" to 100.0,
-                            "Rs 500" to 500.0,
-                            "Rs 1,000" to 1_000.0,
-                        )
-                    } else {
-                        listOf(
-                            "Full ${formatRs(outstanding)}" to outstanding,
-                            "Half ${formatRs(round2(outstanding / 2))}" to round2(outstanding / 2),
-                            "Rs 500" to 500.0,
-                            "Rs 1,000" to 1_000.0,
-                        )
-                    }
-                    quick.chunked(2).forEach { pair ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            pair.forEach { (label, value) ->
-                                Surface(
-                                    onClick = { entry = trimZeros(value) },
-                                    enabled = !busy && !frozen && value > 0,
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = Handoff.Surface,
-                                    contentColor = Handoff.InkStrong,
-                                    border = BorderStroke(1.dp, Handoff.LineField),
-                                    modifier = Modifier.weight(1f).height(56.dp),
-                                ) {
-                                    Box(
-                                        Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                                        Alignment.Center,
-                                    ) {
-                                        Text(
-                                            label,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ── change due (cash) or the method's own instruction ────
-                    //
-                    // Coloured only once there is change to hand back. It used
-                    // to be the biggest tinted block on the screen from the
-                    // moment the screen opened, announcing "CHANGE DUE Rs 0.00"
-                    // before a single key had been pressed — the loudest thing
-                    // in the room saying nothing. It keeps its size either way,
-                    // so nothing jumps when the figure arrives.
-                    val hasChange = isCash && pendingChange > 0
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (hasChange) Handoff.ChangeTint else Handoff.Surface)
-                            .border(
-                                1.dp,
-                                if (hasChange) Handoff.ChangeLine else Handoff.LineSoft,
-                                RoundedCornerShape(14.dp),
-                            )
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        if (isCash) {
-                            Text(
-                                "CHANGE DUE",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.15.sp,
-                                color = if (hasChange) Handoff.ChangeLabel else Handoff.Muted3,
-                            )
-                            Text(
-                                formatRs(pendingChange),
-                                fontFamily = PlexMono,
-                                fontSize = 40.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = (-1.6).sp,
-                                lineHeight = 40.sp,
-                                color = if (hasChange) Handoff.ChangeFigure else Handoff.Faint,
-                                modifier = Modifier.padding(vertical = 6.dp),
-                            )
-                            Text(
-                                when {
-                                    entered == 0.0 -> "Type or tap the amount handed over."
-                                    entered < outstanding ->
-                                        "Short by ${formatRs(outstanding - entered)} — " +
-                                            "this will split the payment."
-                                    pendingChange == 0.0 -> "Exact amount — nothing to hand back."
-                                    else -> "Hand back ${formatRs(pendingChange)}."
-                                },
-                                fontSize = 12.sp,
-                                color = if (hasChange) Handoff.ChangeNote else Handoff.Muted3,
-                            )
-                        } else {
-                            Text(
-                                methodHint(method),
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Handoff.InkStrong,
-                            )
-                            Text(
-                                "Amount is pre-filled with what is left to pay. Adjust it on " +
-                                    "the keypad to split across methods.",
-                                fontSize = 12.5.sp,
-                                lineHeight = 18.75.sp,
-                                color = Handoff.Muted3,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                        }
-                    }
-
-                    if (error != null) {
-                        Surface(
-                            shape = RoundedCornerShape(11.dp),
-                            color = Handoff.DangerTint,
-                            contentColor = Handoff.Danger,
-                            border = BorderStroke(1.dp, Handoff.DangerLine),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Row(
-                                Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Icon(Icons.Default.Warning, null, Modifier.size(18.dp))
-                                Text(error, fontSize = 12.5.sp)
-                            }
-                        }
-                    }
-
-                    // A frozen basket disables every key on this screen, so the
-                    // way out has to live here. Without these two the cashier's
-                    // only option was to force-kill the app, losing the basket
-                    // and the idempotent retry along with it.
-                    if (frozen) {
-                        Text(
-                            "This sale was sent but the till did not hear back, so it may " +
-                                "already be done. Take it again — it will finish the same " +
-                                "sale, not make a second one.",
-                            fontSize = 12.sp,
-                            color = Handoff.Muted2,
-                        )
-
-                        Surface(
-                            onClick = onRetry,
-                            enabled = !busy,
-                            shape = RoundedCornerShape(14.dp),
-                            color = Handoff.AccentSolid,
-                            contentColor = Color.White,
-                            shadowElevation = 6.dp,
-                            modifier = Modifier.fillMaxWidth().height(72.dp),
-                        ) {
-                            Row(
-                                Modifier.fillMaxSize().padding(horizontal = 22.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                            ) {
-                                Text(
-                                    if (busy) "Taking it again…" else "Take it again",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-
-                        if (parkable) {
-                            Surface(
-                                onClick = onPark,
-                                enabled = !busy,
-                                shape = RoundedCornerShape(14.dp),
-                                color = Handoff.Surface,
-                                contentColor = Handoff.Ink,
-                                border = BorderStroke(1.dp, Handoff.Line),
-                                modifier = Modifier.fillMaxWidth().height(52.dp),
-                            ) {
-                                Row(
-                                    Modifier.fillMaxSize().padding(horizontal = 22.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                ) {
-                                    Text(
-                                        "Save it and serve the next customer",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // ── the 72px primary, or the handoff's blocked well ──────
-                    if (ready) {
-                        Surface(
-                            onClick = ::primaryTap,
-                            shape = RoundedCornerShape(14.dp),
-                            color = Handoff.AccentSolid,
-                            contentColor = Color.White,
-                            shadowElevation = 6.dp,
-                            modifier = Modifier.fillMaxWidth().height(72.dp),
-                        ) {
-                            Row(
-                                Modifier.fillMaxSize().padding(horizontal = 22.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    if (completes) "Complete sale" else "Add payment",
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.34.sp,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    formatRs(takeNow),
-                                    fontFamily = PlexMono,
-                                    fontSize = 21.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(72.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Handoff.Blocked),
-                            Alignment.Center,
-                        ) {
-                            if (busy) {
-                                CircularProgressIndicator(
-                                    Modifier.size(26.dp),
-                                    Handoff.AccentSolid,
-                                    2.dp,
-                                )
-                            } else {
-                                Text(
-                                    if (isCash) "Enter the cash received" else "Enter an amount",
-                                    fontSize = 15.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Handoff.BlockedText,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            Text(
+                "PAYMENT",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+                color = Handoff.Ink,
+            )
+            /*
+             * Carfectionist puts the invoice number and the customer here. At
+             * this moment Kids Corner has neither: nothing is issued until
+             * Record, and most baskets are walk-ins. What it does have is what
+             * is being paid for and who is taking it, which is the same job —
+             * naming the transaction standing in front of you.
+             */
+            Text(
+                "${formatQty(totals.itemCount)} " +
+                    (if (totals.itemCount == 1) "item" else "items") +
+                    "  ·  " + cashierName,
+                fontFamily = PlexMono,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.4.sp,
+                color = Handoff.Muted,
+                modifier = Modifier.weight(1f),
+            )
         }
 
-        // ═══════════════════════════════════════════════ the sale summary ═══
-        Box(Modifier.fillMaxHeight().width(1.dp).background(Handoff.LineChrome))
-
-        Column(Modifier.width(392.dp).fillMaxHeight().background(Handoff.Surface)) {
-            Row(
-                Modifier.fillMaxWidth().height(46.dp).padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Sale summary",
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Handoff.Muted,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "${formatQty(totals.itemCount)} " +
-                        if (totals.itemCount == 1) "item" else "items",
-                    fontSize = 12.sp,
-                    color = Handoff.Muted3,
-                )
-            }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
-
-            LazyColumn(
-                Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 6.dp),
-            ) {
-                items(lines, key = { it.variantId }) { line -> SummaryLine(line) }
-
-                if (payments.isNotEmpty()) {
-                    item {
-                        Text(
-                            "PAYMENTS TAKEN",
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.05.sp,
-                            color = Handoff.Muted3,
-                            modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
-                        )
-                    }
-                    items(payments.withIndex().toList(), key = { "p${it.index}" }) { (index, payment) ->
-                        TakenPayment(
-                            payment = payment,
-                            enabled = !busy && !frozen,
-                            onRemove = { payments = payments.filterIndexed { i, _ -> i != index } },
-                        )
-                    }
-                    item {
-                        Text(
-                            "Pick another method above to split the rest.",
-                            fontSize = 11.5.sp,
-                            color = Handoff.Muted3,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-            }
-
-            // `border-top:1px solid #E7EDEE; background:#FBFDFD; padding:12px 16px 16px`
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineIdle))
+        // ═══════════════════════════════════ bill · methods · money ══════════
+        Row(
+            Modifier.fillMaxWidth().weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // ── the bill ────────────────────────────────────────────────────
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Handoff.FieldWell)
-                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+                Modifier.weight(1f).fillMaxHeight()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Handoff.Surface)
+                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+                    .padding(18.dp),
             ) {
-                SummaryRow("Subtotal", formatAmount(totals.subtotal))
-                val discount = round2(totals.lineDiscounts + totals.saleDiscount)
-                if (discount > 0) {
-                    SummaryRow("Discount", "-${formatAmount(discount)}", tone = Handoff.WarnText)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "KIDS CORNER",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.6.sp,
+                            color = Handoff.Ink,
+                        )
+                        Text(
+                            nowDayAndClock(),
+                            fontFamily = PlexMono,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Handoff.Muted,
+                            modifier = Modifier.padding(top = 5.dp),
+                        )
+                        Text(
+                            "${formatQty(totals.itemCount)} " +
+                                if (totals.itemCount == 1) "item" else "items",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Handoff.Muted,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                    KcMark(size = 40)
                 }
-                // VAT-inclusive: this is the portion already inside the total,
-                // never something added to it.
-                SummaryRow(
-                    "VAT (included)",
-                    formatAmount(totals.vat),
-                    labelSize = 12.sp,
-                    tone = Handoff.Muted4,
-                )
 
-                Box(
-                    Modifier.fillMaxWidth().height(1.dp)
-                        .padding(top = 8.dp)
-                        .background(Handoff.LineIdle),
-                )
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 9.dp),
-                    verticalAlignment = Alignment.Bottom,
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+                Spacer(Modifier.height(12.dp))
+
+                LazyColumn(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(11.dp),
                 ) {
+                    items(lines, key = { it.variantId }) { line -> BillLine(line) }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "TOTAL",
-                        fontSize = 12.5.sp,
+                        "Total incl. tax",
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.25.sp,
                         color = Handoff.Muted,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        formatAmount(totals.total),
+                        formatRs(totals.total),
                         fontFamily = PlexMono,
                         fontSize = 26.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.78).sp,
-                        lineHeight = 26.sp,
                         color = Handoff.InkFigure,
                     )
+                }
+            }
+
+            // ── means of payment ────────────────────────────────────────────
+            Column(
+                Modifier.weight(1f).fillMaxHeight()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Handoff.Surface)
+                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+                    .padding(18.dp),
+            ) {
+                Text(
+                    "MEANS OF PAYMENT",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.2.sp,
+                    color = Handoff.Muted3,
+                )
+                Spacer(Modifier.height(14.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    paymentMethods.chunked(2).forEach { pair ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            pair.forEach { candidate ->
+                                Box(Modifier.weight(1f)) {
+                                    MethodTile(
+                                        method = candidate,
+                                        selected = method == candidate,
+                                        enabled = !busy && !frozen,
+                                        onPick = {
+                                            method = candidate
+                                            entry = ""
+                                        },
+                                    )
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+
+                if (payments.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "ALREADY TAKEN",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp,
+                        color = Handoff.Muted3,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        payments.forEachIndexed { index, payment ->
+                            TakenPayment(
+                                payment = payment,
+                                enabled = !busy && !frozen,
+                                onRemove = {
+                                    payments = payments.filterIndexed { i, _ -> i != index }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── the money ───────────────────────────────────────────────────
+            Column(
+                Modifier.weight(1f).fillMaxHeight()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Handoff.Surface)
+                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+                    .padding(18.dp),
+            ) {
+                MoneyRow("Total", formatRs(totals.total), Handoff.InkFigure)
+                Spacer(Modifier.height(6.dp))
+                MoneyRow(
+                    "Balance",
+                    formatRs(outstanding),
+                    // Amber while the customer still owes, quiet once settled.
+                    // Carfectionist turns this green; Kids Corner has no green
+                    // — the palette is white and the logo's red, and amber is
+                    // already this shop's word for money still in the air.
+                    if (outstanding > 0) Handoff.WarnText else Handoff.Muted3,
+                )
+                Spacer(Modifier.height(12.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+                Spacer(Modifier.height(12.dp))
+
+                Column(
+                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DisplayCard(
+                        label = "AMOUNT",
+                        value = formatRs(if (entry.isBlank()) outstanding else takeNow),
+                        highlight = onAmount,
+                        onClick = { padOnAmount = true },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        QuickChip("Full") {
+                            entry = trimZeros(outstanding)
+                            padOnAmount = false
+                        }
+                    }
+
+                    if (isCash) {
+                        DisplayCard(
+                            label = "CASH TENDERED",
+                            value = formatRs(if (entry.isBlank()) 0.0 else entered),
+                            highlight = !onAmount,
+                            onClick = { padOnAmount = false },
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            QuickChip("Exact") { entry = trimZeros(outstanding) }
+                            QuickChip("1,000") { entry = "1000" }
+                            QuickChip("5,000") { entry = "5000" }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Change",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Handoff.Muted,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                formatRs(change),
+                                fontFamily = PlexMono,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (change > 0) Handoff.ChangeFigure else Handoff.Muted3,
+                            )
+                        }
+                    }
+
+                    NumPad(enabled = !busy && !frozen) { key ->
+                        entry = if (key == "back") entry.dropLast(1) else entry.appendPadKey(key)
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+                if (error != null) {
+                    Text(error, fontSize = 13.sp, color = Handoff.Danger)
+                    Spacer(Modifier.height(6.dp))
+                }
+                if (frozen) {
+                    FrozenActions(
+                        busy = busy,
+                        parkable = parkable,
+                        onRetry = onRetry,
+                        onPark = onPark,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+
+                val recordable = ready && takeNow > 0
+                Surface(
+                    onClick = { primaryTap() },
+                    enabled = recordable,
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (recordable) Handoff.AccentSolid else Handoff.Blocked,
+                    contentColor = if (recordable) Color.White else Handoff.BlockedText,
+                    shadowElevation = if (recordable) 6.dp else 0.dp,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        if (busy) {
+                            CircularProgressIndicator(Modifier.size(24.dp), Color.White, 2.dp)
+                        } else {
+                            Text(
+                                when {
+                                    !recordable && isCash -> "Enter the cash received"
+                                    !recordable -> "Enter an amount"
+                                    completes -> "Record " + formatRs(takeNow)
+                                    else ->
+                                        "Take " + formatRs(takeNow) + " — " +
+                                            formatRs(round2(outstanding - takeNow)) + " left"
+                                },
+                                fontSize = 16.5.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/** `padding:10px 0` — qty×, name over swatch + variant, then the net. */
 @Composable
 private fun SummaryLine(line: CartLine) {
     Column {
@@ -753,7 +553,6 @@ private fun TakenPayment(payment: SalePayment, enabled: Boolean, onRemove: () ->
     }
 }
 
-/** `padding:2px 0` — a quiet label against a mono figure. */
 @Composable
 private fun SummaryRow(
     label: String,
@@ -781,48 +580,46 @@ private fun MethodTile(
     method: String,
     selected: Boolean,
     enabled: Boolean,
-    onClick: () -> Unit,
+    onPick: () -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(13.dp),
-        color = if (selected) Handoff.AccentTint else Handoff.Surface,
-        contentColor = if (selected) Handoff.AccentText else Handoff.Ink,
-        border = BorderStroke(1.dp, if (selected) Handoff.AccentSolid else Handoff.LineSoft),
-        modifier = Modifier.height(72.dp),
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(104.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) Handoff.AccentTint else Handoff.Well)
+            .border(
+                2.dp,
+                if (selected) Handoff.AccentSolid else Handoff.LineSoft,
+                RoundedCornerShape(16.dp),
+            )
+            .clickable(enabled = enabled, onClick = onPick)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp).fillMaxHeight(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        /*
+         * Carfectionist gives every method its own hue — green cash, blue
+         * card, amber Juice, navy bank. Kids Corner cannot: the palette is
+         * white and the logo's red, and five hues would be five new colours
+         * with no meaning behind them. The disc is the brand red on every
+         * tile — the shop taking money — and which one is CHOSEN is said by
+         * the tint, the border and the label, which is what the reference
+         * uses colour for anyway.
+         */
+        Box(
+            Modifier.size(46.dp).clip(CircleShape).background(Handoff.AccentSolid),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .size(42.dp)
-                    .background(
-                        if (selected) Handoff.AccentSolid else Handoff.Well,
-                        RoundedCornerShape(11.dp),
-                    ),
-                Alignment.Center,
-            ) {
-                Icon(
-                    methodIcon(method),
-                    contentDescription = null,
-                    tint = if (selected) Color.White else Handoff.Muted,
-                    modifier = Modifier.size(21.dp),
-                )
-            }
-            Column {
-                Text(
-                    methodLabel(method),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = (-0.15).sp,
-                )
-                Text(methodSub(method), fontSize = 11.sp, color = Handoff.Muted3)
-            }
+            Icon(methodIcon(method), null, tint = Color.White, modifier = Modifier.size(24.dp))
         }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            methodLabel(method),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) Handoff.AccentText else Handoff.Ink,
+        )
     }
 }
 
@@ -856,6 +653,7 @@ fun methodLabel(method: String): String = when (method) {
     "card" -> "Card"
     "juice" -> "Juice"
     "myt_money" -> "my.t money"
+    "bank" -> "Bank"
     else -> method
 }
 
@@ -869,4 +667,231 @@ private fun trimZeros(value: Double): String {
     val rounded = round2(value)
     return if (rounded == kotlin.math.floor(rounded)) rounded.toLong().toString()
     else formatAmount(rounded).replace(",", "")
+}
+
+/**
+ * `Total` / `Balance` — the two figures at the top of the money column.
+ */
+@Composable
+private fun MoneyRow(label: String, value: String, tone: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Handoff.Muted,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            fontFamily = PlexMono,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.66).sp,
+            color = tone,
+        )
+    }
+}
+
+/**
+ * One line of the bill on the payment screen's left card.
+ *
+ * Carfectionist prints `qty · name · amount`. A garment needs its size and
+ * colour too — "Cotton socks" is three products — so the variant rides under
+ * the name, and the colour band that identifies a line on the sell screen
+ * comes with it. That is the translation: same three columns, one more fact
+ * in the middle one, because the middle one means something different here.
+ */
+@Composable
+private fun BillLine(line: CartLine) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Text(
+            "${line.qty}",
+            fontFamily = PlexMono,
+            fontSize = 14.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = Handoff.Muted,
+            modifier = Modifier.width(28.dp),
+        )
+        Column(Modifier.weight(1f).padding(end = 10.dp)) {
+            Text(
+                line.productName,
+                fontSize = 16.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 20.sp,
+                color = Handoff.Ink,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 3.dp),
+            ) {
+                ColourSwatch(line.colourHex, size = 10)
+                Text(
+                    "${line.colourName} · ${line.sizeLabel}",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Handoff.Muted,
+                )
+            }
+        }
+        Text(
+            formatAmount(line.lineTotal),
+            fontFamily = PlexMono,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Handoff.InkFigure,
+        )
+    }
+}
+
+/**
+ * A labelled figure the numpad can be pointed at — Carfectionist's DisplayCard.
+ * The highlighted one is the field the keys are feeding, which is the only way
+ * to tell AMOUNT from CASH TENDERED without reading them.
+ */
+@Composable
+private fun DisplayCard(
+    label: String,
+    value: String,
+    highlight: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Handoff.FieldWell)
+            .border(
+                1.5.dp,
+                if (highlight) Handoff.AccentLine else Handoff.LineSoft,
+                RoundedCornerShape(12.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(
+            label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.4.sp,
+            color = Handoff.Muted,
+        )
+        Text(
+            value,
+            fontFamily = PlexMono,
+            fontSize = 19.sp,
+            fontWeight = FontWeight.Bold,
+            color = Handoff.InkFigure,
+        )
+    }
+}
+
+/** A small preset — `Full`, `Exact`, `1,000`. */
+@Composable
+private fun QuickChip(label: String, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Handoff.Well)
+            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            fontFamily = PlexMono,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = Handoff.Muted,
+        )
+    }
+}
+
+/** Carfectionist's 4×3 pad. `⌫` is sent as "back" so the caller need not know. */
+@Composable
+private fun NumPad(enabled: Boolean, onKey: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            listOf("1", "2", "3"),
+            listOf("4", "5", "6"),
+            listOf("7", "8", "9"),
+            listOf(".", "0", "⌫"),
+        ).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { key ->
+                    Surface(
+                        onClick = { onKey(if (key == "⌫") "back" else key) },
+                        enabled = enabled,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.Well,
+                        contentColor = Handoff.Ink,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                    ) {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            if (key == "⌫") {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Backspace,
+                                    "Delete last digit",
+                                    Modifier.size(19.dp),
+                                )
+                            } else {
+                                Text(key, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The way out of a settle whose outcome is unknown — kept from the screen this
+ * replaced, because the reference has no equivalent and losing it would strand
+ * a cashier whose line dropped at the worst moment.
+ */
+@Composable
+private fun FrozenActions(
+    busy: Boolean,
+    parkable: Boolean,
+    onRetry: () -> Unit,
+    onPark: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            onClick = onRetry,
+            enabled = !busy,
+            shape = RoundedCornerShape(13.dp),
+            color = Handoff.Surface,
+            contentColor = Handoff.Ink,
+            border = BorderStroke(1.dp, Handoff.Line),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                Text("Try sending it again", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        if (parkable) {
+            Surface(
+                onClick = onPark,
+                enabled = !busy,
+                shape = RoundedCornerShape(13.dp),
+                color = Handoff.Surface,
+                contentColor = Handoff.Ink,
+                border = BorderStroke(1.dp, Handoff.Line),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text(
+                        "Save it and serve the next customer",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
 }
