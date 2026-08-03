@@ -44,145 +44,239 @@ fun buildReceipt(
     currency: String = "Rs",
     gift: Boolean = false,
 ): List<ReceiptLine> = buildList {
-    add(ReceiptLine.Text(shop.name, Align.Centre, bold = true, big = true))
-    shop.address?.takeIf { it.isNotBlank() }?.let {
-        add(ReceiptLine.Text(it, Align.Centre))
+    val w = width.columns
+
+    // ── identity ────────────────────────────────────────────────────────────
+    // Carfectionist splits the address on its first comma into two centred
+    // lines, so "Royal Road, Curepipe" reads as the shop's own two-line
+    // letterhead rather than one long run that wraps wherever the paper ends.
+    add(ReceiptLine.Text(shop.name.uppercase(), Align.Centre, bold = true))
+    shop.address?.takeIf { it.isNotBlank() }?.split(",", limit = 2)?.forEach { part ->
+        part.trim().takeIf { it.isNotEmpty() }?.let {
+            add(ReceiptLine.Text(it, Align.Centre))
+        }
     }
     shop.phone?.takeIf { it.isNotBlank() }?.let {
         add(ReceiptLine.Text("Tel $it", Align.Centre))
     }
-    shop.vatNumber?.takeIf { it.isNotBlank() }?.let {
-        add(ReceiptLine.Text("VAT $it", Align.Centre))
-    }
-
-    add(ReceiptLine.Feed())
-    add(ReceiptLine.Text(sale.saleNo, Align.Centre, bold = true))
-    add(ReceiptLine.Text(readableDate(sale.saleDate), Align.Centre))
-    sale.cashierName?.let { add(ReceiptLine.Text("Served by $it", Align.Centre)) }
-    sale.customerName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
-
-    if (reprintNumber > 1) {
-        add(ReceiptLine.Feed())
-        add(ReceiptLine.Text("*** REPRINT #$reprintNumber ***", Align.Centre, bold = true))
-    }
-
-    // A sale that has been voided or refunded must say so on its own face. A
-    // reprint of a refunded sale that looks like a normal receipt is exactly
-    // the document someone would use to claim the goods a second time.
-    if (sale.status != "completed") {
-        add(ReceiptLine.Feed())
-        add(ReceiptLine.Text("*** ${sale.status.uppercase()} ***", Align.Centre, bold = true))
-    }
-
     add(ReceiptLine.Rule)
 
-    for (line in sale.lines) {
-        add(ReceiptLine.Text(line.productName))
+    // A sale that has been voided or refunded says so before anything else.
+    // A reprint of a refunded sale that looks ordinary is exactly the document
+    // somebody would use to claim the goods a second time.
+    if (sale.status != "completed") {
+        add(ReceiptLine.Text("*** ${sale.status.uppercase()} ***", Align.Centre, bold = true))
+        add(ReceiptLine.Rule)
+    }
 
+    // ── the numbered sale block ─────────────────────────────────────────────
+    add(ReceiptLine.Text("No. ${sale.saleNo}", Align.Centre, bold = true))
+    add(ReceiptLine.Text("VAT INVOICE ${sale.saleNo}", Align.Centre, bold = true))
+    add(ReceiptLine.Text("Counter sale", Align.Centre))
+    add(ReceiptLine.Text(readableDate(sale.saleDate), Align.Centre))
+    // Never blank: a counter sale says so rather than leaving the customer
+    // unidentified. Wrapped rather than truncated — a long Mauritian name
+    // would otherwise lose its surname on 58mm paper, and it is the
+    // customer's own receipt.
+    wrapText("Customer : ${sale.customerName ?: "Walk-in"}", w).forEach {
+        add(ReceiptLine.Text(it, Align.Centre))
+    }
+    if (reprintNumber > 1) {
+        add(ReceiptLine.Text("*** REPRINT #$reprintNumber ***", Align.Centre, bold = true))
+    }
+    add(ReceiptLine.Rule)
+
+    // ── items: Qty | Designation | UP | Total ───────────────────────────────
+    // The money columns keep their width and the designation takes what is
+    // left, so 58mm and 80mm both stay aligned instead of one of them wrapping.
+    val qtyW = 4
+    val numW = if (w >= 48) 10 else 8
+    val nameW = (w - qtyW - numW * 2).coerceAtLeast(6)
+
+    if (sale.lines.isNotEmpty() && !gift) {
+        add(
+            ReceiptLine.Text(
+                "Qty".padEnd(qtyW) + "Designation".take(nameW).padEnd(nameW) +
+                    "UP".padStart(numW) + "Total".padStart(numW),
+            ),
+        )
+    }
+
+    for (line in sale.lines) {
         val variant = listOf(line.colourName, line.sizeLabel)
             .filter { it.isNotBlank() && it != "—" }
             .joinToString(" ")
-            .ifBlank { line.sku }
+        // A garment needs its size and colour to be identifiable — "Cotton
+        // socks" is three products. They go in the designation column with the
+        // name, which is what that column is for.
+        val designation = listOf(line.productName, variant)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
 
-        // The arithmetic is shown rather than just the answer, because checking
-        // it is most of what a receipt is for.
-        // On a gift receipt the quantity stays and the money goes.
-        val sum = if (gift) formatQty(line.qty) + " x" else
-            "${formatQty(line.qty)} x ${formatAmount(line.unitPrice)}"
-        val lineTotal = if (gift) "" else formatAmount(line.lineTotal)
-
-        // Split onto two lines when they will not both fit.
-        //
-        // `columnise` only guarantees the RIGHT figure survives — it truncates
-        // the left. On 58mm paper that put "2 x 565.71" out as "2 x 56", which
-        // reads as a unit price of 56 and is worse than using another line of
-        // paper. So the fit is checked here, where the width is known:
-        // 2 for the indent, 2 for the gap between variant and sum, 1 for the
-        // mandatory gap before the figure.
-        val fits = 2 + variant.length + 2 + sum.length + 1 + lineTotal.length <= width.columns
-
-        if (fits) {
-            add(ReceiptLine.Columns("$variant  $sum", lineTotal, indent = 2))
-        } else {
-            add(ReceiptLine.Text("  $variant"))
-            add(ReceiptLine.Columns(sum, lineTotal, indent = 2))
+        if (gift) {
+            // The quantity stays and the money goes.
+            add(ReceiptLine.Text(formatQty(line.qty).padEnd(qtyW) + designation.take(w - qtyW)))
+            continue
         }
 
-        if (line.discount > 0 && !gift) {
+        // The item carries the weight; its discount sub-lines stay light, so
+        // the eye lands on what was bought and what it cost.
+        add(
+            ReceiptLine.Text(
+                formatQty(line.qty).padEnd(qtyW) + designation.take(nameW).padEnd(nameW) +
+                    plainAmount(line.unitPrice).padStart(numW) +
+                    plainAmount(line.lineTotal).padStart(numW),
+                bold = true,
+            ),
+        )
+        if (line.discount > 0) {
+            val gross = line.unitPrice * line.qty
+            add(ReceiptLine.Text("Initial price : " + plainAmount(gross)))
+            val pct = if (gross > 0) line.discount / gross * 100.0 else 0.0
             add(
-                ReceiptLine.Columns(
-                    left = "discount",
-                    right = "-${formatAmount(line.discount)}",
-                    indent = 2,
+                ReceiptLine.Text(
+                    if (pct > 0) {
+                        "Discount " + String.format("%.1f", pct) + "% / " + plainAmount(line.discount)
+                    } else {
+                        "Discount : " + plainAmount(line.discount)
+                    },
                 ),
             )
         }
     }
-
     add(ReceiptLine.Rule)
 
-    // Everything from here down is money, so a gift receipt stops here and
-    // says why — a receipt that simply ends looks like it failed to print.
+    // Everything below is money, so a gift receipt stops here and says why —
+    // a receipt that simply ends looks like it failed to print.
     if (gift) {
         add(ReceiptLine.Text("Gift receipt - no prices shown", Align.Centre))
         add(ReceiptLine.Feed())
         add(ReceiptLine.Text("Exchangeable with this receipt", Align.Centre))
-        add(ReceiptLine.Feed())
-        add(ReceiptLine.Feed())
+        add(ReceiptLine.Feed(2))
         return@buildList
     }
 
-    add(ReceiptLine.Columns("Subtotal", formatAmount(sale.subtotal)))
-
-    for (discount in sale.discounts) {
-        add(ReceiptLine.Columns(discount.label, "-${formatAmount(discount.amount)}"))
-        // Named on the paper because that is the point of recording it: a
-        // discount nobody can be named for is not an approved discount.
-        discount.approvedByName?.let {
-            add(ReceiptLine.Columns("approved by $it", "", indent = 2))
+    // ── totals ──────────────────────────────────────────────────────────────
+    // Subtotal is the lines at full price and Discount is the gap to the
+    // total, so Subtotal − Discount foots however the discount was stored —
+    // per line, whole basket, or both.
+    if (sale.lines.isNotEmpty()) {
+        add(ReceiptLine.Columns("    Subtotal :", plainAmount(sale.subtotal)))
+        val discount = sale.discounts.sumOf { it.amount } +
+            sale.lines.sumOf { it.discount }
+        if (discount > 0) {
+            add(ReceiptLine.Columns("    Discount :", plainAmount(discount)))
         }
-    }
-
-    add(ReceiptLine.Columns("TOTAL $currency", formatAmount(sale.total), bold = true))
-    add(ReceiptLine.Columns("of which VAT", formatAmount(sale.vatAmount)))
-
-    add(ReceiptLine.Feed())
-
-    for (payment in sale.payments) {
-        add(ReceiptLine.Columns(methodLabel(payment.method), formatAmount(payment.amount)))
-        payment.tendered?.let { tendered ->
-            add(ReceiptLine.Columns("given", formatAmount(tendered), indent = 2))
-            val change = tendered - payment.amount
-            if (change > 0) {
-                add(ReceiptLine.Columns("CHANGE", formatAmount(change), bold = true))
+        for (d in sale.discounts) {
+            // Named on the paper because that is the point of recording it: a
+            // discount nobody can be named for is not an approved discount.
+            d.approvedByName?.let {
+                add(ReceiptLine.Text("    ${d.label} approved by $it"))
             }
         }
     }
+    add(ReceiptLine.Text("Total: " + suffixed(sale.total, currency), Align.Centre, bold = true))
+    if (sale.lines.isNotEmpty()) {
+        add(
+            ReceiptLine.Text(
+                "excl. VAT : " + suffixed(sale.total - sale.vatAmount, currency),
+                Align.Centre,
+                bold = true,
+            ),
+        )
+    }
+    add(ReceiptLine.Rule)
 
-    if (sale.creditNotes.isNotEmpty()) {
-        add(ReceiptLine.Rule)
-        for (note in sale.creditNotes) {
-            add(ReceiptLine.Columns("Credited ${note.creditNo}", "-${formatAmount(note.total)}"))
+    // ── tenders ─────────────────────────────────────────────────────────────
+    // The leading digit is the COUNT of tenders of that kind, as on the
+    // reference slip — two cash legs of a split read "2   CASH", not "1"
+    // twice. A voided sale never shows money as collected.
+    if (sale.status == "completed") {
+        sale.payments
+            .groupBy { methodLabel(it.method).uppercase() }
+            .forEach { (label, group) ->
+                add(
+                    ReceiptLine.Text(
+                        "${group.size}   $label : " +
+                            suffixed(group.sumOf { it.amount }, currency),
+                        bold = true,
+                    ),
+                )
+            }
+        val change = sale.payments.sumOf { (it.tendered ?: it.amount) - it.amount }
+        if (change > 0) {
+            add(ReceiptLine.Columns("    Change :", plainAmount(change)))
         }
+        add(ReceiptLine.Rule)
     }
 
-    add(ReceiptLine.Feed(2))
-    add(ReceiptLine.Text("Thank you", Align.Centre))
-    // The exchange terms are the one thing a customer comes back holding, so
-    // they must not be the line that gets cut off. Narrow paper gets a wording
-    // that fits rather than a truncated one.
-    add(
-        ReceiptLine.Text(
-            if (width.columns >= 40) {
-                "Exchange within 7 days with this receipt"
-            } else {
-                "Exchange within 7 days"
-            },
-            Align.Centre,
-        ),
-    )
+    // ── tax breakdown ───────────────────────────────────────────────────────
+    // One rate, so one group — but printed in the reference's shape so a
+    // second rate would slot in beside it rather than need a new section.
+    if (sale.lines.isNotEmpty()) {
+        val base = sale.total - sale.vatAmount
+        add(ReceiptLine.Text("VAT : " + suffixed(sale.vatAmount, currency)))
+        val both = "excl. VAT = " + suffixed(base, currency) +
+            " / Incl. tax = " + suffixed(sale.total, currency)
+        if (both.length <= w) {
+            add(ReceiptLine.Text(both))
+        } else {
+            // 58mm cannot hold it on one line, so it breaks rather than
+            // running off the edge of the paper.
+            add(ReceiptLine.Text("excl. VAT = " + suffixed(base, currency)))
+            add(ReceiptLine.Text("Incl. tax = " + suffixed(sale.total, currency)))
+        }
+        add(ReceiptLine.Rule)
+    }
+
+    if (sale.creditNotes.isNotEmpty()) {
+        for (note in sale.creditNotes) {
+            add(ReceiptLine.Columns("Credited ${note.creditNo}", "-${plainAmount(note.total)}"))
+        }
+        add(ReceiptLine.Rule)
+    }
+
+    // ── footer ──────────────────────────────────────────────────────────────
+    wrapText(
+        if (w >= 40) "Exchange within 7 days with this receipt" else "Exchange within 7 days",
+        w,
+    ).forEach { add(ReceiptLine.Text(it, Align.Centre, bold = true)) }
+    if (reprintNumber > 1) {
+        add(ReceiptLine.Text("Duplicata $reprintNumber", Align.Centre))
+    }
+    shop.vatNumber?.takeIf { it.isNotBlank() }?.let {
+        add(ReceiptLine.Text("VAT number : ${it.removePrefix("VAT").trim()}", Align.Centre))
+    }
+    sale.cashierName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
     add(ReceiptLine.Feed())
     add(ReceiptLine.Barcode(sale.saleNo))
+}
+
+/**
+ * `1550.45` — two decimals, NO thousands separator.
+ *
+ * The reference's slip prints "2233.00", not "2,233.00": a comma in a column
+ * that is already right-aligned buys nothing and costs a character of width on
+ * paper that has 32 of them.
+ */
+internal fun plainAmount(value: Double): String = String.format("%.2f", value)
+
+/** `1550.45Rs` — the reference puts the unit AFTER the figure. */
+internal fun suffixed(value: Double, currency: String): String = plainAmount(value) + currency
+
+/** Greedy word wrap, so a long name loses a line rather than its surname. */
+internal fun wrapText(text: String, columns: Int): List<String> {
+    val out = mutableListOf<String>()
+    var line = StringBuilder()
+    text.split(" ").forEach { word ->
+        when {
+            line.isEmpty() -> line.append(word)
+            line.length + 1 + word.length <= columns -> line.append(' ').append(word)
+            else -> { out += line.toString(); line = StringBuilder(word) }
+        }
+    }
+    if (line.isNotEmpty()) out += line.toString()
+    return out
 }
 
 /** "29 Jul 2026 14:32" from an ISO timestamp, sliced rather than parsed. */

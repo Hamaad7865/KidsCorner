@@ -137,6 +137,10 @@ class ReceiptTest {
         // Caught by reading the sample output: on 58mm the variant plus the sum
         // plus the total did not fit, and columnise truncated the LEFT — so
         // "2 x 565.71" printed as "2 x 56", which reads as a unit price of 56.
+        //
+        // The layout is Carfectionist's four columns now, and it defends the
+        // same thing a different way: the designation is truncated on purpose,
+        // and UP and Total are padStart'd so they always survive whole.
         val long = SaleDetailLine(
             id = 9,
             productName = "Cotton tee, short sleeve",
@@ -152,9 +156,9 @@ class ReceiptTest {
             val text = buildReceipt(sale(lines = listOf(long)), shop, width).toPlainText(width)
             assertTrue(
                 "unit price truncated on ${width.label}:\n$text",
-                text.contains("2 x 565.71"),
+                text.contains("565.71"),
             )
-            assertTrue("line total lost on ${width.label}", text.contains("1,131.42"))
+            assertTrue("line total lost on ${width.label}", text.contains("1131.42"))
         }
     }
 
@@ -235,7 +239,7 @@ class ReceiptTest {
     @Test
     fun `change is shown when cash was over-tendered`() {
         val text = buildReceipt(sale(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
-        assertTrue(text.contains("CHANGE"))
+        assertTrue(text.contains("Change :"))
         assertTrue(text.contains("68.58"))
     }
 
@@ -268,7 +272,9 @@ class ReceiptTest {
             shop,
             PaperWidth.Mm80,
         ).toPlainText(PaperWidth.Mm80)
-        assertTrue(text.contains("my.t money"))
+        // Uppercased on the tender line, as the reference slip has it — but
+        // still the shop's word for it, never the database's column value.
+        assertTrue(text.contains("MY.T MONEY"))
         assertTrue(!text.contains("myt_money"))
     }
 
@@ -291,7 +297,9 @@ class ReceiptTest {
         val bytes = EscPos.encode(lines, PaperWidth.Mm80)
         val ascii = String(bytes, Charsets.ISO_8859_1)
 
-        for (needle in listOf("Kids Corner", "S260729-60", "Cotton tee", "1,131.42", "CHANGE")) {
+        // No thousands separator now — the reference's slip prints
+        // "1131.42", and a comma costs a column on 58mm paper.
+        for (needle in listOf("KIDS CORNER", "S260729-60", "Cotton tee", "1131.42", "Change")) {
             assertTrue("bytes are missing \"$needle\"", ascii.contains(needle))
         }
     }
@@ -450,7 +458,7 @@ class ReceiptTest {
     @Test
     fun `an ordinary receipt still shows the money`() {
         val text = buildReceipt(sale(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
-        assertTrue(text.contains("TOTAL"))
+        assertTrue(text.contains("Total:"))
         assertTrue(text.contains("565.71"))
     }
 }
