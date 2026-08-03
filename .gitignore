@@ -45,3 +45,6 @@ next-env.d.ts
 # cloudflare / opennext
 .open-next/
 .wrangler/
+
+# Scratch state from tooling — a port number and a token, never source.
+.superpowers/
