@@ -337,7 +337,11 @@ class GalleryActivity : ComponentActivity() {
                             SellScreen(
                             catalog = SAMPLE_CATALOG,
                             lines = cart,
-                            totals = cartTotals(cart, 145.14, 0.15),
+                            // Derived, not hard-coded: taking the discount off
+                            // has to move the totals, or this screen cannot
+                            // show the no-discount state at all — which is the
+                            // state a real basket is in nearly all the time.
+                            totals = cartTotals(cart, basketDisc?.amount ?: 0.0, 0.15),
                             cashier = SAMPLE_MANAGERS[0],
                             shopName = "Kids Corner",
                             tillOpen = true,

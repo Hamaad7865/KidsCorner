@@ -2046,7 +2046,31 @@ private fun CartFooter(
         }
 
         Spacer(Modifier.height(9.dp))
-        TotalRow("Subtotal", formatAmount(totals.subtotal), 12.5.sp, Handoff.Muted2, Handoff.InkStrong)
+
+        /*
+         * Only once something has come off.
+         *
+         * With no discount this row is the total again — and the panel above
+         * it already says the total twice, once as the figure and once on the
+         * PAY key. A third copy in the faintest type on the screen is the one
+         * a cashier learns to stop reading, which is a bad habit to teach a
+         * row that matters the moment a discount appears.
+         *
+         * With a discount it earns its place: subtotal, less what came off,
+         * equals what the customer pays. That is an arithmetic somebody can
+         * follow at the counter, and the two rows below it are the middle of
+         * it — which is why they have always been conditional and this one,
+         * inconsistently, was not.
+         */
+        if (totals.lineDiscounts > 0 || totals.saleDiscount > 0) {
+            TotalRow(
+                "Subtotal",
+                formatAmount(totals.subtotal),
+                12.5.sp,
+                Handoff.Muted2,
+                Handoff.InkStrong,
+            )
+        }
 
         if (totals.lineDiscounts > 0) {
             TotalRow(

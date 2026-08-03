@@ -386,7 +386,15 @@ export function SellScreen({
         </div>
 
         <footer className="space-y-2 border-t p-4">
-          <Row label="Subtotal" value={formatRs(totals.subtotal)} />
+          {/* Only once something has come off. With no discount this is the
+              total again, under a total the panel already states twice — and
+              the same row on the tablet was dropped for the same reason, so
+              the two tills keep saying the same thing. With a discount on, it
+              is the first line of an arithmetic a customer can follow:
+              subtotal, less what came off, equals what they pay. */}
+          {totals.lineDiscounts > 0 || totals.saleDiscount > 0 ? (
+            <Row label="Subtotal" value={formatRs(totals.subtotal)} />
+          ) : null}
           {totals.lineDiscounts > 0 ? (
             <Row
               label="Line discounts"
