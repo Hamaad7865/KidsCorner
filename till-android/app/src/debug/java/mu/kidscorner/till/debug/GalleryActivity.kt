@@ -425,6 +425,9 @@ class GalleryActivity : ComponentActivity() {
                             onOpenHistory = {},
                         )
 
+                        // Split bill is reached from the header, so the
+                        // gallery entry is the same screen — tap "Split bill"
+                        // to see the allocation mode.
                         "payment" -> PaymentScreen(
                             totals = cartTotals(SAMPLE_LINES, 0.0, 0.15),
                             lines = SAMPLE_LINES,

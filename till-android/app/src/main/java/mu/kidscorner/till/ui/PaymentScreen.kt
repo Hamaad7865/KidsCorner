@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import kotlin.math.abs
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -140,6 +144,39 @@ fun PaymentScreen(
     // be typed into AMOUNT; here the amount follows what is outstanding until
     // a split is on, so the pad rests on the tender.
     var padOnAmount by remember { mutableStateOf(false) }
+
+    // ── splitting ───────────────────────────────────────────────────────────
+    // Held here rather than in the ViewModel for the same reason `payments` is:
+    // it is scratch until Record, and a sale that never completes should leave
+    // nothing behind.
+    var splitMode by remember { mutableStateOf(false) }
+    var allocation by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    var splitFocus by remember { mutableStateOf(paymentMethods.firstOrNull() ?: "cash") }
+    var splitEntry by remember { mutableStateOf("") }
+    var splitCashTender by remember { mutableStateOf(0.0) }
+
+    fun splitAllocated() = round2(allocation.values.sum())
+
+    fun recordSplit() {
+        val rows = paymentMethods.mapNotNull { m ->
+            val amount = allocation[m] ?: 0.0
+            if (amount <= 0) null
+            else SalePayment(
+                method = m,
+                amount = amount,
+                // Only cash carries a tender: a card charged more than it
+                // settles is an error, not change.
+                tendered = if (m == "cash" && splitCashTender > amount) {
+                    round2(splitCashTender)
+                } else {
+                    null
+                },
+            )
+        }
+        if (rows.isEmpty()) return
+        val cashRow = allocation["cash"] ?: 0.0
+        onConfirm(rows, round2(maxOf(0.0, splitCashTender - cashRow)))
+    }
     val onAmount = padOnAmount && !isCash
 
     Column(
@@ -194,6 +231,47 @@ fun PaymentScreen(
                 color = Handoff.Muted,
                 modifier = Modifier.weight(1f),
             )
+            /*
+             * Only offered when the shop has more than one way to be paid —
+             * a split across one method is just a payment.
+             */
+            if (paymentMethods.size > 1) {
+                Surface(
+                    onClick = {
+                        splitMode = !splitMode
+                        // Neither mode inherits the other's half-finished
+                        // work: carrying a typed tender into an allocation
+                        // would silently pre-fill a row nobody chose.
+                        entry = ""
+                        splitEntry = ""
+                        allocation = emptyMap()
+                        splitCashTender = 0.0
+                        payments = emptyList()
+                    },
+                    enabled = !busy && !frozen,
+                    shape = RoundedCornerShape(11.dp),
+                    color = if (splitMode) Handoff.AccentTint else Handoff.Surface,
+                    contentColor = if (splitMode) Handoff.AccentText else Handoff.InkStrong,
+                    border = BorderStroke(
+                        if (splitMode) 2.dp else 1.dp,
+                        if (splitMode) Handoff.AccentSolid else Handoff.Line,
+                    ),
+                    modifier = Modifier.height(46.dp),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 15.dp).fillMaxHeight(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(Icons.Default.CallSplit, null, Modifier.size(17.dp))
+                        Text(
+                            if (splitMode) "Single method" else "Split bill",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
         }
 
         // ═══════════════════════════════════ bill · methods · money ══════════
@@ -271,189 +349,229 @@ fun PaymentScreen(
                 }
             }
 
-            // ── means of payment ────────────────────────────────────────────
-            Column(
-                Modifier.weight(1f).fillMaxHeight()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Handoff.Surface)
-                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
-                    .padding(18.dp),
-            ) {
-                Text(
-                    "MEANS OF PAYMENT",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp,
-                    color = Handoff.Muted3,
+            if (splitMode) {
+                SplitAllocation(
+                    methods = paymentMethods,
+                    total = totals.total,
+                    allocation = allocation,
+                    focus = splitFocus,
+                    cashTendered = splitCashTender,
+                    busy = busy,
+                    frozen = frozen,
+                    error = error,
+                    parkable = parkable,
+                    onFocus = { splitFocus = it; splitEntry = "" },
+                    onKey = { key ->
+                        splitEntry =
+                            if (key == "back") splitEntry.dropLast(1)
+                            else splitEntry.appendPadKey(key)
+                        val typed = splitEntry.toDoubleOrNull() ?: 0.0
+                        allocation = allocation + (splitFocus to round2(typed))
+                        if (splitFocus == "cash") splitCashTender = round2(typed)
+                    },
+                    onClearRow = { m ->
+                        allocation = allocation - m
+                        if (m == "cash") splitCashTender = 0.0
+                        if (m == splitFocus) splitEntry = ""
+                    },
+                    onFillRest = { m ->
+                        val others = round2(
+                            allocation.filterKeys { it != m }.values.sum(),
+                        )
+                        val rest = round2(maxOf(0.0, totals.total - others))
+                        allocation = allocation + (m to rest)
+                        if (m == "cash") splitCashTender = rest
+                        splitEntry = trimZeros(rest)
+                    },
+                    onRecord = { recordSplit() },
+                    onRetry = onRetry,
+                    onPark = onPark,
                 )
-                Spacer(Modifier.height(14.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    paymentMethods.chunked(2).forEach { pair ->
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            pair.forEach { candidate ->
-                                Box(Modifier.weight(1f)) {
-                                    MethodTile(
-                                        method = candidate,
-                                        selected = method == candidate,
-                                        enabled = !busy && !frozen,
-                                        onPick = {
-                                            method = candidate
-                                            entry = ""
-                                        },
-                                    )
-                                }
-                            }
-                            if (pair.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                }
-
-                if (payments.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
+            } else {
+                // ── means of payment ────────────────────────────────────────────
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Handoff.Surface)
+                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+                        .padding(18.dp),
+                ) {
                     Text(
-                        "ALREADY TAKEN",
-                        fontSize = 10.sp,
+                        "MEANS OF PAYMENT",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
                         color = Handoff.Muted3,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        payments.forEachIndexed { index, payment ->
-                            TakenPayment(
-                                payment = payment,
-                                enabled = !busy && !frozen,
-                                onRemove = {
-                                    payments = payments.filterIndexed { i, _ -> i != index }
-                                },
-                            )
+                    Spacer(Modifier.height(14.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        paymentMethods.chunked(2).forEach { pair ->
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                pair.forEach { candidate ->
+                                    Box(Modifier.weight(1f)) {
+                                        MethodTile(
+                                            method = candidate,
+                                            selected = method == candidate,
+                                            enabled = !busy && !frozen,
+                                            onPick = {
+                                                method = candidate
+                                                entry = ""
+                                            },
+                                        )
+                                    }
+                                }
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+
+                    if (payments.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "ALREADY TAKEN",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = Handoff.Muted3,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            payments.forEachIndexed { index, payment ->
+                                TakenPayment(
+                                    payment = payment,
+                                    enabled = !busy && !frozen,
+                                    onRemove = {
+                                        payments = payments.filterIndexed { i, _ -> i != index }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            // ── the money ───────────────────────────────────────────────────
-            Column(
-                Modifier.weight(1f).fillMaxHeight()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Handoff.Surface)
-                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
-                    .padding(18.dp),
-            ) {
-                MoneyRow("Total", formatRs(totals.total), Handoff.InkFigure)
-                Spacer(Modifier.height(6.dp))
-                MoneyRow(
-                    "Balance",
-                    formatRs(outstanding),
-                    // Amber while the customer still owes, quiet once settled.
-                    // Carfectionist turns this green; Kids Corner has no green
-                    // — the palette is white and the logo's red, and amber is
-                    // already this shop's word for money still in the air.
-                    if (outstanding > 0) Handoff.WarnText else Handoff.Muted3,
-                )
-                Spacer(Modifier.height(12.dp))
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
-                Spacer(Modifier.height(12.dp))
-
+                // ── the money ───────────────────────────────────────────────────
                 Column(
-                    Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Handoff.Surface)
+                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+                        .padding(18.dp),
                 ) {
-                    DisplayCard(
-                        label = "AMOUNT",
-                        value = formatRs(if (entry.isBlank()) outstanding else takeNow),
-                        highlight = onAmount,
-                        onClick = { padOnAmount = true },
+                    MoneyRow("Total", formatRs(totals.total), Handoff.InkFigure)
+                    Spacer(Modifier.height(6.dp))
+                    MoneyRow(
+                        "Balance",
+                        formatRs(outstanding),
+                        // Amber while the customer still owes, quiet once settled.
+                        // Carfectionist turns this green; Kids Corner has no green
+                        // — the palette is white and the logo's red, and amber is
+                        // already this shop's word for money still in the air.
+                        if (outstanding > 0) Handoff.WarnText else Handoff.Muted3,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        QuickChip("Full") {
-                            entry = trimZeros(outstanding)
-                            padOnAmount = false
-                        }
-                    }
+                    Spacer(Modifier.height(12.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+                    Spacer(Modifier.height(12.dp))
 
-                    if (isCash) {
+                    Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         DisplayCard(
-                            label = "CASH TENDERED",
-                            value = formatRs(if (entry.isBlank()) 0.0 else entered),
-                            highlight = !onAmount,
-                            onClick = { padOnAmount = false },
+                            label = "AMOUNT",
+                            value = formatRs(if (entry.isBlank()) outstanding else takeNow),
+                            highlight = onAmount,
+                            onClick = { padOnAmount = true },
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QuickChip("Exact") { entry = trimZeros(outstanding) }
-                            QuickChip("1,000") { entry = "1000" }
-                            QuickChip("5,000") { entry = "5000" }
+                            QuickChip("Full") {
+                                entry = trimZeros(outstanding)
+                                padOnAmount = false
+                            }
                         }
-                        Row(
-                            Modifier.fillMaxWidth().padding(top = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Change",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Handoff.Muted,
+
+                        if (isCash) {
+                            DisplayCard(
+                                label = "CASH TENDERED",
+                                value = formatRs(if (entry.isBlank()) 0.0 else entered),
+                                highlight = !onAmount,
+                                onClick = { padOnAmount = false },
                             )
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                formatRs(change),
-                                fontFamily = PlexMono,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (change > 0) Handoff.ChangeFigure else Handoff.Muted3,
-                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                QuickChip("Exact") { entry = trimZeros(outstanding) }
+                                QuickChip("1,000") { entry = "1000" }
+                                QuickChip("5,000") { entry = "5000" }
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "Change",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Handoff.Muted,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    formatRs(change),
+                                    fontFamily = PlexMono,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (change > 0) Handoff.ChangeFigure else Handoff.Muted3,
+                                )
+                            }
+                        }
+
+                        NumPad(enabled = !busy && !frozen) { key ->
+                            entry = if (key == "back") entry.dropLast(1) else entry.appendPadKey(key)
                         }
                     }
 
-                    NumPad(enabled = !busy && !frozen) { key ->
-                        entry = if (key == "back") entry.dropLast(1) else entry.appendPadKey(key)
+                    Spacer(Modifier.height(10.dp))
+                    if (error != null) {
+                        Text(error, fontSize = 13.sp, color = Handoff.Danger)
+                        Spacer(Modifier.height(6.dp))
                     }
-                }
+                    if (frozen) {
+                        FrozenActions(
+                            busy = busy,
+                            parkable = parkable,
+                            onRetry = onRetry,
+                            onPark = onPark,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
 
-                Spacer(Modifier.height(10.dp))
-                if (error != null) {
-                    Text(error, fontSize = 13.sp, color = Handoff.Danger)
-                    Spacer(Modifier.height(6.dp))
-                }
-                if (frozen) {
-                    FrozenActions(
-                        busy = busy,
-                        parkable = parkable,
-                        onRetry = onRetry,
-                        onPark = onPark,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-
-                val recordable = ready && takeNow > 0
-                Surface(
-                    onClick = { primaryTap() },
-                    enabled = recordable,
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (recordable) Handoff.AccentSolid else Handoff.Blocked,
-                    contentColor = if (recordable) Color.White else Handoff.BlockedText,
-                    shadowElevation = if (recordable) 6.dp else 0.dp,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        if (busy) {
-                            CircularProgressIndicator(Modifier.size(24.dp), Color.White, 2.dp)
-                        } else {
-                            Text(
-                                when {
-                                    !recordable && isCash -> "Enter the cash received"
-                                    !recordable -> "Enter an amount"
-                                    completes -> "Record " + formatRs(takeNow)
-                                    else ->
-                                        "Take " + formatRs(takeNow) + " — " +
-                                            formatRs(round2(outstanding - takeNow)) + " left"
-                                },
-                                fontSize = 16.5.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
+                    val recordable = ready && takeNow > 0
+                    Surface(
+                        onClick = { primaryTap() },
+                        enabled = recordable,
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (recordable) Handoff.AccentSolid else Handoff.Blocked,
+                        contentColor = if (recordable) Color.White else Handoff.BlockedText,
+                        shadowElevation = if (recordable) 6.dp else 0.dp,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                    ) {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            if (busy) {
+                                CircularProgressIndicator(Modifier.size(24.dp), Color.White, 2.dp)
+                            } else {
+                                Text(
+                                    when {
+                                        !recordable && isCash -> "Enter the cash received"
+                                        !recordable -> "Enter an amount"
+                                        completes -> "Record " + formatRs(takeNow)
+                                        else ->
+                                            "Take " + formatRs(takeNow) + " — " +
+                                                formatRs(round2(outstanding - takeNow)) + " left"
+                                    },
+                                    fontSize = 16.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
                         }
                     }
                 }
@@ -626,6 +744,9 @@ private fun MethodTile(
 private fun methodIcon(method: String): ImageVector = when (method) {
     "cash" -> Icons.Default.Payments
     "card" -> Icons.Default.CreditCard
+    // A bank transfer is not a phone wallet. Juice and my.t money are, and
+    // sharing the glyph with them made the three read as one thing.
+    "bank" -> Icons.Default.AccountBalance
     else -> Icons.Default.PhoneAndroid
 }
 
@@ -889,6 +1010,231 @@ private fun FrozenActions(
                         "Save it and serve the next customer",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Splitting one basket across several methods.
+ *
+ * The machinery was already here — `complete_sale_keyed` has always taken an
+ * ARRAY of payments and the server sums them — so this is the tablet catching
+ * up with the web till and with the reference, not a new capability.
+ *
+ * Carfectionist's shape: one row per method carrying its allocated amount, the
+ * focused row taking the keys. Record lights when the allocation adds up to
+ * the total, and not before — a sale that is short is not a sale.
+ *
+ * CASH IS THE ONLY ROW THAT CAN BE OVER-TENDERED. Handing over a 2,000 note
+ * against a 1,450 allocation is change; a card charged 550 more than it should
+ * be is a mistake. So the split rows are what each method SETTLES, and only
+ * cash carries a tender above it.
+ */
+@Composable
+private fun RowScope.SplitAllocation(
+    methods: List<String>,
+    total: Double,
+    allocation: Map<String, Double>,
+    focus: String,
+    cashTendered: Double,
+    busy: Boolean,
+    frozen: Boolean,
+    error: String?,
+    parkable: Boolean,
+    onFocus: (String) -> Unit,
+    onKey: (String) -> Unit,
+    onClearRow: (String) -> Unit,
+    onFillRest: (String) -> Unit,
+    onRecord: () -> Unit,
+    onRetry: () -> Unit,
+    onPark: () -> Unit,
+) {
+    val allocated = round2(allocation.values.sum())
+    val left = round2(total - allocated)
+    val cashAllocated = allocation["cash"] ?: 0.0
+    val change = round2(maxOf(0.0, cashTendered - cashAllocated))
+
+    // ── middle: one row per method ──────────────────────────────────────────
+    Column(
+        Modifier.weight(1f).fillMaxHeight()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Handoff.Surface)
+            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Text(
+            "HOW IS THE CUSTOMER PAYING?",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            color = Handoff.Muted,
+        )
+        methods.forEach { m ->
+            val focused = focus == m
+            val amount = allocation[m] ?: 0.0
+            Row(
+                Modifier.fillMaxWidth().height(64.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(if (focused) Handoff.AccentTint else Handoff.Well)
+                    .border(
+                        if (focused) 2.dp else 1.dp,
+                        if (focused) Handoff.AccentSolid else Handoff.LineSoft,
+                        RoundedCornerShape(13.dp),
+                    )
+                    .clickable(enabled = !busy && !frozen) { onFocus(m) }
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                Box(
+                    Modifier.size(34.dp).clip(CircleShape).background(Handoff.AccentSolid),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(methodIcon(m), null, tint = Color.White, modifier = Modifier.size(18.dp))
+                }
+                Text(
+                    methodLabel(m),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (focused) Handoff.AccentText else Handoff.Ink,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    formatAmount(amount),
+                    fontFamily = PlexMono,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (amount > 0) Handoff.InkFigure else Handoff.Muted3,
+                )
+                if (amount > 0) {
+                    Surface(
+                        onClick = { onClearRow(m) },
+                        enabled = !busy && !frozen,
+                        shape = RoundedCornerShape(9.dp),
+                        color = Color.Transparent,
+                        contentColor = Handoff.Muted4,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Icon(Icons.Default.Close, "Clear ${methodLabel(m)}", Modifier.size(15.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+        Text(
+            when {
+                left > 0.005 -> "${formatRs(left)} still to allocate. Tap a method, then key its share."
+                left < -0.005 -> "That is ${formatRs(-left)} more than the bill. Clear a row and try again."
+                else -> "Every rupee is allocated. Record when the money is in hand."
+            },
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (left < -0.005) Handoff.Danger else Handoff.Muted,
+        )
+    }
+
+    // ── right: totals, the focused row's keys, Record ────────────────────────
+    Column(
+        Modifier.weight(1f).fillMaxHeight()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Handoff.Surface)
+            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+            .padding(18.dp),
+    ) {
+        MoneyRow("Total", formatRs(total), Handoff.InkFigure)
+        Spacer(Modifier.height(6.dp))
+        MoneyRow(
+            "Left to allocate",
+            formatRs(left),
+            when {
+                left < -0.005 -> Handoff.Danger
+                left > 0.005 -> Handoff.WarnText
+                else -> Handoff.Muted3
+            },
+        )
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+        Spacer(Modifier.height(12.dp))
+
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            DisplayCard(
+                label = methodLabel(focus).uppercase(),
+                value = formatRs(allocation[focus] ?: 0.0),
+                highlight = true,
+                onClick = {},
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                QuickChip("Rest") { onFillRest(focus) }
+                QuickChip("Clear") { onClearRow(focus) }
+            }
+
+            // Only cash can be handed over in excess of what it settles.
+            if (focus == "cash" && cashAllocated > 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Change",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Handoff.Muted,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        formatRs(change),
+                        fontFamily = PlexMono,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (change > 0) Handoff.ChangeFigure else Handoff.Muted3,
+                    )
+                }
+            }
+
+            NumPad(enabled = !busy && !frozen, onKey = onKey)
+        }
+
+        Spacer(Modifier.height(10.dp))
+        if (error != null) {
+            Text(error, fontSize = 13.sp, color = Handoff.Danger)
+            Spacer(Modifier.height(6.dp))
+        }
+        if (frozen) {
+            FrozenActions(busy = busy, parkable = parkable, onRetry = onRetry, onPark = onPark)
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // Settled to the rupee, or not at all. A short split is a short sale.
+        val exact = abs(left) < 0.005 && allocated > 0
+        val recordable = exact && !busy && !frozen
+        Surface(
+            onClick = onRecord,
+            enabled = recordable,
+            shape = RoundedCornerShape(14.dp),
+            color = if (recordable) Handoff.AccentSolid else Handoff.Blocked,
+            contentColor = if (recordable) Color.White else Handoff.BlockedText,
+            shadowElevation = if (recordable) 6.dp else 0.dp,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+        ) {
+            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                if (busy) {
+                    CircularProgressIndicator(Modifier.size(24.dp), Color.White, 2.dp)
+                } else {
+                    Text(
+                        if (exact) "Record " + formatRs(total) else "Allocate the whole bill first",
+                        fontSize = 16.5.sp,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }
