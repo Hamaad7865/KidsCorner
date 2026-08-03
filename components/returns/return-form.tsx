@@ -23,7 +23,7 @@ const REFUND_METHODS = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
   { value: "juice", label: "Juice" },
-  { value: "myt_money", label: "my.t money" },
+  { value: "bank", label: "Bank" },
   // No money moves, so it must not reduce the cash expected in the drawer.
   { value: "exchange", label: "Exchange (no refund)" },
 ]

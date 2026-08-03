@@ -47,7 +47,18 @@ export type PurchaseStatus = (typeof PURCHASE_STATUSES)[number]
 export const SALE_STATUSES = ["completed", "refunded", "void"] as const
 export type SaleStatus = (typeof SALE_STATUSES)[number]
 
-export const PAYMENT_METHODS = ["cash", "card", "juice", "myt_money"] as const
+/**
+ * Every method the ledger has ever been written in — NOT what the shop offers.
+ *
+ * The two lists are different on purpose, and migration 040 says why at
+ * length: this one only grows, because ten payments are already recorded as
+ * `myt_money` and a receipt reprinted next year still has to render them.
+ * What the shop offers today is `settings.payment_methods`, which both tills
+ * read; retiring a method is a change there and nowhere else.
+ *
+ * So `myt_money` stays here, and stays out of the settings list.
+ */
+export const PAYMENT_METHODS = ["cash", "card", "juice", "myt_money", "bank"] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -55,6 +66,7 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   card: "Card",
   juice: "Juice",
   myt_money: "my.t money",
+  bank: "Bank",
 }
 
 function isMember<T extends readonly string[]>(

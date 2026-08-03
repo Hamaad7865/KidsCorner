@@ -837,6 +837,7 @@ private fun methodSub(method: String): String = when (method) {
     "card" -> "Visa · Mastercard"
     "juice" -> "MCB mobile"
     "myt_money" -> "Scan to pay"
+    "bank" -> "Straight to the account"
     else -> ""
 }
 
@@ -845,6 +846,7 @@ private fun methodHint(method: String): String = when (method) {
     "card" -> "Insert or tap the card on the terminal"
     "juice" -> "Customer sends to Kids Corner on Juice"
     "myt_money" -> "Customer scans the my.t money QR"
+    "bank" -> "Check the transfer has landed before handing over"
     else -> "Take the cash and count the change"
 }
 

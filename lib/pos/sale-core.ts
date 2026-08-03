@@ -770,7 +770,7 @@ const saleItemSchema = z
   )
 
 const paymentSchema = z.object({
-  method: z.enum(["cash", "card", "juice", "myt_money"]),
+  method: z.enum(["cash", "card", "juice", "myt_money", "bank"]),
   amount: z.number().min(0),
   tendered: absentAsNull(z.number().min(0)),
 })

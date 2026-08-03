@@ -428,7 +428,7 @@ class GalleryActivity : ComponentActivity() {
                         "payment" -> PaymentScreen(
                             totals = cartTotals(SAMPLE_LINES, 0.0, 0.15),
                             lines = SAMPLE_LINES,
-                            paymentMethods = listOf("cash", "card", "juice", "myt_money"),
+                            paymentMethods = listOf("cash", "card", "juice", "bank"),
                             cashierName = "Priya Ramdin",
                             busy = false,
                             error = null,

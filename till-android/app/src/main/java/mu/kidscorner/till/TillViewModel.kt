@@ -1874,7 +1874,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             .joinToString(", ") { m ->
                                 when (m) {
                                     "cash" -> "Cash"; "card" -> "Card"; "juice" -> "Juice"
-                                    "myt_money" -> "my.t money"; else -> m
+                                    "myt_money" -> "my.t money"; "bank" -> "Bank"; else -> m
                                 }
                             },
                     )

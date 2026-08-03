@@ -30,7 +30,7 @@ import { createClient } from "@/lib/supabase/server"
  * that, because two copies of an over-return rule is one too many.
  */
 
-const REFUND_METHODS = ["cash", "card", "juice", "myt_money", "exchange"] as const
+const REFUND_METHODS = ["cash", "card", "juice", "myt_money", "bank", "exchange"] as const
 
 const creditNoteSchema = z.object({
   saleId: z.number().int().positive(),

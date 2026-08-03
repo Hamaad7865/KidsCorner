@@ -210,5 +210,6 @@ internal fun methodLabel(method: String): String = when (method) {
     "card" -> "Card"
     "juice" -> "Juice"
     "myt_money" -> "my.t money"
+    "bank" -> "Bank"
     else -> method
 }

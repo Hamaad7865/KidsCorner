@@ -24,7 +24,7 @@ const bodySchema = z.object({
   saleId: z.number().int().positive(),
   shiftId: z.number().int().positive().nullish().transform((v) => v ?? null),
   reason: z.string().trim().min(1, "Pick a reason for the return."),
-  refundMethod: z.enum(["cash", "card", "juice", "myt_money", "exchange"]),
+  refundMethod: z.enum(["cash", "card", "juice", "myt_money", "bank", "exchange"]),
   restock: z.boolean().default(true),
   /**
    * A manager's PIN, when the shop has asked for one. Ignored otherwise, so a
