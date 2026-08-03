@@ -159,7 +159,7 @@ fun TodaysSalesDialog(
                                 Text(
                                     shortClock(sale.saleDate),
                                     fontSize = 11.5.sp,
-                                    color = Handoff.Muted4,
+                                    color = Handoff.Muted3,
                                     modifier = Modifier.padding(top = 2.dp),
                                 )
                             }

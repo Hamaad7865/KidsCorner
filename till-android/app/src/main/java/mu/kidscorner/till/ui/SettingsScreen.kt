@@ -346,7 +346,7 @@ private fun PeripheralCard(
                             Text(
                                 card.model,
                                 fontSize = 11.5.sp,
-                                color = Handoff.Faint,
+                                color = Handoff.Muted3,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -388,7 +388,7 @@ private fun PeripheralCard(
                     Text(
                         "No driver on this till yet.",
                         fontSize = 12.sp,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                         modifier = Modifier.padding(top = 14.dp),
                     )
                 }

@@ -578,7 +578,7 @@ private fun SearchField(
                         "Scan barcode or search…",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                     )
                 }
                 inner()
@@ -769,7 +769,7 @@ private fun TileGrid(
                             Text(
                                 group.sizes,
                                 fontSize = 10.5.sp,
-                                color = Handoff.Muted4,
+                                color = Handoff.Muted3,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.End,
@@ -1092,7 +1092,7 @@ private fun BasketPane(
                     Text(
                         "No tag? Tap Browse, or type a name below.",
                         fontSize = 14.sp,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -1419,7 +1419,7 @@ private fun CartRow(
                         formatAmount(line.unitPrice * line.qty),
                         fontFamily = PlexMono,
                         fontSize = 13.sp,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                         textDecoration = TextDecoration.LineThrough,
                     )
                 }
@@ -1446,7 +1446,7 @@ private fun CartRow(
             Surface(
                 onClick = { onRemove(line.variantId) },
                 color = Color.Transparent,
-                contentColor = Handoff.Fainter,
+                contentColor = Handoff.Muted4,
                 shape = RoundedCornerShape(10.dp),
                 modifier = Modifier.size(48.dp),
             ) {
@@ -1637,7 +1637,7 @@ private fun DiscountField(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (!percent) {
-            Text("Rs", fontSize = 11.sp, color = Handoff.Muted4)
+            Text("Rs", fontSize = 11.sp, color = Handoff.Muted3)
             Spacer(Modifier.width(4.dp))
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
@@ -1645,7 +1645,7 @@ private fun DiscountField(
                 Text(
                     if (percent) "Any %" else "Any",
                     fontSize = 12.5.sp,
-                    color = Handoff.Muted4,
+                    color = Handoff.Muted3,
                     maxLines = 1,
                 )
             }
@@ -1668,7 +1668,7 @@ private fun DiscountField(
             )
         }
         if (percent) {
-            Text("%", fontSize = 11.sp, color = Handoff.Muted4)
+            Text("%", fontSize = 11.sp, color = Handoff.Muted3)
         }
     }
 }
@@ -1706,7 +1706,7 @@ private fun PriceField(
             .padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Rs", fontSize = 11.sp, color = Handoff.Muted4)
+        Text("Rs", fontSize = 11.sp, color = Handoff.Muted3)
         Spacer(Modifier.width(4.dp))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
@@ -1714,7 +1714,7 @@ private fun PriceField(
                     formatAmount(listPrice),
                     fontSize = 12.5.sp,
                     fontFamily = PlexMono,
-                    color = Handoff.Muted4,
+                    color = Handoff.Muted3,
                     maxLines = 1,
                 )
             }
@@ -2488,7 +2488,7 @@ private fun RailFilter(
         Icon(Icons.Default.Search, null, Modifier.size(15.dp), tint = Handoff.Muted4)
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             if (value.isEmpty()) {
-                Text("Search…", color = Handoff.Muted4, fontSize = 13.sp)
+                Text("Search…", color = Handoff.Muted3, fontSize = 13.sp)
             }
             BasicTextField(
                 value = value,

@@ -159,7 +159,7 @@ fun PrinterSettingsDialog(
                         "Port 9100 unless the printer says otherwise."
                     },
                     fontSize = 11.5.sp,
-                    color = Handoff.Muted4,
+                    color = Handoff.Muted3,
                 )
 
                 FieldLabel("Name (optional)")
@@ -177,7 +177,7 @@ fun PrinterSettingsDialog(
                 "Getting this wrong does not show an error — the receipt wraps " +
                     "mid-figure, so a total prints across two lines.",
                 fontSize = 11.5.sp,
-                color = Handoff.Muted4,
+                color = Handoff.Muted3,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PaperWidth.entries.forEach { option ->

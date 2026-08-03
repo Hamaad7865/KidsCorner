@@ -355,7 +355,7 @@ fun HeldSalesDialog(
                                 shape = RoundedCornerShape(11.dp),
                                 color = if (armed) Handoff.DangerTint else Color.Transparent,
                                 contentColor =
-                                    if (armed) Handoff.Danger else Handoff.Fainter,
+                                    if (armed) Handoff.Danger else Handoff.Muted4,
                                 border =
                                     if (armed) BorderStroke(1.dp, Handoff.DangerLine) else null,
                                 modifier =
@@ -628,7 +628,7 @@ fun HandoffField(
                     Text(
                         placeholder,
                         fontSize = 15.5.sp,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                         fontFamily = if (mono) PlexMono else null,
                     )
                 }

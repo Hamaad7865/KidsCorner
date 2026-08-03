@@ -333,7 +333,7 @@ fun SaleNoteDialog(
                                     Text(
                                         "e.g. Coming back Saturday for the second pair",
                                         fontSize = 15.5.sp,
-                                        color = Handoff.Faint,
+                                        color = Handoff.Muted3,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )

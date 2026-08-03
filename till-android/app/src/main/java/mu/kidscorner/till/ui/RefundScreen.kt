@@ -209,7 +209,7 @@ fun RefundScreen(
                                                 "$max of ${line.qty} left to return"
                                             },
                                             fontSize = 12.sp,
-                                            color = Handoff.Faint,
+                                            color = Handoff.Muted3,
                                         )
                                     }
                                 }
@@ -428,7 +428,7 @@ fun RefundScreen(
                 },
                 fontSize = 11.5.sp,
                 lineHeight = 17.25.sp,
-                color = Handoff.Muted4,
+                color = Handoff.Muted3,
                 modifier = Modifier.padding(top = 10.dp),
             )
 

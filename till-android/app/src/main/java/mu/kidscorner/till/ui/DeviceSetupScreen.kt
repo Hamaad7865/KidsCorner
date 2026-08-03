@@ -165,7 +165,7 @@ fun DeviceSetupScreen(
                     "The password is sent to the shop's own server and is never stored " +
                         "on this tablet — only the token it hands back.",
                     fontSize = 11.5.sp,
-                    color = Handoff.Muted4,
+                    color = Handoff.Muted3,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
                 )

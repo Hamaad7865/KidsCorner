@@ -186,7 +186,7 @@ fun CustomItemDialog(
                             "Rs",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Handoff.Muted4,
+                            color = Handoff.Muted3,
                             modifier = Modifier.weight(1f),
                         )
                         Text(

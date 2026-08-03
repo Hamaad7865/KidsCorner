@@ -153,7 +153,7 @@ fun BasketDiscountDialog(
                             if (percent) "% off" else "Rs off",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Handoff.Muted4,
+                            color = Handoff.Muted3,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
@@ -252,7 +252,7 @@ fun BasketDiscountDialog(
                         formatAmount(basket),
                         fontFamily = PlexMono,
                         fontSize = 13.5.sp,
-                        color = Handoff.Faint,
+                        color = Handoff.Muted3,
                         textDecoration = TextDecoration.LineThrough,
                     )
                     Text(

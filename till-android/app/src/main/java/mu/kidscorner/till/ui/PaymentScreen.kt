@@ -174,7 +174,7 @@ fun PaymentScreen(
                         fontFamily = PlexMono,
                         fontSize = 11.sp,
                         letterSpacing = 0.55.sp,
-                        color = Handoff.Muted4,
+                        color = Handoff.Muted3,
                     )
                 }
             }
@@ -272,7 +272,7 @@ fun PaymentScreen(
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             letterSpacing = 0.69.sp,
-                            color = Handoff.Muted4,
+                            color = Handoff.Muted3,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
@@ -600,7 +600,7 @@ fun PaymentScreen(
                         Text(
                             "Pick another method above to split the rest.",
                             fontSize = 11.5.sp,
-                            color = Handoff.Muted4,
+                            color = Handoff.Muted3,
                             modifier = Modifier.padding(top = 2.dp),
                         )
                     }

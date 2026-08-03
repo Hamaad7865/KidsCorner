@@ -91,7 +91,7 @@ fun TillChrome(
                         lineHeight = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 0.95.sp,
-                        color = Handoff.Muted4,
+                        color = Handoff.Muted3,
                     )
                 }
             }
@@ -231,7 +231,7 @@ private fun ConnectionPill(online: Boolean, queuedCount: Int) {
             Modifier.height(32.dp).padding(horizontal = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Online", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Handoff.Muted4)
+            Text("Online", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Handoff.Muted3)
         }
     } else {
         // `#FFF6EC / #F5D9B4 / #E8A33D / #9A5B12` — already warm in the

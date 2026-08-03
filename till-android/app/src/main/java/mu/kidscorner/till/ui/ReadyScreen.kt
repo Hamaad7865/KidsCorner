@@ -110,7 +110,7 @@ fun OfflineScreen(
                     "Sales already rung up are safe on this tablet and will send " +
                         "themselves when the line comes back.",
                     fontSize = 11.5.sp,
-                    color = Handoff.Muted4,
+                    color = Handoff.Muted3,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 11.dp),
                 )

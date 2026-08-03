@@ -169,7 +169,7 @@ fun VariantPickerDialog(
                                     Text(
                                         "$available available",
                                         fontSize = 11.sp,
-                                        color = Handoff.Faint,
+                                        color = Handoff.Muted3,
                                     )
                                 }
 

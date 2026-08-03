@@ -146,8 +146,11 @@ const TILL = [
   ["InkStrong", "Surface", "a secondary button's label"],
   ["Muted", "Surface", "secondary text"],
   ["Muted2", "Surface", "tertiary text"],
-  ["Muted3", "Surface", "a label under a heading"],
+  // Muted3 is where the 2026-08-03 sweep put every piece of text that had been
+  // sitting on a pale grey's exemption, so all four of its grounds are checked.
+  ["Muted3", "Surface", "a label under a heading; most secondary text on the till"],
   ["Muted3", "Well", "a label in an inset well"],
+  ["Muted3", "Well2", "an out-of-stock tile's ground"],
   ["Muted3", "FieldWell", "a label in a typed field, and the sell screen's VAT note"],
   ["AccentSolid", "Surface", "the TOTAL figure"],
   ["AccentText", "AccentTint", "accent text on its tint"],
@@ -176,17 +179,29 @@ const EXEMPT = [
     app: "till", ink: "BlockedText", ground: "Blocked", min: 1.8,
     why: "a disabled control — WCAG 1.4.3 exempts inactive components, and it should look inactive",
   },
+  /*
+   * The three below were each written for ONE use and then quietly covered
+   * dozens. A sweep on 2026-08-03 found Muted4 — exempted as "mostly an icon"
+   * — carrying 22 pieces of text and 2 icons, including the VAT figure on the
+   * sell screen and the word "Online" in the chrome. Faint, exempted as
+   * "placeholder text", was on "3 of 5 left to return" and a printer's model
+   * name. Fainter, exempted for one empty photo slot, was on two live icon
+   * buttons at 2.40:1 — under even the 3:1 a control needs.
+   *
+   * They are narrowed here to what survives that sweep. The rule they encode:
+   * an exemption names the use it covers, and anything else must earn its own.
+   */
   {
     app: "till", ink: "Muted4", ground: "Surface", min: 3,
-    why: "mostly an icon; 3:1 is the UI-component bar. Raising it collapses the grey ladder",
+    why: "icons only now — the search glyph, and the two icon buttons that were paler still. 3:1 is the UI-component bar",
   },
   {
     app: "till", ink: "Faint", ground: "Surface", min: 2.5,
-    why: "placeholder text, deliberately recessive so a hint never reads as an entered value",
+    why: "the 0 in a money well before anything is typed, and one disabled action. Reading either as an entered value would be worse than not reading it",
   },
   {
     app: "till", ink: "Fainter", ground: "Surface", min: 2.2,
-    why: "the empty photo slot's own label, on a tile that is itself a placeholder",
+    why: "inactive controls (out-of-stock tiles, a refunded sale's void key) and the empty photo slot's initials — WCAG 1.4.3 exempts inactive components",
   },
   {
     app: "till", ink: "Line", ground: "Surface", min: 1.2,

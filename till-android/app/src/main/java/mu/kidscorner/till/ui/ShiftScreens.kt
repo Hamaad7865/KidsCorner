@@ -713,7 +713,7 @@ private fun CloseSummary(
                         "The variance is recorded against this shift. It is not an " +
                             "accusation — it is the number the owner reconciles from.",
                         fontSize = 11.5.sp,
-                        color = Handoff.Muted4,
+                        color = Handoff.Muted3,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 11.dp),
                     )
@@ -784,7 +784,7 @@ private fun AmountWell(
             "Rs",
             fontSize = currencySize,
             fontWeight = FontWeight.SemiBold,
-            color = Handoff.Muted4,
+            color = Handoff.Muted3,
             modifier = Modifier.weight(1f),
         )
         Text(
