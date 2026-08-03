@@ -1182,11 +1182,19 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * socket took the bytes. When the send fails the cashier is told plainly
      * that the count now includes a print that did not reach paper.
      */
-    fun printReceipt(saleId: Int, gift: Boolean = false) = viewModelScope.launch {
+    fun printReceipt(
+        saleId: Int,
+        gift: Boolean = false,
+        /** The automatic print that follows a sale, not a cashier asking. */
+        auto: Boolean = false,
+    ) = viewModelScope.launch {
         _state.update { it.copy(printing = true, historyError = null) }
         toast(
-            if (gift) "Gift receipt printing · prices hidden"
-            else "Reprinting receipt",
+            when {
+                gift -> "Gift receipt printing · prices hidden"
+                auto -> "Printing receipt"
+                else -> "Reprinting receipt"
+            },
         )
 
         val recorded = repo.recordPrint(saleId).getOrNull()
@@ -1231,11 +1239,21 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 printing = false,
                 selectedSale = sale,
                 receiptPreview = lines.toPlainText(printerSettings.paper),
-                historyError = when (result) {
-                    is PrintResult.Sent -> null
-                    is PrintResult.Failed ->
-                        "${result.reason} The reprint has still been recorded — " +
+                historyError = when {
+                    result is PrintResult.Sent -> null
+                    // The sale is done and the money is in the drawer. A
+                    // printer that would not take it is worth a toast, not an
+                    // error banner over a completed sale — and Reprint is
+                    // right there once the paper is back in.
+                    auto -> {
+                        toast("Receipt did not print — tap Reprint when the printer is ready")
+                        null
+                    }
+                    else -> {
+                        val failed = result as PrintResult.Failed
+                        "${failed.reason} The reprint has still been recorded — " +
                             "this receipt now counts as printed ${recorded.printCount ?: 1} times."
+                    }
                 },
             )
         }
@@ -1919,6 +1937,23 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             screen = TillScreen.Selling(screen.cashier),
                         )
                     }
+                    /*
+                     * The receipt prints itself.
+                     *
+                     * A receipt is not an optional extra a cashier remembers
+                     * to ask for — a VAT-registered shop owes one on every
+                     * sale, and the tap was one more thing to forget with a
+                     * customer waiting. The button on the done screen is a
+                     * REPRINT now, for the times the paper jams or the
+                     * customer wants a second copy.
+                     *
+                     * Only for a sale that actually landed: a parked one has
+                     * no number yet, and a receipt with no number is not a
+                     * receipt. Failures are already swallowed inside — a shop
+                     * with no printer must still be able to sell.
+                     */
+                    outcome.saleId?.let { printReceipt(it, auto = true) }
+
                     // Stock moved, so the cached quantities are now wrong.
                     refreshCatalog()
                     // A sale going through is the clearest signal the line is

@@ -188,7 +188,7 @@ fun SaleCompleteScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     ) {
                         Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(19.dp))
-                        Text("Print receipt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Reprint receipt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
