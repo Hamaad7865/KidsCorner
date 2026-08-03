@@ -5,6 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -61,6 +65,15 @@ fun SaleCompleteScreen(
     itemCount: Int,
     methods: String,
     queued: Boolean,
+    /**
+     * What just came off the printer.
+     *
+     * Shown HERE rather than in a dialog afterwards: this is the moment the
+     * cashier and the customer are both looking at the screen, and the slip is
+     * the thing they are about to hand over. It also means a till with no
+     * printer connected still shows what the receipt said.
+     */
+    receiptPreview: String?,
     onPrint: () -> Unit,
     onPrintGift: () -> Unit,
     onNewSale: () -> Unit,
@@ -160,6 +173,32 @@ fun SaleCompleteScreen(
                         },
                         fontSize = 13.sp,
                         color = Handoff.Muted2,
+                    )
+                }
+            }
+
+            receiptPreview?.let { slip ->
+                Spacer(Modifier.height(18.dp))
+                Box(
+                    Modifier
+                        .widthIn(max = 460.dp)
+                        .heightIn(max = 300.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Handoff.FieldWell)
+                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(12.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(14.dp),
+                    // Centred, as the reference shows it — a slip is a narrow
+                    // column of monospace and left-aligning it in a wide panel
+                    // leaves it sitting off to one side of its own box.
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    Text(
+                        slip,
+                        fontFamily = PlexMono,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = Handoff.Ink,
                     )
                 }
             }

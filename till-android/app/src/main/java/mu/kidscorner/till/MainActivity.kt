@@ -277,6 +277,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                     RefundScreen(
                         sale = sale,
                         alreadyReturned = sale.lines.associate { it.id to it.returnedQty },
+                paymentMethods = state.shop?.paymentMethods ?: listOf("cash"),
                         busy = state.busy,
                         error = state.historyError,
                         onBack = vm::closeRefund,
@@ -304,7 +305,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             RefundDoneDialog(refund = refund, onDismiss = vm::dismissRefundDone)
         }
 
-        state.receiptPreview?.let { preview ->
+        // Only when there is no done screen to carry it — a reprint from
+        // history, or the Z. During a sale the slip belongs ON the completion
+        // screen, where the cashier and the customer are both already looking.
+        if (state.outcome == null) state.receiptPreview?.let { preview ->
             ReceiptPreviewDialog(
                 preview = preview,
                 paper = vm.printer.paper,
@@ -322,6 +326,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 itemCount = outcome.itemCount,
                 methods = outcome.methods,
                 queued = outcome.queued,
+                receiptPreview = state.receiptPreview,
                 onPrint = { outcome.saleId?.let(vm::printReceipt) },
                 onPrintGift = { outcome.saleId?.let { vm.printReceipt(it, gift = true) } },
                 onNewSale = vm::dismissOutcome,

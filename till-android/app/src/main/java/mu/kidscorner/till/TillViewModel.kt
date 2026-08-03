@@ -2152,7 +2152,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearQueuedNotice() = _state.update { it.copy(queuedJustSent = 0) }
 
-    fun dismissOutcome() = _state.update { it.copy(outcome = null) }
+    /**
+     * Clears the slip with the sale.
+     *
+     * Without this the preview outlived the done screen and reappeared as a
+     * dialog over the sell screen — the next customer's basket obscured by the
+     * last one's receipt.
+     */
+    fun dismissOutcome() = _state.update { it.copy(outcome = null, receiptPreview = null) }
 
     /** Closes the manager prompt without clearing the reason it was refused. */
     fun clearApprovalPrompt() = _state.update { it.copy(needsApproval = false) }

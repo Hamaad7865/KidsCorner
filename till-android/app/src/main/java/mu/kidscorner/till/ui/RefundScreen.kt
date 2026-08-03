@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -83,6 +84,15 @@ private val REFUND_REASONS = listOf(
 fun RefundScreen(
     sale: SaleDetail,
     alreadyReturned: Map<Int, Int>,
+    /**
+     * What the shop takes today, from Settings.
+     *
+     * This grid used to carry its own list, which is how it went on offering
+     * my.t money after the shop retired it — the same two-ends-never-
+     * introduced fault the payment tiles had. A method you can be paid by is a
+     * method you can be refunded to, so there is one list and this reads it.
+     */
+    paymentMethods: List<String>,
     busy: Boolean,
     error: String?,
     onBack: () -> Unit,
@@ -392,13 +402,8 @@ fun RefundScreen(
             // my.t money sale had to pick Cash, which takes real notes out of
             // the drawer for a payment that never put any in, and leaves the
             // Z short by the refund.
-            val methods = listOf(
-                "cash" to Icons.Default.Payments,
-                "card" to Icons.Default.CreditCard,
-                "juice" to Icons.Default.PhoneAndroid,
-                "myt_money" to Icons.Default.PhoneAndroid,
-                "exchange" to Icons.Default.SwapHoriz,
-            )
+            val methods = paymentMethods.map { it to methodIcon(it) } +
+                ("exchange" to Icons.Default.SwapHoriz)
             methods.chunked(2).forEach { pair ->
                 Row(
                     Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -679,11 +684,21 @@ fun RefundDoneDialog(refund: RefundResponse, onDismiss: () -> Unit) {
     }
 }
 
+/** The mark for each method — a transfer is not a phone wallet. */
+private fun methodIcon(method: String): ImageVector = when (method) {
+    "cash" -> Icons.Default.Payments
+    "card" -> Icons.Default.CreditCard
+    "bank" -> Icons.Default.AccountBalance
+    "exchange" -> Icons.Default.SwapHoriz
+    else -> Icons.Default.PhoneAndroid
+}
+
 private fun methodWord(method: String): String = when (method) {
     "cash" -> "in cash"
     "card" -> "to card"
     "juice" -> "by Juice"
-    "myt_money" -> "by MyT Money"
+    "myt_money" -> "by my.t money"
+    "bank" -> "by bank transfer"
     "exchange" -> "as an exchange"
     else -> method
 }

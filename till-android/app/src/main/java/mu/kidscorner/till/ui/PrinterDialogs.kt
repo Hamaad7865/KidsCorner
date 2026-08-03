@@ -63,6 +63,9 @@ fun ReceiptPreviewDialog(
                     .background(Handoff.FieldWell, RoundedCornerShape(10.dp))
                     .verticalScroll(rememberScrollState())
                     .padding(14.dp),
+                // A slip is a narrow column of monospace; left-aligned in a
+                // wide panel it sits off to one side of its own box.
+                contentAlignment = Alignment.TopCenter,
             ) {
                 Text(
                     preview,

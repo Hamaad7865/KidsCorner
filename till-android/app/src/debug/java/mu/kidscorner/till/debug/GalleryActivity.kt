@@ -51,6 +51,8 @@ import mu.kidscorner.till.data.SaleDetailLine
 import mu.kidscorner.till.data.SaleDetailPayment
 import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.print.PaperWidth
+import mu.kidscorner.till.print.toPlainText
+import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.ui.ActionsDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
@@ -192,6 +194,7 @@ class GalleryActivity : ComponentActivity() {
                         "refund" -> RefundScreen(
                             sale = SAMPLE_DETAIL,
                             alreadyReturned = mapOf(2 to 1),
+                            paymentMethods = listOf("cash", "card", "juice", "bank"),
                             busy = false,
                             error = null,
                             onBack = { showing = null },
@@ -217,6 +220,16 @@ class GalleryActivity : ComponentActivity() {
                                 itemCount = 3,
                                 methods = "Cash",
                                 queued = false,
+                            receiptPreview = buildReceipt(
+                                    SAMPLE_DETAIL,
+                                    mu.kidscorner.till.print.ShopIdentity(
+                                        name = "Kids Corner",
+                                        address = "Royal Road, Curepipe",
+                                        phone = "5xxx xxxx",
+                                        vatNumber = "12345678",
+                                    ),
+                                    PaperWidth.Mm80,
+                                ).toPlainText(PaperWidth.Mm80),
                                 onPrint = {},
                                 onPrintGift = {},
                                 onNewSale = { showing = null },
@@ -479,6 +492,7 @@ class GalleryActivity : ComponentActivity() {
                             itemCount = 4,
                             methods = "Cash",
                             queued = false,
+                                receiptPreview = null,
                             onPrint = {},
                             onPrintGift = {},
                             onNewSale = {},
