@@ -148,7 +148,7 @@ const TILL = [
   ["Muted2", "Surface", "tertiary text"],
   ["Muted3", "Surface", "a label under a heading"],
   ["Muted3", "Well", "a label in an inset well"],
-  ["Muted3", "FieldWell", "a label in a typed field"],
+  ["Muted3", "FieldWell", "a label in a typed field, and the sell screen's VAT note"],
   ["AccentSolid", "Surface", "the TOTAL figure"],
   ["AccentText", "AccentTint", "accent text on its tint"],
   ["PinOnAccent", "AccentSolid", "white on PAY"],

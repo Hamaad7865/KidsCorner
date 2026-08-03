@@ -1892,7 +1892,20 @@ private fun CartFooter(
                     "incl. VAT ${(vatRate * 100).toInt()}%  ${formatAmount(totals.vat)}",
                     fontFamily = PlexMono,
                     fontSize = 11.5.sp,
-                    color = Handoff.Muted4,
+                    // Muted3 and Medium, not Muted4 and Normal.
+                    //
+                    // Asked for as "a bit pale", and it was worse than pale:
+                    // Muted4 on this panel measures 3.03:1, under the 4.5:1
+                    // that text needs. It passed check-contrast only because
+                    // Muted4 carries an exemption reading "mostly an icon" —
+                    // true where it was written, not true here, where it is a
+                    // VAT figure on a receipt. Muted3 is 4.78:1.
+                    //
+                    // Same grey as the TOTAL label beside it; the hierarchy
+                    // between them is carried by size and letter-spacing, so
+                    // nothing needed a paler colour to stay subordinate.
+                    fontWeight = FontWeight.Medium,
+                    color = Handoff.Muted3,
                 )
             }
             Text(
