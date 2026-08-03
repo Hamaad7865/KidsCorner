@@ -51,6 +51,21 @@ object EscPos {
      */
     fun cut(feedLines: Int = 4) = byteArrayOf(GS, 0x56, 66, feedLines.toByte())
 
+    /**
+     * ESC p m t1 t2 — pulse the drawer connector.
+     *
+     * The drawer is not a printer; it is a solenoid on the printer's RJ11
+     * port, and this is the only way to reach it. Pin 2 (m=0) is what almost
+     * every till uses — pin 5 exists for a second drawer. The times are in
+     * 2ms units: 50ms on, 500ms off, which is the interval nearly every
+     * manual gives and is long enough for the latch to throw.
+     *
+     * A drawer that is not plugged in swallows this silently, which is the
+     * right outcome — a shop with no drawer should not see an error every
+     * time somebody takes cash.
+     */
+    fun openDrawer(): ByteArray = byteArrayOf(ESC, 0x70, 0x00, 0x19.toByte(), 0xFA.toByte())
+
     /** ESC t n — code page. 0 is CP437, which every clone implements. */
     val CODEPAGE_CP437 = byteArrayOf(ESC, 0x74, 0x00)
 

@@ -438,6 +438,7 @@ class GalleryActivity : ComponentActivity() {
                             onRetry = {},
                             onPark = {},
                             onCancel = {},
+                            onOpenDrawer = {},
                         )
 
 

@@ -136,10 +136,6 @@ fun ActionsDialog(
                         Icons.Default.Inbox,
                         Color(0xFFFFF3DF),
                         Color(0xFF8A5A12),
-                        // No drawer-kick in the ESC/POS builder yet, so this
-                        // would do nothing. Shown as the design draws it,
-                        // disabled rather than lying.
-                        enabled = false,
                         onClick = onOpenDrawer,
                     ),
                     Action(

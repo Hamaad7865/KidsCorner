@@ -249,6 +249,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 // ringing up a second sale.
                 onRetry = { vm.retryFrozenSale() },
                 onPark = vm::parkFrozenSale,
+                onOpenDrawer = vm::openCashDrawer,
                 onCancel = vm::cancelPayment,
             )
 
@@ -420,7 +421,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 state.history.firstOrNull()?.let { vm.printReceipt(it.id) }
             },
             onOpenHistory = { overlay = Overlay.Txns; vm.searchHistory("") },
-            onOpenDrawer = { overlay = Overlay.None },
+            onOpenDrawer = { overlay = Overlay.None; vm.openCashDrawer() },
             onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },

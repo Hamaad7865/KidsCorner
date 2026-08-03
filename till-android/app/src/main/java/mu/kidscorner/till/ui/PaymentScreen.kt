@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import kotlin.math.ceil
 import kotlin.math.abs
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -36,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -103,6 +105,8 @@ fun PaymentScreen(
     /** Parks the frozen sale and frees the till for the next customer. */
     onPark: () -> Unit,
     onCancel: () -> Unit,
+    /** Throw the cash drawer open — fired when a cashier picks Cash. */
+    onOpenDrawer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var payments by remember { mutableStateOf<List<SalePayment>>(emptyList()) }
@@ -144,6 +148,18 @@ fun PaymentScreen(
     // be typed into AMOUNT; here the amount follows what is outstanding until
     // a split is on, so the pad rests on the tender.
     var padOnAmount by remember { mutableStateOf(false) }
+
+    /*
+     * The tender starts AT the amount due rather than at zero.
+     *
+     * Exact is what most sales are, and an empty box made every one of them a
+     * typing job before Record would even light. Keyed to the method and to
+     * what is still outstanding, so switching to Card or taking a part payment
+     * re-seeds it rather than leaving the last method's figure in the box.
+     */
+    LaunchedEffect(method, outstanding) {
+        entry = if (outstanding > 0) trimZeros(outstanding) else ""
+    }
 
     // ── splitting ───────────────────────────────────────────────────────────
     // Held here rather than in the ViewModel for the same reason `payments` is:
@@ -485,13 +501,6 @@ fun PaymentScreen(
                             highlight = onAmount,
                             onClick = { padOnAmount = true },
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            QuickChip("Full") {
-                                entry = trimZeros(outstanding)
-                                padOnAmount = false
-                            }
-                        }
-
                         if (isCash) {
                             DisplayCard(
                                 label = "CASH TENDERED",
@@ -501,8 +510,11 @@ fun PaymentScreen(
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 QuickChip("Exact") { entry = trimZeros(outstanding) }
-                                QuickChip("1,000") { entry = "1000" }
-                                QuickChip("5,000") { entry = "5000" }
+                                tenderChips(outstanding).forEach { note ->
+                                    QuickChip(formatQty(note.toInt())) {
+                                        entry = trimZeros(note)
+                                    }
+                                }
                             }
                             Row(
                                 Modifier.fillMaxWidth().padding(top = 2.dp),
@@ -525,8 +537,20 @@ fun PaymentScreen(
                             }
                         }
 
-                        NumPad(enabled = !busy && !frozen) { key ->
-                            entry = if (key == "back") entry.dropLast(1) else entry.appendPadKey(key)
+                        /*
+                         * Only cash needs keys. A card, a Juice transfer or a
+                         * bank transfer settles the bill as it stands — there
+                         * is no tender to count and no change to give, so a
+                         * keypad there offers only the chance to mistype.
+                         * Paying across several methods is Split bill's job,
+                         * and it has its own.
+                         */
+                        if (isCash) {
+                            NumPad(enabled = !busy && !frozen) { key ->
+                                entry =
+                                    if (key == "back") entry.dropLast(1)
+                                    else entry.appendPadKey(key)
+                            }
                         }
                     }
 
@@ -1240,4 +1264,28 @@ private fun RowScope.SplitAllocation(
             }
         }
     }
+}
+
+/**
+ * What a customer would plausibly hand over for this bill.
+ *
+ * The chips were a fixed 1,000 / 5,000, useless against a Rs 2,408.10 basket —
+ * nobody hands over 5,000 for it, and the one figure that IS likely, 2,410,
+ * was not offered at all. These are generated from the amount due by rounding
+ * up to the steps notes and coins make natural: the next 10, 100, 500, 1,000.
+ *
+ * For 2,408.10 that is 2,410 · 2,500 · 3,000 — the coins-and-change tender,
+ * the two-note tender, and the round three thousand. Exact sits beside them,
+ * so all four ways of paying are one tap.
+ *
+ * Anything equal to the due amount is dropped (Exact covers it) and the list
+ * is capped at three so the row never wraps.
+ */
+internal fun tenderChips(due: Double): List<Double> {
+    if (due <= 0) return emptyList()
+    return listOf(10.0, 100.0, 500.0, 1000.0)
+        .map { step -> ceil(due / step) * step }
+        .filter { it > due + 0.005 }
+        .distinct()
+        .take(3)
 }

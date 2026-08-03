@@ -1568,6 +1568,24 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         mutateCart { it.withLineDiscount(variantId, kind, value) }
 
 
+    /**
+     * Throw the drawer open.
+     *
+     * Fired when a cashier picks Cash, not when the sale completes: they need
+     * it open to take the notes and count the change BEFORE confirming, which
+     * is the order the counter actually works in. A drawer opened for a sale
+     * that then goes on a card is a drawer that closes again unused, which
+     * costs nothing.
+     *
+     * Failures are swallowed. A shop with no drawer wired to the printer must
+     * not get an error every time it takes cash.
+     */
+    fun openCashDrawer() = viewModelScope.launch {
+        runCatching {
+            printerSettings.transport(getApplication()).send(EscPos.openDrawer())
+        }
+    }
+
     fun addCustomItem(description: String, price: Double) =
         mutateCart { it.withCustomItem(description, price) }
 
