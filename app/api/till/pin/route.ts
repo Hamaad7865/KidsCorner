@@ -7,9 +7,17 @@ import { authenticateCashier, pinLockSeconds } from "@/lib/pos/sale-core"
 const bodySchema = z.object({
   profileId: z.uuid(),
   pin: z.string(),
-  /** The till's registry id from bootstrap, so the sign-in lands on the right
-   *  device in the audit trail. Optional: an old APK simply doesn't send it. */
-  deviceId: z.number().int().positive().optional(),
+  /**
+   * The till's registry id from bootstrap, so the sign-in lands on the right
+   * device in the audit trail. Absent on an old APK — and explicitly NULL on a
+   * current one whose `register_pos_device` call did not land, because that
+   * registration is deliberately fire-and-forget.
+   *
+   * `.nullish()`, not `.optional()`: the latter refuses null, which would have
+   * turned a missed device registration into a till that could not be unlocked
+   * at all. Same trap that stopped every sale in `saleItemSchema`.
+   */
+  deviceId: z.number().int().positive().nullish(),
 })
 
 /**

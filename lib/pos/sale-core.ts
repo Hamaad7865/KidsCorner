@@ -727,6 +727,23 @@ export async function settleDiscounts(
 const absentAsNull = <T extends z.ZodTypeAny>(schema: T) =>
   schema.nullish().transform((v) => v ?? null)
 
+/**
+ * Absent OR explicitly null, collapsed to absent.
+ *
+ * `.optional()` is NOT this. It accepts `undefined` and REFUSES `null`, and
+ * that difference cost this shop four days of takings: kotlinx is configured
+ * with `explicitNulls = true` (TillApi.kt says why — turning it off had
+ * previously dropped `discount` and `customerId` out of the payload entirely),
+ * so the tablet writes `"unitPrice": null` on every catalogue line. Zod
+ * answered "Invalid input: expected number, received null", the route returned
+ * 400, and the queue retried the same rejected bytes 102 times.
+ *
+ * A JSON field this server treats as optional must accept both spellings of
+ * "nothing". There is no client on earth that reliably picks one.
+ */
+const nothingIsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.nullish().transform((v) => v ?? undefined)
+
 const saleItemSchema = z
   .object({
     variantId: z.number().int().positive().nullish().transform((v) => v ?? null),
@@ -736,7 +753,7 @@ const saleItemSchema = z
      * it is the price, because there is no catalogue row to read one from, and
      * that is why such a line needs a manager.
      */
-    unitPrice: z.number().min(0).optional(),
+    unitPrice: nothingIsUndefined(z.number().min(0)),
     /** Set only on a custom line. */
     description: z.string().trim().max(120).nullish().transform((v) => v ?? null),
     // Defaulted, not required. A line with no discount is the normal case, and a
@@ -794,7 +811,7 @@ export const completeSaleSchema = z.object({
   customerId: absentAsNull(z.number().int().positive()),
   cashierId: absentAsNull(z.uuid()),
   discounts: z.array(appliedDiscountSchema).default([]),
-  discount: z.number().min(0).optional(),
+  discount: nothingIsUndefined(z.number().min(0)),
   items: z.array(saleItemSchema).min(1, "The cart is empty."),
   payments: z.array(paymentSchema).min(1, "Add at least one payment."),
   approval: approvalSchema.nullish(),
