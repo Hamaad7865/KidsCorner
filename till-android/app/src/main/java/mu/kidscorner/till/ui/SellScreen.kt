@@ -204,7 +204,6 @@ fun SellScreen(
     onAddScanned: (CatalogVariant) -> Unit,
     onSetQty: (Int, Int) -> Unit,
     onSetLineDiscount: (Int, String?, Double) -> Unit,
-    onSetPrice: (Int, Double?) -> Unit,
     onOpenActions: () -> Unit,
     onOpenCustomItem: () -> Unit,
     onOpenNote: () -> Unit,
@@ -470,7 +469,6 @@ fun SellScreen(
                     itemCount = totals.itemCount,
                     onSetQty = onSetQty,
                     onSetLineDiscount = onSetLineDiscount,
-                    onSetPrice = onSetPrice,
                     onOpenNote = onOpenNote,
                     onSetNote = onSetNote,
                     onRemove = onRemove,
@@ -950,7 +948,6 @@ private fun BasketPane(
     itemCount: Int,
     onSetQty: (Int, Int) -> Unit,
     onSetLineDiscount: (Int, String?, Double) -> Unit,
-    onSetPrice: (Int, Double?) -> Unit,
     onOpenNote: () -> Unit,
     onSetNote: (String) -> Unit,
     onRemove: (Int) -> Unit,
@@ -1105,7 +1102,6 @@ private fun BasketPane(
                             onSetQty = onSetQty,
                             onRemove = onRemove,
                             onLineDiscount = onSetLineDiscount,
-                            onSetPrice = onSetPrice,
                         )
                     }
                 }
@@ -1279,7 +1275,6 @@ private fun CartRow(
     onSetQty: (Int, Int) -> Unit,
     onRemove: (Int) -> Unit,
     onLineDiscount: (Int, String?, Double) -> Unit,
-    onSetPrice: (Int, Double?) -> Unit,
 ) {
     val discounted = line.discount > 0
     /** Which unit this line's offers are in — Carfectionist's %/Rs toggle. */
@@ -1287,7 +1282,6 @@ private fun CartRow(
     /** A discount typed by hand, when none of the offers is the right one. */
     var customText by remember(line.variantId) { mutableStateOf("") }
     /** A price agreed at the counter, typed. Blank means the ticket price. */
-    var priceText by remember(line.variantId) { mutableStateOf("") }
     /**
      * Carfectionist's line: closed by default, opened by tapping it.
      *
@@ -1386,29 +1380,6 @@ private fun CartRow(
                     // rather than as a warning after the sale is refused.
                     if (line.qtyOnHand == 1 && !line.isCustom) {
                         Badge("Last one", Handoff.WarnTint, Handoff.WarnText)
-                    }
-                    if (line.priceOverride != null) {
-                        // `l.overridden` — a hand-set price is called out by
-                        // name, not just as money off, because it is a
-                        // different act from applying a discount chip.
-                        Badge(
-                            "Price set",
-                            Handoff.WarnTint,
-                            Handoff.WarnText,
-                            border = Handoff.WarnLine,
-                        )
-                    } else if (discounted) {
-                        // Amber, beside "Price set" and "Last one", because it
-                        // is the same kind of fact: something the shop chose
-                        // that an owner would want to see on the receipt. The
-                        // danger red is for a refund or a void — money going
-                        // back out — not for a discount going on.
-                        Badge(
-                            "-${formatAmount(line.discount)}",
-                            Handoff.WarnTint,
-                            Handoff.WarnText,
-                            border = Handoff.WarnLine,
-                        )
                     }
                 }
             }
@@ -1513,7 +1484,6 @@ private fun CartRow(
                 val on = discounted && would == line.discount
                 OfferChip(label, on) {
                     customText = ""
-                    priceText = ""
                     onLineDiscount(line.variantId, if (on) null else kind, value)
                 }
             }
@@ -1530,7 +1500,6 @@ private fun CartRow(
                 value = customText,
                 onValueChange = { typed ->
                     customText = typed
-                    priceText = ""
                     val parsed = typed.toDoubleOrNull()
                     if (typed.isBlank()) onLineDiscount(line.variantId, null, 0.0)
                     else if (parsed != null) onLineDiscount(line.variantId, discMode, parsed)
@@ -1540,35 +1509,10 @@ private fun CartRow(
             if (discounted) {
                 OfferChip("Clear", false) {
                     customText = ""
-                    priceText = ""
                     onLineDiscount(line.variantId, null, 0.0)
                 }
             }
 
-            Box(Modifier.width(1.dp).height(22.dp).background(Handoff.Line))
-
-            // The other way money comes off a line: agree a price rather than
-            // a reduction. Typed here for the same reason the discount is —
-            // the keypad dialog was never what made it safe.
-            //
-            // `withPriceOverride` refuses anything ABOVE the list price
-            // outright, and carries the difference as this line's discount,
-            // which is what `settleDiscounts` re-derives and what makes the
-            // server demand a manager. Those checks are where they always
-            // were; only the way in has changed.
-            PriceField(
-                listPrice = line.unitPrice,
-                value = priceText,
-                overridden = line.priceOverride != null,
-                onValueChange = { typed ->
-                    priceText = typed
-                    val parsed = typed.toDoubleOrNull()
-                    when {
-                        typed.isBlank() -> onSetPrice(line.variantId, null)
-                        parsed != null -> onSetPrice(line.variantId, parsed)
-                    }
-                },
-            )
         }
         }
     }
@@ -1673,73 +1617,6 @@ private fun DiscountField(
     }
 }
 
-/**
- * A price agreed at the counter.
- *
- * Amber once a price is set by hand, matching what the key used to do, and RED
- * while the figure is above the ticket price — `withPriceOverride` refuses that
- * outright, so without the warning the field would sit there holding a number
- * the line had quietly declined. Raising a price is the back office's job.
- */
-@Composable
-private fun PriceField(
-    listPrice: Double,
-    value: String,
-    overridden: Boolean,
-    onValueChange: (String) -> Unit,
-) {
-    val typed = value.toDoubleOrNull()
-    val tooHigh = typed != null && round2(typed) > listPrice
-    val border = when {
-        tooHigh -> Handoff.Danger
-        overridden -> Handoff.WarnDot
-        else -> Handoff.LineField
-    }
-
-    Row(
-        Modifier
-            .height(34.dp)
-            .width(112.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(if (tooHigh) Handoff.DangerTint else Handoff.Well)
-            .border(1.dp, border, RoundedCornerShape(9.dp))
-            .padding(horizontal = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Rs", fontSize = 11.sp, color = Handoff.Muted3)
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-            if (value.isEmpty()) {
-                Text(
-                    formatAmount(listPrice),
-                    fontSize = 12.5.sp,
-                    fontFamily = PlexMono,
-                    color = Handoff.Muted3,
-                    maxLines = 1,
-                )
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = { input ->
-                    val cleaned = input.filter { it.isDigit() || it == '.' }
-                    if (cleaned.count { it == '.' } <= 1) onValueChange(cleaned)
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                textStyle = TextStyle(
-                    color = if (tooHigh) Handoff.Danger else Handoff.Ink,
-                    fontSize = 13.sp,
-                    fontFamily = PlexMono,
-                    fontWeight = FontWeight.SemiBold,
-                ),
-                cursorBrush = SolidColor(Handoff.AccentSolid),
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-/** One offer. 34dp to sit level with the toggle and the stepper beside it. */
 @Composable
 private fun OfferChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(

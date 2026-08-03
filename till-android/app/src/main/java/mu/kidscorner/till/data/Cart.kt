@@ -47,7 +47,6 @@ data class CartLine(
      * the line's discount, which is what the server already re-derives, clamps
      * and demands a manager for.
      */
-    val priceOverride: Double? = null,
     /**
      * Set only on a custom line, and then it is the line's whole identity —
      * there is no product behind it.
@@ -147,43 +146,13 @@ fun List<CartLine>.withLineDiscount(
     value: Double,
 ): List<CartLine> = map { line ->
     if (line.variantId != variantId) return@map line
-    if (kind == null) return@map line.copy(discount = 0.0, priceOverride = null)
+    if (kind == null) return@map line.copy(discount = 0.0)
 
     val gross = round2(line.unitPrice * line.qty)
     val raw = if (kind == "percent") gross * value / 100 else value
     // Setting a chip discount drops any hand-set price: the line carries one
     // reduction, not two stacked on each other.
-    line.copy(discount = round2(minOf(maxOf(0.0, raw), gross)), priceOverride = null)
-}
-
-/**
- * Sets a unit price by hand — `atSell`'s "Price" key in POS v2.
- *
- * The override is carried as this line's discount: `(list - agreed) x qty`.
- * That is not a trick, it is what it is — selling below the ticket price IS a
- * discount, and routing it here means it inherits everything that already
- * guards a discount: `priceItems` re-derives it from the catalogue and clamps
- * it to the line, and `settleDiscounts` demands a manager's PIN for any line
- * discount at all.
- *
- * A price ABOVE the list price is refused rather than clamped. There is nowhere
- * to record it — a negative discount is not a thing the schema has — so
- * accepting it would show one figure on screen and charge another. Raising a
- * price is the back office's job, not a counter's.
- *
- * `null` returns the line to the list price.
- */
-fun List<CartLine>.withPriceOverride(variantId: Int, price: Double?): List<CartLine> = map { line ->
-    if (line.variantId != variantId) return@map line
-    if (price == null) return@map line.copy(priceOverride = null, discount = 0.0)
-
-    val agreed = round2(price)
-    if (agreed > line.unitPrice) return@map line
-
-    line.copy(
-        priceOverride = agreed,
-        discount = round2((line.unitPrice - agreed) * line.qty),
-    )
+    line.copy(discount = round2(minOf(maxOf(0.0, raw), gross)))
 }
 
 /**
@@ -250,9 +219,7 @@ fun List<CartLine>.withQty(variantId: Int, qty: Int): List<CartLine> =
                 // for the new quantity. A chip discount is left alone: it was
                 // sized against the old gross and `withLineDiscount` is where
                 // it gets resized.
-                discount = line.priceOverride
-                    ?.let { round2((line.unitPrice - it) * next) }
-                    ?: line.discount,
+                discount = line.discount,
             )
         }
     }

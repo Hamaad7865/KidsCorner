@@ -110,8 +110,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { }
 
-    /** The cart line whose unit price is being set by hand, if any. */
-
     // Stripped: this list is passed into the approval prompt and held in
     // composition, and a manager's offline verifier has no business there.
     val managers = state.shop?.cashiers.orEmpty()
@@ -210,7 +208,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onAddScanned = vm::addScanned,
                         onSetQty = vm::setQty,
                         onSetLineDiscount = vm::setLineDiscount,
-                        onSetPrice = vm::setPriceOverride,
                         onOpenActions = { overlay = Overlay.Actions },
                         onOpenCustomItem = { overlay = Overlay.Custom },
                         onOpenNote = { overlay = Overlay.Note },

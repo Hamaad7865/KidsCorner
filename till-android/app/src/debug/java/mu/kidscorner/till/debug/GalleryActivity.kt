@@ -41,7 +41,6 @@ import mu.kidscorner.till.data.ShiftTotals
 import mu.kidscorner.till.data.CatalogVariant
 import mu.kidscorner.till.data.cartTotals
 import mu.kidscorner.till.data.withLineDiscount
-import mu.kidscorner.till.data.withPriceOverride
 import mu.kidscorner.till.data.withQty
 import mu.kidscorner.till.data.withVariant
 import mu.kidscorner.till.data.without
@@ -359,7 +358,6 @@ class GalleryActivity : ComponentActivity() {
                             onSetLineDiscount = { id, kind, value ->
                                 cart = cart.withLineDiscount(id, kind, value)
                             },
-                            onSetPrice = { _, _ -> },
                             onOpenActions = { showing = "actions" },
                             onOpenCustomItem = { showing = "custom" },
                             onOpenNote = {},
@@ -402,7 +400,6 @@ class GalleryActivity : ComponentActivity() {
                             onAddScanned = {},
                             onSetQty = { _, _ -> },
                             onSetLineDiscount = { _, _, _ -> },
-                            onSetPrice = { _, _ -> },
                             onOpenActions = {},
                             onOpenCustomItem = {},
                             onOpenNote = {},

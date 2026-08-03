@@ -62,7 +62,6 @@ import mu.kidscorner.till.print.toPlainText
 import mu.kidscorner.till.data.withQty
 import mu.kidscorner.till.data.withLineDiscount
 import mu.kidscorner.till.data.withCustomItem
-import mu.kidscorner.till.data.withPriceOverride
 import mu.kidscorner.till.data.withVariant
 import mu.kidscorner.till.data.without
 import java.util.UUID
@@ -1568,17 +1567,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun setLineDiscount(variantId: Int, kind: String?, value: Double) =
         mutateCart { it.withLineDiscount(variantId, kind, value) }
 
-    /**
-     * A unit price set by hand — `atSell`'s "Price" key.
-     *
-     * Carried as the line's discount, so it arrives at the server on the rail
-     * that already re-derives it from the catalogue, clamps it to the line and
-     * demands a manager. Null returns the line to the list price.
-     */
-    fun setPriceOverride(variantId: Int, price: Double?) {
-        mutateCart { it.withPriceOverride(variantId, price) }
-        toast(if (price == null) "Back to list price" else "Unit price set to ${formatRs(price)}")
-    }
 
     fun addCustomItem(description: String, price: Double) =
         mutateCart { it.withCustomItem(description, price) }
