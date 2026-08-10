@@ -21,6 +21,26 @@
  * which is why this runs there.
  */
 
+// CommonJS, so it arrives as a default export rather than a named one.
+import nextEnv from "@next/env"
+
+/**
+ * The same loader `next build` uses, so this guard reads exactly the values
+ * the build is about to inline — no more, no less.
+ *
+ * Without it the check saw only `process.env`. Node does not read `.env.local`
+ * the way Next does, so a correctly configured repo was refused from a clean
+ * shell while the build it was guarding would have succeeded. A guard that
+ * cries wolf on a healthy checkout is one people learn to work around, which
+ * is the opposite of what it is for.
+ *
+ * This cannot loosen anything: in CI there is no `.env.local` to find, so the
+ * repository secrets are still the only way through. `dev: false` matches the
+ * production build's precedence — real environment variables always win over
+ * a file.
+ */
+nextEnv.loadEnvConfig(process.cwd(), false, { info: () => {}, error: console.error })
+
 const REQUIRED = [
   {
     name: "NEXT_PUBLIC_SUPABASE_URL",
