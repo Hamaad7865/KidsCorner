@@ -47,6 +47,12 @@ export async function setModuleAccess(
     // instead of a raised exception.
     return fail("The till can't be hidden — a role needs somewhere to land.")
   }
+  if (role === "owner" && !canView) {
+    // Same bargain as the till, and for a stronger reason: the owner is the
+    // only role that can undo this, so every module they hide is one they may
+    // not be able to get back. Migration 041 refuses it outright.
+    return fail("The owner sees every module — that one can't be hidden.")
+  }
 
   const supabase = await createClient()
   const { error } = await supabase

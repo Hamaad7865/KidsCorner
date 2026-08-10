@@ -35,7 +35,8 @@ export function AccessPanel({
           What each role is shown. This hides menu items and blocks the routes —
           it is <strong>not</strong> the security boundary. Row-level security
           decides what the database will actually allow, and granting a module
-          here grants no permission at all.
+          here grants no permission at all. The owner sees every module — only
+          a manager or a cashier can be restricted.
           {canManage ? "" : " Only the owner can change these."}
         </p>
       </div>
@@ -69,13 +70,22 @@ export function AccessPanel({
                       role={role}
                       module={module}
                       value={grid[role][module]}
-                      // The till can never be hidden, and the owner keeping
-                      // settings is what stops them locking themselves out of
-                      // this very screen.
+                      // The till can never be hidden, and the owner sees
+                      // everything. This used to lock only the owner's
+                      // settings cell — enough to keep this screen reachable,
+                      // but it left every other module switchable, and the
+                      // shop ran a week with the owner's own Products turned
+                      // off. Nobody notices a nav item that was never there;
+                      // they notice that a link stops working.
+                      //
+                      // The owner's lock is one-directional: `&& value` holds
+                      // a module that is ON, and leaves one that is somehow
+                      // OFF clickable so it can be put back. A flat lock would
+                      // freeze exactly the broken state it exists to prevent.
                       locked={
                         !canManage ||
                         module === "pos" ||
-                        (role === "owner" && module === "settings")
+                        (role === "owner" && grid[role][module])
                       }
                     />
                   </td>
