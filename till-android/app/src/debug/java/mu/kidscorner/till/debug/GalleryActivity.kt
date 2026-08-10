@@ -51,6 +51,7 @@ import mu.kidscorner.till.data.SaleDetailLine
 import mu.kidscorner.till.data.SaleDetailPayment
 import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.print.PaperWidth
+import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.toPlainText
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.PrinterSettings
@@ -220,16 +221,7 @@ class GalleryActivity : ComponentActivity() {
                                 itemCount = 3,
                                 methods = "Cash",
                                 queued = false,
-                            receiptPreview = buildReceipt(
-                                    SAMPLE_DETAIL,
-                                    mu.kidscorner.till.print.ShopIdentity(
-                                        name = "Kids Corner",
-                                        address = "Royal Road, Curepipe",
-                                        phone = "5xxx xxxx",
-                                        vatNumber = "12345678",
-                                    ),
-                                    PaperWidth.Mm80,
-                                ).toPlainText(PaperWidth.Mm80),
+                                receiptPreview = null,
                                 onPrint = {},
                                 onPrintGift = {},
                                 onNewSale = { showing = null },
@@ -492,7 +484,18 @@ class GalleryActivity : ComponentActivity() {
                             itemCount = 4,
                             methods = "Cash",
                             queued = false,
-                                receiptPreview = null,
+                            // The slip that just came off the printer, as the
+                            // real screen shows it.
+                            receiptPreview = buildReceipt(
+                                sale = SAMPLE_DETAIL,
+                                shop = ShopIdentity(
+                                    name = "Kids Corner",
+                                    address = "Royal Road, Curepipe",
+                                    phone = "5xxx xxxx",
+                                    vatNumber = "12345678",
+                                ),
+                                width = PaperWidth.Mm80,
+                            ).toPlainText(PaperWidth.Mm80),
                             onPrint = {},
                             onPrintGift = {},
                             onNewSale = {},
