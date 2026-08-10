@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 
 import { PosTopBar } from "@/components/pos/pos-top-bar"
 import { TillLock } from "@/components/pos/till-lock"
+import { RouteGate } from "@/components/route-gate"
 import { requireProfile } from "@/lib/auth/session"
 import { listCashiers } from "@/lib/pos/actions"
 
@@ -39,7 +40,12 @@ export default async function PosLayout({ children }: { children: ReactNode }) {
       data-density="pos"
       className="bg-muted/40 flex h-dvh flex-1 flex-col overflow-hidden"
     >
-      <PosTopBar profile={profile} />
+      {/* The receipt is a standalone document opened from the back office. It
+          lives under `(pos)` only for its URL and must not wear the till top
+          bar or sit behind the cashier lock, so both are gated off it. */}
+      <RouteGate hideOnPrefix="/pos/receipt/">
+        <PosTopBar profile={profile} />
+      </RouteGate>
       {/* A flex column, not a plain block. The sell screen needs to fill this
           pane, and asking a percentage height to do it does not work here: the
           pane's own height comes from `flex-1`, and a child's `height: 100%`
@@ -52,7 +58,9 @@ export default async function PosLayout({ children }: { children: ReactNode }) {
           offers nothing to press but the keypad. Rendered last rather than
           around `children` so the sell screen keeps its state while locked —
           a cart part-way through a sale survives a re-lock. */}
-      <TillLock cashiers={cashiers} />
+      <RouteGate hideOnPrefix="/pos/receipt/">
+        <TillLock cashiers={cashiers} />
+      </RouteGate>
     </div>
   )
 }
