@@ -53,15 +53,23 @@ function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
   return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
 }
 
+// A plain element, deliberately NOT Base UI's Menu.GroupLabel. GroupLabel reads
+// MenuGroupContext and throws "Base UI error #31" the instant it mounts outside
+// a <Menu.Group>. The account menu opens exactly one of these with no group
+// around it, so opening it crashed the whole page — and because that menu is
+// rendered by the admin layout, the throw sailed past (admin)/error.tsx (a
+// boundary cannot catch its own layout) to the browser's blank error page.
+// A dropdown label is presentational heading text with no need of the group's
+// aria wiring, and a div means no caller can ever reintroduce that crash.
 function DropdownMenuLabel({
   className,
   inset,
   ...props
-}: MenuPrimitive.GroupLabel.Props & {
+}: React.ComponentProps<"div"> & {
   inset?: boolean
 }) {
   return (
-    <MenuPrimitive.GroupLabel
+    <div
       data-slot="dropdown-menu-label"
       data-inset={inset}
       className={cn(
