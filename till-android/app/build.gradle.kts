@@ -32,6 +32,17 @@ fun env(key: String): String =
             "The till reads Supabase details from the same file the web app does.",
     )
 
+/**
+ * Where the till reaches its own API — the Next.js `/api/till` routes, distinct
+ * from Supabase auth. Overridable with `-PapiOrigin=https://…` or an `apiOrigin`
+ * line in gradle.properties, so a debug APK on a real tablet can point at the
+ * live deployment without a dev server, while a plain emulator build keeps its
+ * localhost default. Falls back to the argument when nothing is set.
+ */
+fun apiOrigin(fallback: String): String =
+    (project.findProperty("apiOrigin") as String?)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: fallback
+
 android {
     namespace = "mu.kidscorner.till"
     compileSdk = 36
@@ -63,14 +74,22 @@ android {
 
     buildTypes {
         debug {
-            // 10.0.2.2 is the emulator's route to the host machine, and 3001 is
-            // the port in .claude/launch.json, so a debug build talks to
-            // `npm run dev`. Release must be given a real HTTPS origin.
-            buildConfigField("String", "API_ORIGIN", "\"http://10.0.2.2:3001\"")
+            // Default: 10.0.2.2 is the emulator's route to the host machine and
+            // 3001 the port in .claude/launch.json, so a plain debug build talks
+            // to `npm run dev`. The `apiOrigin` property (set in gradle.properties
+            // to the live deployment) overrides this, so a debug APK sideloaded
+            // onto a real tablet reaches production without a dev server.
+            buildConfigField("String", "API_ORIGIN", "\"${apiOrigin("http://10.0.2.2:3001")}\"")
             isDebuggable = true
         }
         release {
-            buildConfigField("String", "API_ORIGIN", "\"https://kidscorner.mu\"")
+            // The live deployment. Replace with a first-party domain once one is
+            // set up; the `apiOrigin` property overrides this too.
+            buildConfigField(
+                "String",
+                "API_ORIGIN",
+                "\"${apiOrigin("https://kidscorner.boodoo-sheik786.workers.dev")}\"",
+            )
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
