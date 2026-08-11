@@ -14,6 +14,7 @@ import {
   safeRedirectPath,
 } from "@/lib/routes"
 import { createProxyClient } from "@/lib/supabase/proxy"
+import { readPastClockSkew } from "@/lib/supabase/timing"
 
 /**
  * Role-based routing, per the spec's Auth model.
@@ -126,11 +127,16 @@ export async function middleware(request: NextRequest) {
   // a Supabase auth hook and read it straight off `data.claims`.
   let profile: { role: string; is_active: boolean } | null
   try {
-    const result = await supabase
-      .from("profiles")
-      .select("role, is_active")
-      .eq("id", userId)
-      .maybeSingle()
+    // Retry past the sub-second auth/db clock skew that follows a token
+    // refresh — without it this read failed with PGRST303 and the guard below
+    // fell open for that request. See lib/supabase/timing.ts.
+    const result = await readPastClockSkew(() =>
+      supabase
+        .from("profiles")
+        .select("role, is_active")
+        .eq("id", userId)
+        .maybeSingle(),
+    )
     if (result.error) throw result.error
     profile = result.data
   } catch (error) {

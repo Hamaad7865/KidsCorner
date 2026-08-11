@@ -5,6 +5,7 @@ import { isRole, type Role } from "@/lib/db-enums"
 import { isSupabaseConfigured } from "@/lib/env"
 import { LOGIN_PATH, POS_PATH } from "@/lib/routes"
 import { createClient } from "@/lib/supabase/server"
+import { readPastClockSkew } from "@/lib/supabase/timing"
 
 import { isAdminRole } from "./roles"
 
@@ -37,11 +38,17 @@ export const getSessionProfile = cache(async (): Promise<SessionProfile | null> 
   const claims = data?.claims
   if (error || !claims?.sub) return null
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, full_name, role, is_active")
-    .eq("id", claims.sub)
-    .maybeSingle()
+  // Retry past the post-refresh auth/db clock skew (PGRST303). Without it a
+  // skew here read as "no profile" and signed the user out mid-session — the
+  // error was discarded, so a transient rejection looked exactly like a missing
+  // row. See lib/supabase/timing.ts.
+  const { data: profile } = await readPastClockSkew(() =>
+    supabase
+      .from("profiles")
+      .select("id, full_name, role, is_active")
+      .eq("id", claims.sub)
+      .maybeSingle(),
+  )
 
   // An auth user with no profile row (or an unrecognised role) has no place in
   // the app — treat it as signed out rather than guessing a role.
