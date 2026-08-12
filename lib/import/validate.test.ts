@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest"
+
+import type { Brand, Category, Colour, Size } from "@/lib/master-data/queries"
+
+import type { ImportField, RawRow } from "./columns"
+import { buildLookup, validateRows, type MasterLookup } from "./validate"
+
+/**
+ * Size is two columns now — Age Range and Shoe Size — because the schema has
+ * two size_types and the importer used to guess which one a label was. These
+ * cover the rule that replaced the guess: exactly one column per row, and the
+ * column decides the type it resolves and creates against.
+ */
+
+// Only the fields buildLookup reads matter at runtime; cast past the full DB row.
+const lookup: MasterLookup = buildLookup({
+  categories: [
+    { id: 10, name: "T-Shirts" },
+    { id: 11, name: "Sandals" },
+  ] as unknown as Category[],
+  brands: [] as Brand[],
+  colours: [
+    { id: 20, name: "Navy" },
+    { id: 21, name: "Pink" },
+  ] as unknown as Colour[],
+  sizes: [
+    { id: 1, label: "2-3 yrs", size_type: "age_range" },
+    { id: 2, label: "EU 24", size_type: "shoe_size" },
+  ] as unknown as Size[],
+})
+
+const NO_BARCODES = { existingBarcodes: new Set<string>() }
+
+function row(rowNumber: number, values: Partial<Record<ImportField, string>>): RawRow {
+  return { rowNumber, values }
+}
+
+/** A complete, resolvable row; spread over it to vary just the size columns. */
+const base = {
+  productName: "Item",
+  category: "T-Shirts",
+  colour: "Navy",
+  sellPrice: "320",
+  quantity: "5",
+} satisfies Partial<Record<ImportField, string>>
+
+describe("size columns", () => {
+  it("takes an age from the Age Range column as an age_range size", () => {
+    const [r] = validateRows([row(2, { ...base, ageRange: "2-3 yrs" })], lookup, NO_BARCODES).rows
+    expect(r.errors).toEqual([])
+    expect(r.sizeType).toBe("age_range")
+    expect(r.sizeLabel).toBe("2-3 yrs")
+    expect(r.sizeId).toBe(1)
+  })
+
+  it("takes a shoe size from the Shoe Size column as a shoe_size size", () => {
+    const [r] = validateRows(
+      [row(2, { ...base, category: "Sandals", colour: "Pink", shoeSize: "EU 24" })],
+      lookup,
+      NO_BARCODES,
+    ).rows
+    expect(r.errors).toEqual([])
+    expect(r.sizeType).toBe("shoe_size")
+    expect(r.sizeId).toBe(2)
+  })
+
+  it("rejects a row that fills both columns", () => {
+    const [r] = validateRows(
+      [row(2, { ...base, ageRange: "2-3 yrs", shoeSize: "EU 24" })],
+      lookup,
+      NO_BARCODES,
+    ).rows
+    expect(r.errors).toContain("Fill either Age Range or Shoe Size, not both.")
+    expect(r.sizeType).toBeNull()
+    expect(r.sizeId).toBeNull()
+  })
+
+  it("rejects a row that fills neither column", () => {
+    const [r] = validateRows([row(2, { ...base })], lookup, NO_BARCODES).rows
+    expect(r.errors).toContain("Age Range or Shoe Size is required.")
+    expect(r.sizeType).toBeNull()
+  })
+
+  it("does not cross-match a shoe label placed in the age column", () => {
+    // "EU 24" exists, but as a shoe size. Read from the age column it is a
+    // different size that must be created, not silently the id-2 shoe row.
+    const [r] = validateRows([row(2, { ...base, ageRange: "EU 24" })], lookup, NO_BARCODES).rows
+    expect(r.sizeId).toBeNull()
+    expect(r.missing).toContainEqual({ kind: "size", name: "EU 24", sizeType: "age_range" })
+  })
+
+  it("keeps same-labelled age and shoe sizes as two things to create", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "24" }),
+        row(3, { ...base, category: "Sandals", colour: "Pink", shoeSize: "24" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+    const sizes = summary.missingMasters.filter((m) => m.kind === "size")
+    expect(sizes).toHaveLength(2)
+    expect(sizes.map((s) => s.sizeType).sort()).toEqual(["age_range", "shoe_size"])
+  })
+})

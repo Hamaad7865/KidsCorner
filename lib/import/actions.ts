@@ -27,7 +27,7 @@ export type CreatedMaster = {
   kind: ImportMasterKind
   name: string
   id: number
-  /** Only for sizes: which type the server inferred, so the client agrees. */
+  /** Only for sizes: the type it was created as, echoed so the client agrees. */
   sizeType?: "age_range" | "shoe_size"
 }
 
@@ -106,20 +106,13 @@ export async function findExistingBarcodes(
   return { ok: true, taken: found }
 }
 
-/**
- * A label like "EU 24" or "24" is footwear; anything mentioning months or years
- * is clothing. Only used when the sheet references a size that doesn't exist
- * yet — the user sees which type was chosen and can correct it in Settings.
- */
-function guessSizeType(label: string): "age_range" | "shoe_size" {
-  const value = label.toLowerCase()
-  if (/(yr|year|mth|month|m\b)/.test(value)) return "age_range"
-  if (/^(eu|uk|us)?\s*\d{1,2}(\.5)?$/.test(value.trim())) return "shoe_size"
-  return "age_range"
-}
-
 export async function createMissingMasters(
-  missing: { kind: ImportMasterKind; name: string }[],
+  missing: {
+    kind: ImportMasterKind
+    name: string
+    /** Sizes only: which type to create, decided by the sheet column, not a guess. */
+    sizeType?: "age_range" | "shoe_size"
+  }[],
 ): Promise<{ ok: boolean; error?: string; created: CreatedMaster[] }> {
   const denied = await guard()
   if (denied) return { ok: false, error: denied, created: [] }
@@ -132,7 +125,9 @@ export async function createMissingMasters(
     if (!name) continue
 
     if (item.kind === "size") {
-      const sizeType = guessSizeType(name)
+      // The column the value came from already carries the type. The fallback
+      // only guards a malformed payload; validate always supplies it.
+      const sizeType = item.sizeType ?? "age_range"
       const { data, error } = await supabase
         .from("sizes")
         .insert({

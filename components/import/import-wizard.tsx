@@ -366,9 +366,12 @@ export function ImportWizard({ master }: { master: MasterData }) {
   // the import will not deliver. `summary.ready` uses the same rule.
   const readyCount = summary.ready
 
-  const missingRequired = IMPORT_FIELDS.filter(
-    (f) => f.required && !mapping[f.key],
-  ).map((f) => f.label)
+  const missingRequired = [
+    ...IMPORT_FIELDS.filter((f) => f.required && !mapping[f.key]).map((f) => f.label),
+    // Neither size column is required on its own — the rule is "one of the two"
+    // per row — so prompt for them together when the sheet maps neither.
+    ...(mapping.ageRange || mapping.shoeSize ? [] : ["Age Range or Shoe Size"]),
+  ]
 
   if (step === 1) {
     return (

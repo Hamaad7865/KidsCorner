@@ -1,3 +1,4 @@
+import type { SizeType } from "@/lib/db-enums"
 import type { Brand, Category, Colour, Size } from "@/lib/master-data/queries"
 
 import {
@@ -8,6 +9,11 @@ import {
   type ImportField,
   type RawRow,
 } from "./columns"
+
+/** Lookup key for a size: unique per (size_type, label), so both must key it. */
+function sizeKey(sizeType: SizeType, label: string): string {
+  return `${sizeType}:${normaliseKey(label)}`
+}
 
 /**
  * Per-row validation for the import preview.
@@ -22,7 +28,11 @@ export type MasterLookup = {
   categories: Map<string, number>
   brands: Map<string, number>
   colours: Map<string, number>
-  /** Sizes are unique per (size_type, label), so the key is the label alone. */
+  /**
+   * Keyed by (size_type, label) via `sizeKey`, because that pair is what is
+   * unique: "24" can exist both as an age in months and as an EU shoe size, and
+   * the age column and the shoe column must resolve to different rows.
+   */
   sizes: Map<string, number>
 }
 
@@ -36,7 +46,7 @@ export function buildLookup(data: {
     categories: new Map(data.categories.map((c) => [normaliseKey(c.name), c.id])),
     brands: new Map(data.brands.map((b) => [normaliseKey(b.name), b.id])),
     colours: new Map(data.colours.map((c) => [normaliseKey(c.name), c.id])),
-    sizes: new Map(data.sizes.map((s) => [normaliseKey(s.label), s.id])),
+    sizes: new Map(data.sizes.map((s) => [sizeKey(s.size_type, s.label), s.id])),
   }
 }
 
@@ -45,6 +55,8 @@ export type MissingMaster = {
   kind: "category" | "brand" | "colour" | "size"
   /** The value exactly as typed in the sheet, used when creating it. */
   name: string
+  /** Sizes only: the type to create it as, decided by which column it came from. */
+  sizeType?: SizeType
 }
 
 export type ValidatedRow = {
@@ -54,6 +66,8 @@ export type ValidatedRow = {
   brandName: string | null
   gender: "boy" | "girl" | "unisex"
   sizeLabel: string
+  /** Which column the size came from; null when neither or both were filled. */
+  sizeType: SizeType | null
   colourName: string
   costPrice: number
   sellPrice: number
@@ -99,13 +113,30 @@ export function validateRows(
     const productName = text(row, "productName")
     const categoryName = text(row, "category")
     const brandName = text(row, "brand")
-    const sizeLabel = text(row, "size")
+    const ageRange = text(row, "ageRange")
+    const shoeSize = text(row, "shoeSize")
     const colourName = text(row, "colour")
     const barcodeRaw = text(row, "barcode")
 
+    // One size per variant: an age for clothing, a shoe number for footwear,
+    // never both. Which column it came from *is* the size_type, so the importer
+    // no longer has to guess the type from the label's shape.
+    let sizeLabel = ""
+    let sizeType: SizeType | null = null
+    if (ageRange && shoeSize) {
+      errors.push("Fill either Age Range or Shoe Size, not both.")
+    } else if (ageRange) {
+      sizeLabel = ageRange
+      sizeType = "age_range"
+    } else if (shoeSize) {
+      sizeLabel = shoeSize
+      sizeType = "shoe_size"
+    } else {
+      errors.push("Age Range or Shoe Size is required.")
+    }
+
     if (!productName) errors.push("Product Name is empty.")
     if (!categoryName) errors.push("Category is empty.")
-    if (!sizeLabel) errors.push("Size is empty.")
     if (!colourName) errors.push("Colour is empty.")
 
     const sellPrice = parseMoney(row.values.sellPrice)
@@ -142,21 +173,24 @@ export function validateRows(
     const brandId = brandName
       ? (lookup.brands.get(normaliseKey(brandName)) ?? null)
       : null
-    const sizeId = sizeLabel ? (lookup.sizes.get(normaliseKey(sizeLabel)) ?? null) : null
+    const sizeId =
+      sizeType && sizeLabel ? (lookup.sizes.get(sizeKey(sizeType, sizeLabel)) ?? null) : null
     const colourId = colourName
       ? (lookup.colours.get(normaliseKey(colourName)) ?? null)
       : null
 
-    const note = (kind: MissingMaster["kind"], name: string) => {
-      const entry = { kind, name }
+    const note = (kind: MissingMaster["kind"], name: string, type?: SizeType) => {
+      const entry: MissingMaster = type ? { kind, name, sizeType: type } : { kind, name }
       missing.push(entry)
-      const key = `${kind}:${normaliseKey(name)}`
+      // The type is part of the identity: an age "24" and a shoe "24" are two
+      // different sizes to create, so they must not dedup onto each other.
+      const key = `${kind}:${type ?? ""}:${normaliseKey(name)}`
       if (!missingByKey.has(key)) missingByKey.set(key, entry)
     }
 
     if (categoryName && categoryId === null) note("category", categoryName)
     if (brandName && brandId === null) note("brand", brandName)
-    if (sizeLabel && sizeId === null) note("size", sizeLabel)
+    if (sizeType && sizeLabel && sizeId === null) note("size", sizeLabel, sizeType)
     if (colourName && colourId === null) note("colour", colourName)
 
     return {
@@ -166,6 +200,7 @@ export function validateRows(
       brandName: brandName === "" ? null : brandName,
       gender: parseGender(row.values.gender),
       sizeLabel,
+      sizeType,
       colourName,
       costPrice,
       sellPrice: sellPrice ?? 0,
