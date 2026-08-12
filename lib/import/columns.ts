@@ -33,10 +33,12 @@ export const IMPORT_FIELDS = [
     required: false,
     aliases: ["gender", "sex", "for", "boy girl"],
   },
-  // Two columns, one per size_type in the schema. A garment is sized by age, a
-  // shoe by its EU number, and the two never coexist on one variant — so a row
-  // fills exactly one of these (enforced in validate.ts). Splitting them is what
-  // lets the importer stop *guessing* the type from the label's shape.
+  // Three columns, one per size_type in the schema. Clothing is sized by age
+  // ("2-3 yrs") or by letter ("S"–"XXXL"); footwear by its EU number. A variant
+  // carries exactly one, so a row fills exactly one of these three (enforced in
+  // validate.ts) — which is what lets the importer stop *guessing* the type.
+  // A bare "Size" header maps to none of them on purpose: with three size kinds
+  // it is genuinely ambiguous, so the user picks rather than the tool guessing.
   {
     key: "ageRange",
     label: "Age Range",
@@ -44,10 +46,16 @@ export const IMPORT_FIELDS = [
     aliases: ["age range", "age", "age months", "age years", "age mths", "age yrs"],
   },
   {
+    key: "clothingSize",
+    label: "Clothing Size",
+    required: false,
+    aliases: ["clothing size", "letter size", "garment size", "top size", "apparel size", "size letter"],
+  },
+  {
     key: "shoeSize",
     label: "Shoe Size",
     required: false,
-    aliases: ["shoe size", "size", "eu size", "eu", "shoe", "foot size"],
+    aliases: ["shoe size", "eu size", "eu", "shoe", "foot size"],
   },
   {
     key: "colour",
@@ -235,12 +243,14 @@ export function parseGender(value: string | undefined): "boy" | "girl" | "unisex
 /** The template's header row, in the order the spec lists them. */
 export const TEMPLATE_HEADERS = IMPORT_FIELDS.map((f) => f.label)
 
-// Age Range and Shoe Size are separate columns now: the t-shirts carry an age
-// and leave Shoe Size blank; the sandals carry a shoe size and leave Age Range
-// blank. That is the shape the importer expects — one or the other per row.
+// Age Range, Clothing Size and Shoe Size are three separate columns; each row
+// fills exactly one. The age t-shirts leave the other two blank; the graphic
+// tee is sized "M" (Clothing Size); the sandals carry a Shoe Size. That is the
+// shape the importer expects — one size kind per row.
 export const TEMPLATE_SAMPLE_ROWS = [
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "Navy", 180, 320, 12, "6291041500213"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "Navy", 180, 320, 8, "6291041500214"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "Red", 180, 320, 5, ""],
-  ["Canvas sandals", "Sandals", "", "Girl", "", "EU 24", "Pink", 240, 450, 6, ""],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Navy", 180, 320, 12, "6291041500213"],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "", "Navy", 180, 320, 8, "6291041500214"],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Red", 180, 320, 5, ""],
+  ["Graphic tee", "T-Shirts", "Zara Kids", "Boy", "", "M", "", "Navy", 190, 340, 9, ""],
+  ["Canvas sandals", "Sandals", "", "Girl", "", "", "EU 24", "Pink", 240, 450, 6, ""],
 ]

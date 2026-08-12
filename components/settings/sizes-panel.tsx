@@ -32,6 +32,20 @@ const SIZE_TYPE_ITEMS = SIZE_TYPES.map((value) => ({
   label: SIZE_TYPE_LABELS[value],
 }))
 
+// Keyed by SizeType so a new size_type forces its own hints rather than falling
+// back to another type's example.
+const LABEL_HINT: Record<SizeType, string> = {
+  age_range: "e.g. 2-3 yrs",
+  letter_size: "e.g. M",
+  shoe_size: "e.g. EU 24",
+}
+
+const SORT_HINT: Record<SizeType, string> = {
+  age_range: "The seed uses 1–10 for age ranges, smallest first.",
+  letter_size: "The seed uses 40–45 for clothing sizes, S to XXXL.",
+  shoe_size: "The seed uses 20–29 for shoe sizes.",
+}
+
 export function SizesPanel({ sizes }: { sizes: Size[] }) {
   const [editing, setEditing] = useState<{ row: Size | null } | null>(null)
 
@@ -157,7 +171,7 @@ function SizeDialog({ row, onClose }: { row: Size | null; onClose: () => void })
               id="size-label"
               name="label"
               defaultValue={row?.label ?? ""}
-              placeholder={sizeType === "shoe_size" ? "e.g. EU 24" : "e.g. 2-3 yrs"}
+              placeholder={LABEL_HINT[sizeType]}
               autoFocus
               aria-invalid={Boolean(fieldErrors.label)}
               aria-describedby={fieldErrors.label ? "size-label-error" : undefined}
@@ -181,9 +195,7 @@ function SizeDialog({ row, onClose }: { row: Size | null; onClose: () => void })
             />
             <FieldError id="size-sort-error" message={fieldErrors.sortOrder} />
             <p className="text-muted-foreground text-xs">
-              {sizeType === "shoe_size"
-                ? "The seed uses 20–29 for shoe sizes."
-                : "The seed uses 1–10 for age ranges, smallest first."}
+              {SORT_HINT[sizeType]}
             </p>
           </div>
         </>

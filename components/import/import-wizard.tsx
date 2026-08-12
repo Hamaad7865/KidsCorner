@@ -368,9 +368,11 @@ export function ImportWizard({ master }: { master: MasterData }) {
 
   const missingRequired = [
     ...IMPORT_FIELDS.filter((f) => f.required && !mapping[f.key]).map((f) => f.label),
-    // Neither size column is required on its own — the rule is "one of the two"
-    // per row — so prompt for them together when the sheet maps neither.
-    ...(mapping.ageRange || mapping.shoeSize ? [] : ["Age Range or Shoe Size"]),
+    // No size column is required on its own — the rule is "one of the three"
+    // per row — so prompt for them together when the sheet maps none.
+    ...(mapping.ageRange || mapping.clothingSize || mapping.shoeSize
+      ? []
+      : ["Age Range, Clothing Size or Shoe Size"]),
   ]
 
   if (step === 1) {

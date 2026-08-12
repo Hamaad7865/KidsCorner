@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { allocateBarcodes } from "@/lib/barcodes/settings"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
+import type { SizeType } from "@/lib/db-enums"
 import { round2, slugifyForSku } from "@/lib/format"
 import { createClient } from "@/lib/supabase/server"
 
@@ -28,7 +29,7 @@ export type CreatedMaster = {
   name: string
   id: number
   /** Only for sizes: the type it was created as, echoed so the client agrees. */
-  sizeType?: "age_range" | "shoe_size"
+  sizeType?: SizeType
 }
 
 export type CommitRow = {
@@ -111,7 +112,7 @@ export async function createMissingMasters(
     kind: ImportMasterKind
     name: string
     /** Sizes only: which type to create, decided by the sheet column, not a guess. */
-    sizeType?: "age_range" | "shoe_size"
+    sizeType?: SizeType
   }[],
 ): Promise<{ ok: boolean; error?: string; created: CreatedMaster[] }> {
   const denied = await guard()

@@ -113,26 +113,28 @@ export function validateRows(
     const productName = text(row, "productName")
     const categoryName = text(row, "category")
     const brandName = text(row, "brand")
-    const ageRange = text(row, "ageRange")
-    const shoeSize = text(row, "shoeSize")
     const colourName = text(row, "colour")
     const barcodeRaw = text(row, "barcode")
 
-    // One size per variant: an age for clothing, a shoe number for footwear,
-    // never both. Which column it came from *is* the size_type, so the importer
-    // no longer has to guess the type from the label's shape.
+    // One size per variant, in exactly one of the three columns: an age or a
+    // letter for clothing, an EU number for footwear. Which column it came from
+    // *is* the size_type, so the importer never guesses the type from the label.
+    const sizeColumns: { label: string; type: SizeType }[] = [
+      { label: text(row, "ageRange"), type: "age_range" },
+      { label: text(row, "clothingSize"), type: "letter_size" },
+      { label: text(row, "shoeSize"), type: "shoe_size" },
+    ]
+    const sizeCandidates = sizeColumns.filter((c) => c.label !== "")
+
     let sizeLabel = ""
     let sizeType: SizeType | null = null
-    if (ageRange && shoeSize) {
-      errors.push("Fill either Age Range or Shoe Size, not both.")
-    } else if (ageRange) {
-      sizeLabel = ageRange
-      sizeType = "age_range"
-    } else if (shoeSize) {
-      sizeLabel = shoeSize
-      sizeType = "shoe_size"
+    if (sizeCandidates.length > 1) {
+      errors.push("Fill only one of Age Range, Clothing Size or Shoe Size.")
+    } else if (sizeCandidates.length === 1) {
+      sizeLabel = sizeCandidates[0].label
+      sizeType = sizeCandidates[0].type
     } else {
-      errors.push("Age Range or Shoe Size is required.")
+      errors.push("A size is required — fill Age Range, Clothing Size or Shoe Size.")
     }
 
     if (!productName) errors.push("Product Name is empty.")

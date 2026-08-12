@@ -26,6 +26,7 @@ const lookup: MasterLookup = buildLookup({
   sizes: [
     { id: 1, label: "2-3 yrs", size_type: "age_range" },
     { id: 2, label: "EU 24", size_type: "shoe_size" },
+    { id: 3, label: "M", size_type: "letter_size" },
   ] as unknown as Size[],
 })
 
@@ -64,20 +65,27 @@ describe("size columns", () => {
     expect(r.sizeId).toBe(2)
   })
 
-  it("rejects a row that fills both columns", () => {
+  it("takes a letter from the Clothing Size column as a letter_size size", () => {
+    const [r] = validateRows([row(2, { ...base, clothingSize: "M" })], lookup, NO_BARCODES).rows
+    expect(r.errors).toEqual([])
+    expect(r.sizeType).toBe("letter_size")
+    expect(r.sizeId).toBe(3)
+  })
+
+  it("rejects a row that fills more than one size column", () => {
     const [r] = validateRows(
-      [row(2, { ...base, ageRange: "2-3 yrs", shoeSize: "EU 24" })],
+      [row(2, { ...base, ageRange: "2-3 yrs", clothingSize: "M" })],
       lookup,
       NO_BARCODES,
     ).rows
-    expect(r.errors).toContain("Fill either Age Range or Shoe Size, not both.")
+    expect(r.errors).toContain("Fill only one of Age Range, Clothing Size or Shoe Size.")
     expect(r.sizeType).toBeNull()
     expect(r.sizeId).toBeNull()
   })
 
-  it("rejects a row that fills neither column", () => {
+  it("rejects a row that fills no size column", () => {
     const [r] = validateRows([row(2, { ...base })], lookup, NO_BARCODES).rows
-    expect(r.errors).toContain("Age Range or Shoe Size is required.")
+    expect(r.errors).toContain("A size is required — fill Age Range, Clothing Size or Shoe Size.")
     expect(r.sizeType).toBeNull()
   })
 

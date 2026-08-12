@@ -13,12 +13,19 @@ export type Role = (typeof ROLES)[number]
 export const GENDERS = ["boy", "girl", "unisex"] as const
 export type Gender = (typeof GENDERS)[number]
 
-export const SIZE_TYPES = ["age_range", "shoe_size"] as const
+// Ordered as the size manager and the variant matrix group them: the two ways
+// clothing is sized (by age, then by S–XXXL), then footwear.
+export const SIZE_TYPES = ["age_range", "letter_size", "shoe_size"] as const
 export type SizeType = (typeof SIZE_TYPES)[number]
 
-/** Clothing sizes are age ranges ("2-3 yrs"); footwear uses EU numbers ("EU 24"). */
+/**
+ * The three ways stock is sized. Clothing is sold either by age ("2-3 yrs") or
+ * by letter ("S"–"XXXL"); footwear uses EU numbers ("EU 24"). A variant carries
+ * exactly one, so these never mix on a single item.
+ */
 export const SIZE_TYPE_LABELS: Record<SizeType, string> = {
   age_range: "Age range",
+  letter_size: "Clothing size",
   shoe_size: "Shoe size",
 }
 
