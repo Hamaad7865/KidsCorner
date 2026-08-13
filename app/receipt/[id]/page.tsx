@@ -169,11 +169,16 @@ export default async function ReceiptPage({
         ) : null}
 
         <p className="mt-3 text-center">Thank you!</p>
-        {/* Seven days, matching the till exactly. These two receipts used to
-            promise 14 here and 7 on paper, so two customers buying the same
-            day got contradictory terms in writing depending on which device
-            printed — and the one holding "14 days" is entitled by it. */}
-        <p className="text-center opacity-70">Exchange within 7 days with this receipt</p>
+        {/* The shop's return policy. A few lines are final sale; everything else
+            may be exchanged within 7 days. Kept word-for-word in step with the
+            thermal receipt (till-android ReceiptBuilder.kt) — the two documents
+            must never state different terms for the same sale. */}
+        <p className="mt-1 text-center font-bold">
+          No return or refund on wedding dresses, suits or white shirts.
+        </p>
+        <p className="text-center opacity-70">
+          All other items: exchange within 7 days with this receipt.
+        </p>
       </article>
     </div>
   )

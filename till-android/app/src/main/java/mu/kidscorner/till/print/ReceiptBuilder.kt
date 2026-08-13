@@ -151,7 +151,13 @@ fun buildReceipt(
     if (gift) {
         add(ReceiptLine.Text("Gift receipt - no prices shown", Align.Centre))
         add(ReceiptLine.Feed())
-        add(ReceiptLine.Text("Exchangeable with this receipt", Align.Centre))
+        // Same policy as a full receipt — the recipient is the one who exchanges.
+        wrapText("No return or refund on wedding dresses, suits or white shirts.", w)
+            .forEach { add(ReceiptLine.Text(it, Align.Centre, bold = true)) }
+        wrapText(
+            if (w >= 40) "Exchange within 7 days with this receipt" else "Exchange within 7 days",
+            w,
+        ).forEach { add(ReceiptLine.Text(it, Align.Centre)) }
         add(ReceiptLine.Feed(2))
         return@buildList
     }
@@ -237,10 +243,15 @@ fun buildReceipt(
     }
 
     // ── footer ──────────────────────────────────────────────────────────────
+    // The shop's return policy. A few lines are final sale; everything else may
+    // be exchanged within 7 days. Kept word-for-word in step with the web
+    // receipt (app/receipt/[id]/page.tsx) so the two never state different terms.
+    wrapText("No return or refund on wedding dresses, suits or white shirts.", w)
+        .forEach { add(ReceiptLine.Text(it, Align.Centre, bold = true)) }
     wrapText(
         if (w >= 40) "Exchange within 7 days with this receipt" else "Exchange within 7 days",
         w,
-    ).forEach { add(ReceiptLine.Text(it, Align.Centre, bold = true)) }
+    ).forEach { add(ReceiptLine.Text(it, Align.Centre)) }
     if (reprintNumber > 1) {
         add(ReceiptLine.Text("Duplicata $reprintNumber", Align.Centre))
     }

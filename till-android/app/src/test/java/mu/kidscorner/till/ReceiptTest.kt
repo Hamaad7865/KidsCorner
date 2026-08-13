@@ -172,6 +172,10 @@ class ReceiptTest {
                 text.contains("Exchange within 7 days"),
             )
             assertTrue(
+                "no-return policy missing on ${width.label}",
+                text.contains("No return"),
+            )
+            assertTrue(
                 "a dangling 'with this' on ${width.label}",
                 !text.contains("with this\n") && !text.trimEnd().endsWith("with this"),
             )
