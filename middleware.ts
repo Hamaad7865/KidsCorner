@@ -5,8 +5,8 @@ import { isAdminRole } from "@/lib/auth/roles"
 import { isRole } from "@/lib/db-enums"
 import { isSupabaseConfigured } from "@/lib/env"
 import {
+  ADMIN_HOME_PATH,
   LOGIN_PATH,
-  POS_PATH,
   isAdminPath,
   isPublicPath,
   isTillApiPath,
@@ -158,6 +158,16 @@ export async function middleware(request: NextRequest) {
       : redirectTo(LOGIN_PATH, { error: "inactive" })
   }
 
+  // The till runs on the tablet; the web app is back office only. A cashier has
+  // no page here, so send any cashier session to the sign-in screen with a note
+  // rather than a dead redirect. On the (public) login page they pass through,
+  // where it shows the notice and a way out — so there is no loop.
+  if (profile.role === "cashier") {
+    return isPublicPath(pathname)
+      ? proceed()
+      : redirectTo(LOGIN_PATH, { error: "till_moved" })
+  }
+
   const home = landingPathForRole(profile.role)
 
   if (isPublicPath(pathname)) {
@@ -169,8 +179,11 @@ export async function middleware(request: NextRequest) {
     return redirectTo(home)
   }
 
+  // Defensive: cashiers are already intercepted above and only owner/manager
+  // reach here, so this never fires — but it keeps the admin gate honest if a
+  // fourth role is ever added.
   if (isAdminPath(pathname) && !isAdminRole(profile.role)) {
-    return redirectTo(POS_PATH)
+    return redirectTo(LOGIN_PATH, { error: "forbidden" })
   }
 
   // Module visibility, applied AFTER the role rule above so it can only ever
@@ -194,12 +207,13 @@ export async function middleware(request: NextRequest) {
       if (pathname.startsWith("/api/")) {
         return new NextResponse("Not authorised", { status: 403 })
       }
-      // Deliberately the till, not the role's landing page: if the blocked
-      // module IS the landing page (a manager with dashboard hidden), sending
-      // them there would bounce straight back into this same check and loop.
-      // `pos` can never be hidden — the database trigger refuses it — so it is
-      // the one destination guaranteed to terminate.
-      return redirectTo(POS_PATH)
+      // The role's home terminates this — unless the home is itself the blocked
+      // module (a manager with the dashboard hidden), in which case the public,
+      // ungated sign-in page does. This used to send them to the till, which is
+      // gone from the web now.
+      return redirectTo(
+        pathname.startsWith(ADMIN_HOME_PATH) ? LOGIN_PATH : ADMIN_HOME_PATH,
+      )
     }
   }
 

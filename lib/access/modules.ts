@@ -63,16 +63,17 @@ const PATH_TO_MODULE: { prefix: string; module: ModuleKey }[] = [
   { prefix: "/purchases", module: "purchases" },
   { prefix: "/suppliers", module: "suppliers" },
   { prefix: "/sales", module: "sales" },
+  // A receipt is a sale document, reprinted from the Sales list, so it answers
+  // to the same permission — a role that cannot see sales cannot reprint one.
+  { prefix: "/receipt", module: "sales" },
   { prefix: "/reports", module: "reports" },
   { prefix: "/activity", module: "activity" },
   { prefix: "/customers", module: "customers" },
   { prefix: "/settings", module: "settings" },
-  // The back office's view of the till shares the till's own permission: a
-  // role that cannot see the till has no use for the page about it. (No
-  // ordering hazard against "/pos" below — `matchesPrefix` requires an exact
-  // match or a trailing slash, so "/point-of-sale" never collides with it.)
+  // The back office's view of the tablet tills — their devices, shifts and
+  // cash-ups — shares the till's own permission. This is the only page under
+  // the `pos` module now that the web till itself is gone.
   { prefix: "/point-of-sale", module: "pos" },
-  { prefix: "/pos", module: "pos" },
 ]
 
 export function moduleForPath(pathname: string): ModuleKey | null {

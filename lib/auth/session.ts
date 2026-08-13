@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 
 import { isRole, type Role } from "@/lib/db-enums"
 import { isSupabaseConfigured } from "@/lib/env"
-import { LOGIN_PATH, POS_PATH } from "@/lib/routes"
+import { LOGIN_PATH } from "@/lib/routes"
 import { createClient } from "@/lib/supabase/server"
 import { readPastClockSkew } from "@/lib/supabase/timing"
 
@@ -73,10 +73,11 @@ export async function requireProfile(): Promise<SessionProfile> {
 /**
  * For `(admin)` pages. The proxy already blocks cashiers, but layouts assert it
  * again so a page is never rendered on a wrong-role request that slipped past
- * the matcher.
+ * the matcher. A non-admin lands on the sign-in screen, which explains why —
+ * the web till they used to be sent to no longer exists.
  */
 export async function requireAdminProfile(): Promise<SessionProfile> {
   const profile = await requireProfile()
-  if (!isAdminRole(profile.role)) redirect(POS_PATH)
+  if (!isAdminRole(profile.role)) redirect(`${LOGIN_PATH}?error=till_moved`)
   return profile
 }

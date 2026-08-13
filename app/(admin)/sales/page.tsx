@@ -253,7 +253,7 @@ export default async function SalesPage({
                         size="sm"
                         render={
                           <a
-                            href={`/pos/receipt/${sale.id}`}
+                            href={`/receipt/${sale.id}`}
                             target="_blank"
                             rel="noreferrer"
                           />

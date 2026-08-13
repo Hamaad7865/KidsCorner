@@ -11,12 +11,19 @@ import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = { title: "Receipt" }
 
+/** Reads the session and a single sale; must stay per-request. */
+export const dynamic = "force-dynamic"
+
 /**
  * 80mm thermal receipt, printed through the browser.
  *
- * Deliberately its own route rather than a dialog: the print stylesheet needs
- * the whole page, and opening it in a new tab means the print dialog never
- * navigates the till away from the sell screen mid-queue.
+ * Its own top-level route rather than a page under `(admin)`, so it renders
+ * with no sidebar or header — the print stylesheet wants the whole page. The
+ * back office's Sales list opens it in a new tab to reprint a past sale; the
+ * selling itself happens on the tablet till, which prints its own paper.
+ *
+ * `requireProfile` gates it to signed-in staff, and the proxy maps `/receipt`
+ * to the `sales` module, so a role that cannot see sales cannot reprint one.
  */
 export default async function ReceiptPage({
   params,
@@ -68,7 +75,7 @@ export default async function ReceiptPage({
   )
 
   return (
-    <div className="bg-muted/40 min-h-full p-4 print:bg-white print:p-0">
+    <div className="bg-muted/40 min-h-dvh p-4 print:bg-white print:p-0">
       <PrintButton saleId={saleId} />
 
       {/* 80mm minus the printer's margins. `print:` strips the chrome. */}

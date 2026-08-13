@@ -1,7 +1,6 @@
 "use client"
 
-import Link from "next/link"
-import { ChevronDown, LogOut, ShoppingCart } from "lucide-react"
+import { ChevronDown, LogOut } from "lucide-react"
 
 import { signOut } from "@/lib/auth/actions"
 import { ROLE_LABELS } from "@/lib/auth/roles"
@@ -54,13 +53,6 @@ export function UserMenu({ profile }: { profile: SessionProfile }) {
             {ROLE_LABELS[profile.role]}
           </div>
         </DropdownMenuLabel>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem render={<Link href="/pos" />}>
-          <ShoppingCart aria-hidden />
-          Open till
-        </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 

@@ -3,7 +3,10 @@ import { redirect } from "next/navigation"
 
 import { BrandLock } from "@/components/brand/logo"
 import { SetupNotice } from "@/components/setup-notice"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { signOut } from "@/lib/auth/actions"
+import { isAdminRole } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import { isSupabaseConfigured } from "@/lib/env"
 import { landingPathForRole, safeRedirectPath } from "@/lib/routes"
@@ -23,6 +26,7 @@ const REDIRECT_REASONS: Record<string, string> = {
     "That account is signed in but has no staff profile. Ask the owner to add it under Settings → Users.",
   inactive: "That account has been deactivated. Ask the owner to re-enable it.",
   forbidden: "You don't have access to the back office.",
+  till_moved: "The till runs on the tablet now. Sign in there to serve customers.",
 }
 
 export default async function LoginPage({
@@ -35,10 +39,16 @@ export default async function LoginPage({
   const { next, error } = await searchParams
   const redirectTo = safeRedirectPath(next)
 
-  // Already signed in with a usable profile? Skip the form.
+  // Already signed in with a usable profile? Skip the form. Only the back-office
+  // roles have a home to go to — a cashier is signed in but the till they used
+  // is on the tablet, so they get a terminal notice here rather than a bounce
+  // that would loop back to this page.
   const profile = await getSessionProfile()
   if (profile?.isActive) {
-    redirect(redirectTo ?? landingPathForRole(profile.role))
+    if (isAdminRole(profile.role)) {
+      redirect(redirectTo ?? landingPathForRole(profile.role))
+    }
+    return <TillMovedNotice />
   }
 
   const reason = typeof error === "string" ? REDIRECT_REASONS[error] : undefined
@@ -64,6 +74,36 @@ export default async function LoginPage({
             </p>
           ) : null}
           <LoginForm next={redirectTo ?? undefined} disabled={!isSupabaseConfigured} />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/**
+ * Shown to a cashier who reaches the web app. Selling moved to the tablet till,
+ * so there is nothing for them here — a plain explanation and a way to sign out,
+ * rather than a redirect that would bounce straight back to this page.
+ */
+function TillMovedNotice() {
+  return (
+    <div className="space-y-6">
+      <BrandLock size="lg" subtitle="Back office" />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">The till is on the tablet</CardTitle>
+          <CardDescription>
+            You&rsquo;re signed in as a cashier. Sales are rung up on the tablet
+            till now — sign in there by PIN. The web app is for the owner and
+            managers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={signOut}>
+            <Button type="submit" variant="outline">
+              Sign out
+            </Button>
+          </form>
         </CardContent>
       </Card>
     </div>

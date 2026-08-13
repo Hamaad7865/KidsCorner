@@ -9,7 +9,6 @@ import type { Role } from "@/lib/db-enums"
  */
 
 export const LOGIN_PATH = "/login"
-export const POS_PATH = "/pos"
 export const ADMIN_HOME_PATH = "/dashboard"
 
 /** The Android till's API. Authenticated, but by bearer token, not by cookie. */
@@ -56,19 +55,21 @@ export function isTillApiPath(pathname: string): boolean {
   return matchesPrefix(pathname, TILL_API_PREFIX)
 }
 
-/** `(pos)` routes: /pos, /pos/shift, /pos/receipt/[id] — all roles allowed. */
-export function isPosPath(pathname: string): boolean {
-  return matchesPrefix(pathname, POS_PATH)
-}
-
 /** `(admin)` routes — require owner or manager. */
 export function isAdminPath(pathname: string): boolean {
   return ADMIN_PATHS.some((path) => matchesPrefix(pathname, path))
 }
 
-/** Where a role lands after login, or when it hits `/`. */
+/**
+ * Where a role lands after login, or when it hits `/`.
+ *
+ * The web app is back-office only now — selling happens on the tablet till — so
+ * a cashier has no page here and is sent to the sign-in screen, which explains
+ * as much rather than looping. The proxy also intercepts cashier sessions, so
+ * this is the belt to that braces.
+ */
 export function landingPathForRole(role: Role): string {
-  return role === "cashier" ? POS_PATH : ADMIN_HOME_PATH
+  return role === "cashier" ? LOGIN_PATH : ADMIN_HOME_PATH
 }
 
 /**

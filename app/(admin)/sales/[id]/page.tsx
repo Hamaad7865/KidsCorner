@@ -103,7 +103,7 @@ export default async function SaleDetailPage({
               reprinting one should not lose their place in the history. */}
           <Button
             render={
-              <a href={`/pos/receipt/${sale.id}`} target="_blank" rel="noreferrer" />
+              <a href={`/receipt/${sale.id}`} target="_blank" rel="noreferrer" />
             }
           >
             <Printer aria-hidden />

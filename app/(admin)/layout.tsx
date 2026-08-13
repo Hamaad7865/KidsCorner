@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ShoppingCart } from "lucide-react"
 
 import { AppSidebar, MobileNav } from "@/components/admin/app-sidebar"
 import { GlobalSearch } from "@/components/admin/global-search"
@@ -66,17 +65,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <GlobalSearch />
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
-            {/* Up here rather than pinned to the bottom of the sidebar. Opening
-                the till is the most frequent thing anyone does from the back
-                office, and it was the one control that needed a look down the
-                page to find. */}
-            <Link
-              href="/pos"
-              className="bg-brand-600 hover:bg-brand-700 flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium text-white transition-colors"
-            >
-              <ShoppingCart className="size-4" aria-hidden />
-              <span className="hidden sm:inline">Open till</span>
-            </Link>
             <LowStockPill count={lowStockCount} />
             <UserMenu profile={profile} />
           </div>
