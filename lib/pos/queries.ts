@@ -131,6 +131,7 @@ export type CatalogVariant = {
   id: number
   productId: number
   productName: string
+  shelfLocation: string | null
   categoryId: number | null
   categoryName: string | null
   sizeLabel: string
@@ -171,7 +172,7 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
       .from("product_variants")
       .select(
         `id, sku, barcode, selling_price, qty_on_hand,
-         products!inner ( id, name, is_active, category_id, image_url, categories ( name ) ),
+         products!inner ( id, name, is_active, category_id, image_url, shelf_location, categories ( name ) ),
          sizes ( label, sort_order ),
          colours ( name, hex_code )`,
       )
@@ -188,6 +189,7 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
         id: row.id,
         productId: row.products?.id ?? 0,
         productName: row.products?.name ?? "",
+        shelfLocation: row.products?.shelf_location ?? null,
         categoryId: row.products?.category_id ?? null,
         categoryName: row.products?.categories?.name ?? null,
         sizeLabel: row.sizes?.label ?? "",
