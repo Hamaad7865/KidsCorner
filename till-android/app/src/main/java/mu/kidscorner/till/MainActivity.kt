@@ -54,6 +54,7 @@ import mu.kidscorner.till.ui.SaleNoteDialog
 import mu.kidscorner.till.ui.SellScreen
 import mu.kidscorner.till.ui.SettingsScreen
 import mu.kidscorner.till.ui.StartingScreen
+import mu.kidscorner.till.ui.StockCheckScreen
 import mu.kidscorner.till.ui.ToastPill
 import mu.kidscorner.till.ui.TodaysSalesDialog
 import mu.kidscorner.till.ui.theme.KidsCornerTillTheme
@@ -209,6 +210,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onSetQty = vm::setQty,
                         onSetLineDiscount = vm::setLineDiscount,
                         onOpenActions = { overlay = Overlay.Actions },
+                        onOpenStockCheck = vm::openStockCheck,
                         onOpenCustomItem = { overlay = Overlay.Custom },
                         onOpenNote = { overlay = Overlay.Note },
                         onSetNote = vm::setNote,
@@ -231,6 +233,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                     )
                 }
             }
+
+            is TillScreen.StockCheck -> StockCheckScreen(
+                catalog = state.catalog,
+                state = state.stockCheck,
+                onSelectProduct = vm::selectStockProduct,
+                onRetry = vm::retryStockCheck,
+                onBack = vm::closeStockCheck,
+            )
 
             is TillScreen.Paying -> PaymentScreen(
                 totals = state.totals,
@@ -495,6 +505,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Settings) {
         vm.closeSettings()
+    }
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.StockCheck) {
+        vm.closeStockCheck()
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Selling) {
         /* swallowed */

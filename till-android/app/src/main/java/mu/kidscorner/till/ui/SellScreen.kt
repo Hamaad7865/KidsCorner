@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonOutline
@@ -205,6 +206,7 @@ fun SellScreen(
     onSetQty: (Int, Int) -> Unit,
     onSetLineDiscount: (Int, String?, Double) -> Unit,
     onOpenActions: () -> Unit,
+    onOpenStockCheck: () -> Unit,
     onOpenCustomItem: () -> Unit,
     onOpenNote: () -> Unit,
     onSetNote: (String) -> Unit,
@@ -342,6 +344,30 @@ fun SellScreen(
                         modifier = Modifier.weight(1f),
                     )
                     ScanButton(onClick = ::submitSearch)
+
+                    Surface(
+                        onClick = onOpenStockCheck,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.AccentSolid,
+                        contentColor = Color.White,
+                        modifier = Modifier.size(width = 142.dp, height = 56.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(
+                                8.dp,
+                                Alignment.CenterHorizontally,
+                            ),
+                        ) {
+                            Icon(Icons.Default.Inventory2, null, Modifier.size(18.dp))
+                            Text(
+                                "Stock check",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
 
                     // Custom item takes the key Browse used to hold. Browse
                     // opened an overlay onto the catalogue, and the catalogue

@@ -50,6 +50,9 @@ import mu.kidscorner.till.data.SaleDetailDiscount
 import mu.kidscorner.till.data.SaleDetailLine
 import mu.kidscorner.till.data.SaleDetailPayment
 import mu.kidscorner.till.data.SaleSummary
+import mu.kidscorner.till.data.StockCheckLocation
+import mu.kidscorner.till.data.StockCheckQuantity
+import mu.kidscorner.till.StockCheckUiState
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.toPlainText
@@ -76,6 +79,7 @@ import mu.kidscorner.till.ui.SaleCompleteScreen
 import mu.kidscorner.till.ui.SaleNoteDialog
 import mu.kidscorner.till.ui.SellScreen
 import mu.kidscorner.till.ui.SettingsScreen
+import mu.kidscorner.till.ui.StockCheckScreen
 import mu.kidscorner.till.ui.ToastPill
 import mu.kidscorner.till.ui.TodaysSalesDialog
 import mu.kidscorner.till.ui.theme.Handoff
@@ -364,6 +368,7 @@ class GalleryActivity : ComponentActivity() {
                                 cart = cart.withLineDiscount(id, kind, value)
                             },
                             onOpenActions = { showing = "actions" },
+                            onOpenStockCheck = { showing = "stockCheck" },
                             onOpenCustomItem = { showing = "custom" },
                             onOpenNote = {},
                             onSetNote = { note = it },
@@ -406,6 +411,7 @@ class GalleryActivity : ComponentActivity() {
                             onSetQty = { _, _ -> },
                             onSetLineDiscount = { _, _, _ -> },
                             onOpenActions = {},
+                            onOpenStockCheck = { showing = "stockCheck" },
                             onOpenCustomItem = {},
                             onOpenNote = {},
                             onSetNote = {},
@@ -425,6 +431,36 @@ class GalleryActivity : ComponentActivity() {
                             onCloseTill = {},
                             onOpenMovement = {},
                             onOpenHistory = {},
+                        )
+
+                        "stockCheck" -> StockCheckScreen(
+                            catalog = SAMPLE_CATALOG.map {
+                                if (it.productId == 10) it.copy(shelfLocation = "A12") else it
+                            },
+                            state = StockCheckUiState(
+                                productId = 10,
+                                locations = listOf(
+                                    StockCheckLocation(
+                                        id = 1,
+                                        name = "Shop",
+                                        quantities = listOf(
+                                            StockCheckQuantity(101, 10),
+                                            StockCheckQuantity(102, 4),
+                                        ),
+                                    ),
+                                    StockCheckLocation(
+                                        id = 2,
+                                        name = "Warehouse",
+                                        quantities = listOf(
+                                            StockCheckQuantity(101, 100),
+                                            StockCheckQuantity(102, 0),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            onSelectProduct = {},
+                            onRetry = {},
+                            onBack = { showing = null },
                         )
 
                         // Split bill is reached from the header, so the
@@ -602,7 +638,7 @@ private fun Menu(onPick: (String) -> Unit) {
 }
 
 private val SCREENS = listOf(
-    "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "openShiftOffline", "sell", "sellEmpty", "payment", "openShift", "closeShift", "closed", "complete",
+    "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "openShiftOffline", "sell", "sellEmpty", "stockCheck", "payment", "openShift", "closeShift", "closed", "complete",
     "customer", "held", "approval", "movement",
     "setup", "offline", "printer", "receipt", "settings", "refund", "actions", "note", "custom", "basket", "txns", "toast",
 )
