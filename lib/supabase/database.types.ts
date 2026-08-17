@@ -488,6 +488,7 @@ export type Database = {
           image_url: string | null
           is_active: boolean
           name: string
+          shelf_location: string | null
         }
         Insert: {
           brand_id?: number | null
@@ -499,6 +500,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name: string
+          shelf_location?: string | null
         }
         Update: {
           brand_id?: number | null
@@ -510,6 +512,7 @@ export type Database = {
           image_url?: string | null
           is_active?: boolean
           name?: string
+          shelf_location?: string | null
         }
         Relationships: [
           {

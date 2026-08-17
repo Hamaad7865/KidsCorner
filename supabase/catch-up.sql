@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS products (
     gender text DEFAULT 'unisex'::text NOT NULL,
     description text,
     image_url text,
+    shelf_location text,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -2881,7 +2882,8 @@ SELECT setval(pg_get_serial_sequence('categories', 'id'),
        greatest((SELECT max(id) FROM categories), 1));
 
 INSERT INTO stock_locations (id, name, is_default, is_active) VALUES
-    (1, 'Shop floor', TRUE, TRUE)
+    (1, 'Shop', TRUE, TRUE),
+    (2, 'Warehouse', FALSE, TRUE)
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('stock_locations', 'id'),
        greatest((SELECT max(id) FROM stock_locations), 1));

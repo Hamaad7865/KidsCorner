@@ -39,6 +39,11 @@ export const productSchema = z.object({
     .url("Enter a full image URL, or leave it blank.")
     .max(500, "That URL is too long.")
     .nullable(),
+  shelfLocation: z
+    .string()
+    .trim()
+    .max(120, "Keep the shelf location under 120 characters.")
+    .nullable(),
   isActive: z.boolean(),
 })
 
