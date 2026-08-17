@@ -7,6 +7,7 @@ import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import type { SizeType } from "@/lib/db-enums"
 import { round2, slugifyForSku } from "@/lib/format"
+import type { StockLocationName } from "@/lib/import/columns"
 import { createClient } from "@/lib/supabase/server"
 
 /**
@@ -44,6 +45,8 @@ export type CommitRow = {
   sellPrice: number
   quantity: number
   barcode: string | null
+  shelfLocation: string | null
+  location: StockLocationName
 }
 
 export type ChunkResult = {

@@ -243,6 +243,16 @@ export function ImportWizard({ master }: { master: MasterData }) {
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx")
     const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...TEMPLATE_SAMPLE_ROWS])
+    sheet["!cols"] = TEMPLATE_HEADERS.map((header) => ({
+      wch:
+        header === "Product Name"
+          ? 28
+          : header === "Shelf Location"
+            ? 18
+            : header === "Location"
+              ? 14
+              : Math.max(12, header.length + 2),
+    }))
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, "Products")
     XLSX.writeFile(workbook, "kids-corner-import-template.xlsx")
@@ -324,6 +334,8 @@ export function ImportWizard({ master }: { master: MasterData }) {
       sellPrice: row.sellPrice,
       quantity: row.quantity,
       barcode: row.barcode,
+      shelfLocation: row.shelfLocation,
+      location: row.location,
     }))
 
     const running: Totals = { ...ZERO, skipped: [] }
@@ -772,6 +784,8 @@ function PreviewTable({ summary }: { summary: ValidationSummary }) {
               <TableHead>Product</TableHead>
               <TableHead className="w-28">Size</TableHead>
               <TableHead className="w-28">Colour</TableHead>
+              <TableHead className="w-32">Shelf</TableHead>
+              <TableHead className="w-28">Location</TableHead>
               <TableHead className="w-24 text-right">Qty</TableHead>
               <TableHead className="w-28 text-right">Price</TableHead>
               <TableHead className="w-64">Status</TableHead>
@@ -795,6 +809,8 @@ function PreviewTable({ summary }: { summary: ValidationSummary }) {
                   <TableCell className="font-medium">{row.productName || "—"}</TableCell>
                   <TableCell>{row.sizeLabel || "—"}</TableCell>
                   <TableCell>{row.colourName || "—"}</TableCell>
+                  <TableCell>{row.shelfLocation || "—"}</TableCell>
+                  <TableCell>{row.location}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {row.quantity}
                   </TableCell>
