@@ -4,6 +4,11 @@ import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import { createClient } from "@/lib/supabase/server"
 
+import {
+  isSupportedProductImageType,
+  MAX_PRODUCT_IMAGE_BYTES,
+} from "./image-config"
+
 /**
  * Putting a photograph of a garment somewhere the shop can reach it.
  *
@@ -17,11 +22,6 @@ import { createClient } from "@/lib/supabase/server"
  * and it means the size and type rules are enforced somewhere the browser
  * cannot skip. Storage's own limits stay in place underneath as the backstop.
  */
-
-export const MAX_IMAGE_BYTES = 3 * 1024 * 1024
-
-/** Must match `allowed_mime_types` on the bucket (migration 033). */
-export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const
 
 const EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -48,10 +48,10 @@ export async function uploadProductImage(
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "No image was chosen." }
   }
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type as (typeof ALLOWED_IMAGE_TYPES)[number])) {
+  if (!isSupportedProductImageType(file.type)) {
     return { ok: false, error: "That file isn't a JPEG, PNG or WebP image." }
   }
-  if (file.size > MAX_IMAGE_BYTES) {
+  if (file.size > MAX_PRODUCT_IMAGE_BYTES) {
     return {
       ok: false,
       // The browser shrinks a photo before it gets here, so reaching this

@@ -7,10 +7,8 @@ import { ImageUp, LoaderCircle, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  ALLOWED_IMAGE_TYPES,
-  uploadProductImage,
-} from "@/lib/products/image-actions"
+import { uploadProductImage } from "@/lib/products/image-actions"
+import { PRODUCT_IMAGE_ACCEPT } from "@/lib/products/image-config"
 
 /**
  * The product photo: pick one, see it, replace it, remove it.
@@ -133,7 +131,7 @@ export function ImageField({
             <input
               ref={picker}
               type="file"
-              accept={ALLOWED_IMAGE_TYPES.join(",")}
+              accept={PRODUCT_IMAGE_ACCEPT}
               className="sr-only"
               onChange={(e) => choose(e.target.files?.[0])}
             />
