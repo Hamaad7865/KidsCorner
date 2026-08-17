@@ -135,12 +135,19 @@ export default async function ProductsPage({
                     <ProductThumb src={product.imageUrl} name={product.name} />
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/products/${product.id}`}
-                      className="hover:text-brand-700 font-medium hover:underline"
-                    >
-                      {product.name}
-                    </Link>
+                    <div className="space-y-0.5">
+                      <Link
+                        href={`/products/${product.id}`}
+                        className="hover:text-brand-700 font-medium hover:underline"
+                      >
+                        {product.name}
+                      </Link>
+                      {product.shelfLocation ? (
+                        <p className="text-muted-foreground text-xs">
+                          Shelf {product.shelfLocation}
+                        </p>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {product.categoryName ?? "—"}

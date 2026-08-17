@@ -107,6 +107,14 @@ export default async function ProductDetailPage({
                 {[product.categoryName, product.brandName].filter(Boolean).join(" · ") ||
                   "Uncategorised"}
               </p>
+              {product.shelfLocation ? (
+                <p className="text-muted-foreground text-sm">
+                  Shelf location:{" "}
+                  <span className="text-foreground font-medium">
+                    {product.shelfLocation}
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
 

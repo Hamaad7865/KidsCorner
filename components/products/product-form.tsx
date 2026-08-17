@@ -205,6 +205,30 @@ export function ProductForm({
         </Select>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="product-shelf-location">Shelf location</Label>
+        <Input
+          id="product-shelf-location"
+          name="shelfLocation"
+          defaultValue={product?.shelfLocation ?? ""}
+          placeholder="e.g. A12 or Shelf B3"
+          maxLength={120}
+          aria-invalid={Boolean(state.fieldErrors.shelfLocation)}
+          aria-describedby={
+            state.fieldErrors.shelfLocation
+              ? "product-shelf-location-error"
+              : "product-shelf-location-help"
+          }
+        />
+        <p id="product-shelf-location-help" className="text-muted-foreground text-xs">
+          Shown to staff when they look up stock in the back office or Android till.
+        </p>
+        <FieldError
+          id="product-shelf-location-error"
+          message={state.fieldErrors.shelfLocation}
+        />
+      </div>
+
       <ImageField
         defaultValue={product?.imageUrl ?? null}
         error={state.fieldErrors.imageUrl}
