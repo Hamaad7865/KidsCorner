@@ -95,7 +95,12 @@ fun StockCheckScreen(
         }
     }
 
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        // A hardware scanner types as a keyboard, but the on-screen keyboard
+        // steals half a landscape till. Keep focus for scans without the IME.
+        keyboard?.hide()
+    }
 
     Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
         Row(

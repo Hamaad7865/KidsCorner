@@ -435,7 +435,12 @@ class GalleryActivity : ComponentActivity() {
 
                         "stockCheck" -> StockCheckScreen(
                             catalog = SAMPLE_CATALOG.map {
-                                if (it.productId == 10) it.copy(shelfLocation = "A12") else it
+                                when (it.id) {
+                                    101 -> it.copy(shelfLocation = "A12", qtyOnHand = 110)
+                                    102 -> it.copy(shelfLocation = "A12", qtyOnHand = 4)
+                                    103 -> it.copy(shelfLocation = "A12", qtyOnHand = 2)
+                                    else -> it
+                                }
                             },
                             state = StockCheckUiState(
                                 productId = 10,
@@ -460,7 +465,7 @@ class GalleryActivity : ComponentActivity() {
                             ),
                             onSelectProduct = {},
                             onRetry = {},
-                            onBack = { showing = null },
+                            onBack = { showing = "sell" },
                         )
 
                         // Split bill is reached from the header, so the
