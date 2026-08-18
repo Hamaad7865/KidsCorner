@@ -75,6 +75,16 @@ type PurchaseReceipt = {
   created_at: string
 }
 
+function validReceiptsLatestFirst(receipts: PurchaseReceipt[]): PurchaseReceipt[] {
+  return receipts
+    .map((receipt) => ({ receipt, timestamp: Date.parse(receipt.created_at) }))
+    .filter(({ timestamp }) => Number.isFinite(timestamp))
+    .sort(
+      (a, b) => b.timestamp - a.timestamp || b.receipt.id - a.receipt.id,
+    )
+    .map(({ receipt }) => receipt)
+}
+
 /** Resolve each variant through its latest immutable purchase receipt event. */
 function latestPurchaseCosts(
   rows: ReceivedPurchase[],
@@ -82,17 +92,8 @@ function latestPurchaseCosts(
 ): Map<number, number> {
   const costs = new Map<number, number>()
   const purchases = new Map(rows.map((purchase) => [purchase.id, purchase]))
-  const receiptTime = (createdAt: string) => {
-    const timestamp = Date.parse(createdAt)
-    return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp
-  }
 
-  const latestFirst = [...receipts].sort((a, b) => {
-    const timestampOrder = receiptTime(b.created_at) - receiptTime(a.created_at)
-    return timestampOrder || b.id - a.id
-  })
-
-  for (const receipt of latestFirst) {
+  for (const receipt of receipts) {
     if (costs.has(receipt.variant_id) || receipt.reference_id === null) continue
 
     const purchase = purchases.get(receipt.reference_id)
@@ -242,7 +243,10 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
 
   if (receiptResult.error) throw receiptResult.error
   const receiptRows = receiptResult.data ?? []
-  const receiptCandidates = receiptRows.slice(0, ROW_CAP)
+  const receiptCandidates = validReceiptsLatestFirst(receiptRows).slice(
+    0,
+    ROW_CAP,
+  )
   const receiptPurchaseIds = [
     ...new Set(
       receiptCandidates

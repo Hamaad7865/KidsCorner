@@ -397,6 +397,115 @@ describe("getPnlReport", () => {
     expect(report.cost).toBe(260)
   })
 
+  it("sorts every returned receipt before applying the report row cap", async () => {
+    const olderReceipts = Array.from({ length: 5_000 }, (_, index) => ({
+      id: index + 1,
+      variant_id: 101,
+      reference_id: 10,
+      created_at: "2026-07-01T10:00:00+00:00",
+    }))
+
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 300,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 1,
+          variant_id: 101,
+          product_variants: { cost_price: 999 },
+        },
+      ],
+      // The fake does not apply PostgREST ordering. The true newest receipt is
+      // deliberately the 5,001st response row and must survive the local cap.
+      stock_movements: [
+        ...olderReceipts,
+        {
+          id: 5_001,
+          variant_id: 101,
+          reference_id: 20,
+          created_at: "2026-07-05T10:00:00+00:00",
+        },
+      ],
+      purchases: [
+        {
+          id: 10,
+          status: "received",
+          total_amount: 110,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 110 }],
+        },
+        {
+          id: 20,
+          status: "received",
+          total_amount: 130,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 130 }],
+        },
+      ],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    expect(report.cost).toBe(130)
+    expect(report.truncated).toBe(true)
+  })
+
+  it("ignores a receipt with a malformed timestamp and uses catalogue cost", async () => {
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 200,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 1,
+          variant_id: 202,
+          product_variants: { cost_price: 77 },
+        },
+      ],
+      stock_movements: [
+        {
+          id: 600,
+          variant_id: 202,
+          reference_id: 60,
+          created_at: "not-a-timestamp",
+        },
+      ],
+      purchases: [
+        {
+          id: 60,
+          status: "received",
+          total_amount: 999,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 202, qty: 1, unit_cost: 999 }],
+        },
+      ],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    expect(report.cost).toBe(77)
+  })
+
   it("takes only money that left the drawer off the bottom line", async () => {
     client = build([
       { id: 1, amount: -500, reason: "Paid the bread supplier" },
