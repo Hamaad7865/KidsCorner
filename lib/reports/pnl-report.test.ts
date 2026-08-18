@@ -104,6 +104,32 @@ describe("getPnlReport", () => {
           purchase_items: [{ variant_id: 202, unit_cost: 115 }],
         },
       ],
+      stock_movements: [
+        {
+          id: 2,
+          variant_id: 101,
+          movement_type: "purchase",
+          reference_type: "purchase",
+          reference_id: 12,
+          qty: 1,
+          created_at: "2026-07-04T10:00:00+00:00",
+          created_by: null,
+          location_id: null,
+          notes: null,
+        },
+        {
+          id: 1,
+          variant_id: 202,
+          movement_type: "purchase",
+          reference_type: "purchase",
+          reference_id: 11,
+          qty: 1,
+          created_at: "2026-07-03T10:00:00+00:00",
+          created_by: null,
+          location_id: null,
+          notes: null,
+        },
+      ],
       // Deliberately unrelated to both receipt snapshots. A report that asks
       // today's setting for historical cost would produce a different result.
       settings: [{ key: "vat_rate", value: 0.5 }],
@@ -114,6 +140,108 @@ describe("getPnlReport", () => {
     // Disabled receipt: Rs115 gross cost. Enabled receipt: Rs115 - Rs15 VAT.
     expect(report.cost).toBe(215)
     expect(report.gross).toBe(15)
+  })
+
+  it("chooses the last receipt movement when draft ids were created in the opposite order", async () => {
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 230,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 1,
+          variant_id: 101,
+          product_variants: { cost_price: 130 },
+        },
+      ],
+      stock_movements: [
+        {
+          id: 502,
+          variant_id: 101,
+          movement_type: "purchase",
+          reference_type: "purchase",
+          reference_id: 10,
+          qty: 1,
+          created_at: "2026-07-04T10:00:00+00:00",
+          created_by: null,
+          location_id: null,
+          notes: null,
+        },
+        {
+          id: 501,
+          variant_id: 101,
+          movement_type: "purchase",
+          reference_type: "purchase",
+          reference_id: 20,
+          qty: 1,
+          created_at: "2026-07-03T10:00:00+00:00",
+          created_by: null,
+          location_id: null,
+          notes: null,
+        },
+      ],
+      // PostgREST returns the current implementation's purchase-id order:
+      // higher draft id first, even though its receipt movement is older.
+      purchases: [
+        {
+          id: 20,
+          total_amount: 115,
+          vat_enabled: true,
+          vat_amount: 15,
+          purchase_items: [{ variant_id: 101, unit_cost: 115 }],
+        },
+        {
+          id: 10,
+          total_amount: 130,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, unit_cost: 130 }],
+        },
+      ],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    expect(report.cost).toBe(130)
+    expect(client.filtersOn("stock_movements")).toContainEqual([
+      "eq",
+      "movement_type",
+      "purchase",
+    ])
+    expect(client.filtersOn("stock_movements")).toContainEqual([
+      "eq",
+      "reference_type",
+      "purchase",
+    ])
+    expect(client.filtersOn("stock_movements")).toContainEqual([
+      "not",
+      "reference_id",
+      "is",
+      null,
+    ])
+    expect(client.filtersOn("stock_movements")).toContainEqual([
+      "order",
+      "created_at",
+      { ascending: false },
+    ])
+    expect(client.filtersOn("stock_movements")).toContainEqual([
+      "order",
+      "id",
+      { ascending: false },
+    ])
+    expect(client.filtersOn("purchases")).toContainEqual([
+      "eq",
+      "status",
+      "received",
+    ])
   })
 
   it("takes only money that left the drawer off the bottom line", async () => {
