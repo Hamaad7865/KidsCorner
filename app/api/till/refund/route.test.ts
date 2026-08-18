@@ -60,7 +60,16 @@ beforeEach(() => {
     select: () => ({
       eq: () => ({
         maybeSingle: async () => ({
-          data: { credit_no: "CN0001", total: 250, refund_method: "cash" },
+          data: {
+            credit_no: "CN0001",
+            total: 250,
+            refund_method: "cash",
+            vat_policy_id: 17,
+            vat_enabled: true,
+            vat_rate: 0.15,
+            vat_number: "VAT-123",
+            vat_amount: 32.61,
+          },
         }),
       }),
     }),
@@ -125,6 +134,19 @@ describe("when the shop asks for a manager", () => {
 })
 
 describe("the payload it accepts", () => {
+  it("returns the credit note's frozen VAT snapshot to the till", async () => {
+    const json = await post(body())
+
+    expect(json).toMatchObject({
+      ok: true,
+      vatPolicyId: 17,
+      vatEnabled: true,
+      vatRate: 0.15,
+      vatNumber: "VAT-123",
+      vatAmount: 32.61,
+    })
+  })
+
   it("merges two lines naming the same sale item", async () => {
     // Each would pass the RPC's already-returned check alone and together
     // exceed what was sold, refunding the line twice.

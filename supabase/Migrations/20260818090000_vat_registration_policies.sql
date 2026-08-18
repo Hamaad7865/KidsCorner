@@ -232,7 +232,11 @@ alter table public.sales
     alter column vat_rate set not null,
     add constraint sales_vat_policy_id_fkey
         foreign key (vat_policy_id) references public.vat_policies(id),
-    add constraint sales_vat_rate_valid check (vat_rate > 0 and vat_rate <= 1),
+    add constraint sales_vat_rate_valid check (
+        (vat_enabled and vat_rate > 0 and vat_rate <= 1)
+        or
+        (not vat_enabled and vat_rate = 0 and vat_number is null and vat_amount = 0)
+    ),
     add constraint sales_vat_number_normalized
         check (vat_number is null or (vat_number = btrim(vat_number) and length(vat_number) > 0));
 
@@ -242,15 +246,22 @@ alter table public.credit_notes
     alter column vat_rate set not null,
     add constraint credit_notes_vat_policy_id_fkey
         foreign key (vat_policy_id) references public.vat_policies(id),
-    add constraint credit_notes_vat_rate_valid check (vat_rate > 0 and vat_rate <= 1),
+    add constraint credit_notes_vat_rate_valid check (
+        (vat_enabled and vat_rate > 0 and vat_rate <= 1)
+        or
+        (not vat_enabled and vat_rate = 0 and vat_number is null and vat_amount = 0)
+    ),
     add constraint credit_notes_vat_number_normalized
         check (vat_number is null or (vat_number = btrim(vat_number) and length(vat_number) > 0));
 
 alter table public.purchases
     add constraint purchases_vat_policy_id_fkey
         foreign key (vat_policy_id) references public.vat_policies(id),
-    add constraint purchases_vat_rate_valid
-        check (vat_rate is null or (vat_rate > 0 and vat_rate <= 1)),
+    add constraint purchases_vat_rate_valid check (
+        vat_rate is null
+        or (vat_enabled and vat_rate > 0 and vat_rate <= 1)
+        or (not vat_enabled and vat_rate = 0 and vat_amount = 0)
+    ),
     add constraint purchases_vat_amount_valid check (vat_amount is null or vat_amount >= 0),
     add constraint purchases_vat_snapshot_for_received check (
         (status = 'received'
@@ -378,5 +389,562 @@ revoke execute on function public.set_vat_policy(boolean, numeric, text) from pu
 revoke execute on function public.set_vat_policy(boolean, numeric, text) from anon;
 revoke execute on function public.set_vat_policy(boolean, numeric, text) from service_role;
 grant execute on function public.set_vat_policy(boolean, numeric, text) to authenticated;
+
+-- ============================================================
+-- Transaction writers
+-- ============================================================
+
+-- A distinct name is intentional: PostgREST does not support overloaded RPCs
+-- reliably. The immutable policy id and checkout instant are part of the sale
+-- attempt, while the server remains authoritative for the row's actual VAT
+-- values and arithmetic.
+create or replace function public.complete_sale_keyed_at_policy(
+    p_key text,
+    p_shift_id integer,
+    p_customer_id integer,
+    p_cashier_id uuid,
+    p_discount numeric,
+    p_items jsonb,
+    p_payments jsonb,
+    p_discounts jsonb,
+    p_vat_policy_id bigint,
+    p_checked_out_at timestamptz
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_existing bigint;
+    v_sale_id bigint;
+    v_policy public.vat_policies%rowtype;
+    v_checked_out_at timestamptz;
+    v_effective_rate numeric(7,6);
+    v_snapshot_number text;
+    v_subtotal numeric := 0;
+    v_total numeric;
+    v_vat_amount numeric(12,2);
+    v_item jsonb;
+    v_line numeric;
+    v_variant integer;
+    v_desc text;
+begin
+    -- This must precede policy resolution. A retry belongs to the already
+    -- completed sale even if its cached policy would no longer validate.
+    if p_key is not null and pg_catalog.btrim(p_key) <> '' then
+        perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(p_key));
+
+        select id into v_existing
+        from public.sales
+        where idempotency_key = p_key;
+
+        if v_existing is not null then
+            return v_existing;
+        end if;
+    end if;
+
+    if p_vat_policy_id is null then
+        select * into strict v_policy
+        from public.vat_policies
+        where is_legacy;
+    else
+        if p_checked_out_at is null then
+            raise check_violation using
+                message = 'A checkout time is required with a VAT policy id';
+        end if;
+
+        select * into v_policy
+        from public.vat_policies
+        where id = p_vat_policy_id;
+
+        if not found then
+            raise check_violation using
+                message = pg_catalog.format('VAT policy %s does not exist', p_vat_policy_id);
+        end if;
+        if v_policy.created_at > p_checked_out_at then
+            raise check_violation using
+                message = pg_catalog.format(
+                    'VAT policy %s was created after checkout',
+                    p_vat_policy_id
+                );
+        end if;
+    end if;
+
+    v_checked_out_at := coalesce(p_checked_out_at, pg_catalog.clock_timestamp());
+    v_effective_rate := case when v_policy.enabled then v_policy.configured_rate else 0 end;
+    v_snapshot_number := case when v_policy.enabled then v_policy.vat_number else null end;
+
+    for v_item in select * from pg_catalog.jsonb_array_elements(p_items) loop
+        v_line := (v_item->>'qty')::integer * (v_item->>'unit_price')::numeric
+                  - coalesce((v_item->>'discount')::numeric, 0);
+        v_subtotal := v_subtotal + v_line;
+    end loop;
+
+    v_total := v_subtotal - coalesce(p_discount, 0);
+    v_vat_amount := case
+        when v_policy.enabled then
+            pg_catalog.round(v_total - v_total / (1 + v_effective_rate), 2)
+        else 0
+    end;
+
+    insert into public.sales (
+        sale_no, shift_id, customer_id, sale_date, subtotal, discount,
+        vat_amount, total, cashier_id, vat_policy_id, vat_enabled, vat_rate,
+        vat_number, idempotency_key
+    ) values (
+        'pending-' || pg_catalog.gen_random_uuid()::text,
+        p_shift_id, p_customer_id, v_checked_out_at, v_subtotal,
+        coalesce(p_discount, 0), v_vat_amount, v_total, p_cashier_id,
+        v_policy.id, v_policy.enabled, v_effective_rate, v_snapshot_number,
+        nullif(pg_catalog.btrim(p_key), '')
+    ) returning id into v_sale_id;
+
+    update public.sales
+    set sale_no = public.next_doc_no('sale')
+    where id = v_sale_id;
+
+    for v_item in select * from pg_catalog.jsonb_array_elements(p_items) loop
+        v_line := (v_item->>'qty')::integer * (v_item->>'unit_price')::numeric
+                  - coalesce((v_item->>'discount')::numeric, 0);
+        v_variant := (v_item->>'variant_id')::integer;
+        v_desc := nullif(
+            pg_catalog.btrim(coalesce(v_item->>'description', '')),
+            ''
+        );
+
+        if v_variant is null and v_desc is null then
+            raise exception 'A sale line needs either a variant or a description';
+        end if;
+
+        insert into public.sale_items (
+            sale_id, variant_id, description, qty, unit_price, discount, line_total
+        ) values (
+            v_sale_id, v_variant, v_desc, (v_item->>'qty')::integer,
+            (v_item->>'unit_price')::numeric,
+            coalesce((v_item->>'discount')::numeric, 0), v_line
+        );
+
+        if v_variant is not null then
+            perform public.record_stock_movement(
+                v_variant,
+                'sale',
+                -(v_item->>'qty')::integer,
+                'pos_sale',
+                v_sale_id,
+                null
+            );
+        end if;
+    end loop;
+
+    insert into public.sale_payments (sale_id, method, amount, tendered)
+    select
+        v_sale_id,
+        payment->>'method',
+        (payment->>'amount')::numeric,
+        (payment->>'tendered')::numeric
+    from pg_catalog.jsonb_array_elements(p_payments) as payment;
+
+    insert into public.sale_discounts (
+        sale_id, discount_id, label, kind, value, amount, approved_by
+    )
+    select
+        v_sale_id,
+        nullif(discount_row->>'discount_id', '')::integer,
+        discount_row->>'label',
+        discount_row->>'kind',
+        (discount_row->>'value')::numeric,
+        (discount_row->>'amount')::numeric,
+        nullif(discount_row->>'approved_by', '')::uuid
+    from pg_catalog.jsonb_array_elements(
+        coalesce(p_discounts, '[]'::jsonb)
+    ) as discount_row;
+
+    return v_sale_id;
+end;
+$$;
+
+revoke execute on function public.complete_sale_keyed_at_policy(
+    text, integer, integer, uuid, numeric, jsonb, jsonb, jsonb, bigint, timestamptz
+) from public, anon, service_role;
+grant execute on function public.complete_sale_keyed_at_policy(
+    text, integer, integer, uuid, numeric, jsonb, jsonb, jsonb, bigint, timestamptz
+) to authenticated;
+
+-- Legacy signatures remain one unambiguous function each. Missing policy data
+-- means only the immutable legacy row, never today's current policy.
+create or replace function public.complete_sale(
+    p_shift_id integer,
+    p_customer_id integer,
+    p_cashier_id uuid,
+    p_discount numeric,
+    p_items jsonb,
+    p_payments jsonb
+)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
+    select public.complete_sale_keyed_at_policy(
+        null, p_shift_id, p_customer_id, p_cashier_id, p_discount,
+        p_items, p_payments, '[]'::jsonb, null, null
+    );
+$$;
+
+create or replace function public.complete_sale_with_discounts(
+    p_shift_id integer,
+    p_customer_id integer,
+    p_cashier_id uuid,
+    p_discount numeric,
+    p_items jsonb,
+    p_payments jsonb,
+    p_discounts jsonb default '[]'::jsonb
+)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
+    select public.complete_sale_keyed_at_policy(
+        null, p_shift_id, p_customer_id, p_cashier_id, p_discount,
+        p_items, p_payments, p_discounts, null, null
+    );
+$$;
+
+create or replace function public.complete_sale_keyed(
+    p_key text,
+    p_shift_id integer,
+    p_customer_id integer,
+    p_cashier_id uuid,
+    p_discount numeric,
+    p_items jsonb,
+    p_payments jsonb,
+    p_discounts jsonb default '[]'::jsonb
+)
+returns bigint
+language sql
+security definer
+set search_path = ''
+as $$
+    select public.complete_sale_keyed_at_policy(
+        p_key, p_shift_id, p_customer_id, p_cashier_id, p_discount,
+        p_items, p_payments, p_discounts, null, null
+    );
+$$;
+
+revoke execute on function public.complete_sale(
+    integer, integer, uuid, numeric, jsonb, jsonb
+) from public, anon;
+revoke execute on function public.complete_sale_with_discounts(
+    integer, integer, uuid, numeric, jsonb, jsonb, jsonb
+) from public, anon;
+revoke execute on function public.complete_sale_keyed(
+    text, integer, integer, uuid, numeric, jsonb, jsonb, jsonb
+) from public, anon;
+grant execute on function public.complete_sale(
+    integer, integer, uuid, numeric, jsonb, jsonb
+) to authenticated;
+grant execute on function public.complete_sale_with_discounts(
+    integer, integer, uuid, numeric, jsonb, jsonb, jsonb
+) to authenticated;
+grant execute on function public.complete_sale_keyed(
+    text, integer, integer, uuid, numeric, jsonb, jsonb, jsonb
+) to authenticated;
+
+-- A return is a reversal of its source sale, not a new decision under the
+-- shop's current setting. The proportional VAT calculation is reconciled to
+-- the source's remaining VAT so split returns cannot reverse an extra cent.
+create or replace function public.create_credit_note(
+    p_sale_id bigint,
+    p_shift_id integer,
+    p_cashier_id uuid,
+    p_reason text,
+    p_refund_method text,
+    p_items jsonb,
+    p_restock boolean default true,
+    p_approved_by uuid default null
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_note_id bigint;
+    v_sale public.sales%rowtype;
+    v_item jsonb;
+    v_sale_item public.sale_items%rowtype;
+    v_qty integer;
+    v_returned integer;
+    v_unit numeric;
+    v_paid_factor numeric;
+    v_line numeric;
+    v_subtotal numeric := 0;
+    v_vat_amount numeric(12,2);
+    v_remaining_vat numeric(12,2);
+    v_sold integer;
+    v_back integer;
+begin
+    select * into v_sale
+    from public.sales
+    where id = p_sale_id
+    for update;
+
+    if not found then
+        raise exception 'Sale % does not exist', p_sale_id;
+    end if;
+
+    if coalesce((
+        select value::text = 'true'
+        from public.settings
+        where key = 'refund_requires_manager'
+    ), false) then
+        if p_approved_by is null then
+            raise exception 'This shop needs a manager to approve a return';
+        end if;
+        if not exists (
+            select 1
+            from public.profiles
+            where id = p_approved_by
+              and is_active
+              and role in ('owner', 'manager')
+        ) then
+            raise exception 'Only an owner or a manager can approve a return';
+        end if;
+    end if;
+
+    if coalesce(pg_catalog.btrim(p_reason), '') = '' then
+        raise exception 'A reason is required for a credit note';
+    end if;
+    if pg_catalog.jsonb_array_length(
+        coalesce(p_items, '[]'::jsonb)
+    ) = 0 then
+        raise exception 'A credit note needs at least one line';
+    end if;
+    if v_sale.status = 'void' then
+        raise exception 'Sale % is void and cannot be returned against', p_sale_id;
+    end if;
+
+    v_paid_factor := case
+        when coalesce(v_sale.subtotal, 0) > 0
+            then v_sale.total / v_sale.subtotal
+        else 1
+    end;
+
+    for v_item in select * from pg_catalog.jsonb_array_elements(p_items) loop
+        v_qty := (v_item->>'qty')::integer;
+        if v_qty is null or v_qty <= 0 then
+            raise exception 'Return quantities must be positive';
+        end if;
+
+        select * into v_sale_item
+        from public.sale_items
+        where id = (v_item->>'sale_item_id')::bigint
+          and sale_id = p_sale_id;
+
+        if not found then
+            raise exception 'Line % does not belong to sale %',
+                v_item->>'sale_item_id', p_sale_id;
+        end if;
+
+        v_returned := public.returned_qty(v_sale_item.id);
+        if v_returned + v_qty > v_sale_item.qty then
+            raise exception
+                'Only % of line % can still be returned (% sold, % already returned)',
+                v_sale_item.qty - v_returned,
+                v_sale_item.id,
+                v_sale_item.qty,
+                v_returned;
+        end if;
+
+        v_unit := (v_sale_item.line_total / v_sale_item.qty) * v_paid_factor;
+        v_subtotal := v_subtotal + pg_catalog.round(v_unit * v_qty, 2);
+    end loop;
+
+    v_subtotal := least(
+        v_subtotal,
+        greatest(
+            0,
+            v_sale.total - coalesce((
+                select pg_catalog.sum(cn.total)
+                from public.credit_notes cn
+                where cn.sale_id = p_sale_id
+            ), 0)
+        )
+    );
+
+    v_remaining_vat := greatest(
+        0,
+        v_sale.vat_amount - coalesce((
+            select pg_catalog.sum(cn.vat_amount)
+            from public.credit_notes cn
+            where cn.sale_id = p_sale_id
+        ), 0)
+    );
+    v_vat_amount := case
+        when not v_sale.vat_enabled or v_sale.total <= 0 then 0
+        else least(
+            v_remaining_vat,
+            pg_catalog.round(v_subtotal * v_sale.vat_amount / v_sale.total, 2)
+        )
+    end;
+
+    insert into public.credit_notes (
+        approved_by, credit_no, sale_id, shift_id, cashier_id, reason,
+        subtotal, vat_amount, total, refund_method, vat_policy_id, vat_enabled,
+        vat_rate, vat_number
+    ) values (
+        p_approved_by,
+        public.next_doc_no('credit'),
+        p_sale_id,
+        p_shift_id,
+        p_cashier_id,
+        pg_catalog.btrim(p_reason),
+        v_subtotal,
+        v_vat_amount,
+        v_subtotal,
+        p_refund_method,
+        v_sale.vat_policy_id,
+        v_sale.vat_enabled,
+        v_sale.vat_rate,
+        v_sale.vat_number
+    ) returning id into v_note_id;
+
+    for v_item in select * from pg_catalog.jsonb_array_elements(p_items) loop
+        v_qty := (v_item->>'qty')::integer;
+
+        select * into v_sale_item
+        from public.sale_items
+        where id = (v_item->>'sale_item_id')::bigint
+          and sale_id = p_sale_id;
+
+        v_unit := (v_sale_item.line_total / v_sale_item.qty) * v_paid_factor;
+        v_line := pg_catalog.round(v_unit * v_qty, 2);
+
+        insert into public.credit_note_items (
+            credit_note_id, sale_item_id, variant_id, qty, unit_price, line_total
+        ) values (
+            v_note_id,
+            v_sale_item.id,
+            v_sale_item.variant_id,
+            v_qty,
+            pg_catalog.round(v_unit, 2),
+            v_line
+        );
+
+        if p_restock and v_sale_item.variant_id is not null then
+            perform public.record_stock_movement(
+                v_sale_item.variant_id,
+                'return',
+                v_qty,
+                'credit_note',
+                v_note_id,
+                'Returned on ' || (
+                    select credit_no from public.credit_notes where id = v_note_id
+                )
+            );
+        end if;
+    end loop;
+
+    select
+        coalesce(pg_catalog.sum(si.qty), 0),
+        coalesce(pg_catalog.sum(public.returned_qty(si.id)), 0)
+    into v_sold, v_back
+    from public.sale_items si
+    where si.sale_id = p_sale_id;
+
+    if v_back >= v_sold then
+        update public.sales set status = 'refunded' where id = p_sale_id;
+    end if;
+
+    return v_note_id;
+end;
+$$;
+
+revoke execute on function public.create_credit_note(
+    bigint, integer, uuid, text, text, jsonb, boolean, uuid
+) from public, anon;
+grant execute on function public.create_credit_note(
+    bigint, integer, uuid, text, text, jsonb, boolean, uuid
+) to authenticated;
+
+-- Receipt is the fiscal transition for a purchase. Lock the draft before
+-- resolving the highest-id current policy, and write the status and snapshot
+-- together so a retry cannot adopt a newer row.
+create or replace function public.receive_purchase(p_purchase_id integer)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_purchase public.purchases%rowtype;
+    v_policy public.vat_policies%rowtype;
+    v_effective_rate numeric(7,6);
+    v_vat_amount numeric(12,2);
+    v_item record;
+begin
+    select * into v_purchase
+    from public.purchases
+    where id = p_purchase_id
+    for update;
+
+    if not found or v_purchase.status <> 'draft' then
+        raise exception 'Purchase % is not in draft status', p_purchase_id;
+    end if;
+
+    -- The policy mutation RPC uses this same transaction lock. Receipt and a
+    -- toggle therefore have a definite order instead of racing on "current".
+    perform pg_catalog.pg_advisory_xact_lock(20260818090000);
+
+    select * into strict v_policy
+    from public.vat_policies
+    order by id desc
+    limit 1;
+
+    v_effective_rate := case when v_policy.enabled then v_policy.configured_rate else 0 end;
+    v_vat_amount := case
+        when v_policy.enabled then pg_catalog.round(
+            v_purchase.total_amount
+            - v_purchase.total_amount / (1 + v_effective_rate),
+            2
+        )
+        else 0
+    end;
+
+    update public.purchases
+    set status = 'received',
+        vat_policy_id = v_policy.id,
+        vat_enabled = v_policy.enabled,
+        vat_rate = v_effective_rate,
+        vat_amount = v_vat_amount
+    where id = p_purchase_id;
+
+    for v_item in
+        select variant_id, qty
+        from public.purchase_items
+        where purchase_id = p_purchase_id
+    loop
+        perform public.record_stock_movement(
+            v_item.variant_id,
+            'purchase',
+            v_item.qty,
+            'purchase',
+            p_purchase_id,
+            null
+        );
+    end loop;
+
+    update public.product_variants pv
+    set cost_price = pi.unit_cost
+    from public.purchase_items pi
+    where pi.purchase_id = p_purchase_id
+      and pi.variant_id = pv.id;
+end;
+$$;
+
+revoke execute on function public.receive_purchase(integer) from public, anon;
+grant execute on function public.receive_purchase(integer) to authenticated;
 
 commit;

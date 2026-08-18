@@ -820,6 +820,14 @@ export const completeSaleSchema = z.object({
    * an older client still works, but every till sends one.
    */
   idempotencyKey: z.string().trim().min(8).max(64).nullish(),
+  /**
+   * The immutable policy cached when this attempt was checked out. Missing or
+   * null is reserved for pre-policy Android queues and maps to legacy VAT in
+   * SQL; a non-null id is never replaced with the server's current policy.
+   */
+  vatPolicyId: z.number().int().positive().nullable().optional(),
+  /** Generated once by the till and retained byte-for-byte on every retry. */
+  checkedOutAt: z.string().datetime().nullable().optional(),
 })
 
 export type CompleteSaleInput = z.input<typeof completeSaleSchema>
@@ -839,6 +847,10 @@ export type CommitSaleInput = {
   approval?: { managerId: string; pin: string } | null
   /** Names this attempt so a retry replays rather than charges again. */
   idempotencyKey?: string | null
+  /** Immutable VAT policy seen when this attempt was checked out. */
+  vatPolicyId?: number | null
+  /** Stable checkout instant; callers must not regenerate it on retry. */
+  checkedOutAt?: string | null
 }
 
 /**
@@ -978,18 +990,23 @@ export async function commitSale(
       amount: d.amount,
       approved_by: d.approvedBy,
     })) as Json,
-  } as unknown as Database["public"]["Functions"]["complete_sale_keyed"]["Args"]
+    p_vat_policy_id: input.vatPolicyId ?? null,
+    p_checked_out_at: input.checkedOutAt ?? null,
+  }
 
-  // Migration 011's wrapper. It answers "have I already done this?" and then
-  // delegates to complete_sale_with_discounts (005), which still owns the VAT,
-  // stock and ledger writes.
+  // The distinct policy-aware name avoids PostgREST's overloaded-function
+  // ambiguity. The RPC answers idempotency first, then resolves exactly the
+  // supplied immutable policy (or the legacy row for an old/null payload).
   //
   // Wrapped because a thrown request is the case that matters most: it means no
   // response came back at all, so whether the sale committed is unknown.
   let data: unknown
   let error: { code?: string; message: string } | null = null
   try {
-    ;({ data, error } = await supabase.rpc("complete_sale_keyed", args))
+    ;({ data, error } = await supabase.rpc(
+      "complete_sale_keyed_at_policy" as never,
+      args as never,
+    ))
   } catch (cause) {
     return {
       ok: false,

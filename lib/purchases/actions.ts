@@ -303,8 +303,8 @@ export async function savePurchase(
 
 /**
  * Hands off to the `receive_purchase` RPC, which marks the purchase received,
- * records a `purchase` movement per line and updates each variant's cost price
- * — atomically, and only from `draft`.
+ * freezes the then-current VAT policy, records a `purchase` movement per line
+ * and updates each variant's cost price — atomically, and only from `draft`.
  */
 export async function receivePurchase(
   _prev: FormState,
@@ -335,7 +335,8 @@ export async function receivePurchase(
   revalidatePath(`/purchases/${purchaseId}`)
   revalidatePath("/stock")
   revalidatePath("/products")
-  return formOk("Received. Stock and cost prices have been updated.")
+  revalidatePath("/reports")
+  return formOk("Received. Stock, cost prices, and the VAT snapshot have been updated.")
 }
 
 export async function cancelPurchase(

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
-import { settleDiscounts, type TillClient,
+import { commitSale, settleDiscounts, type TillClient,
   verifyApproval,
 } from "./sale-core"
 import { hashPin } from "./pin"
@@ -496,5 +496,90 @@ describe("verifyApproval for a return", () => {
   it("still says 'discount' when that is what is being approved", async () => {
     const result = await verifyApproval(approverClient("manager", null), null)
     expect(result).toEqual({ error: "A manager needs to approve this discount." })
+  })
+})
+
+// ─────────────────────────────── checkout policy snapshot
+
+/**
+ * A policy id is the only VAT fact a till is allowed to assert. The database
+ * resolves the immutable row; the caller merely preserves which row and which
+ * checkout instant belonged to this attempt. Regenerating that instant on a
+ * retry can make a once-valid offline policy look future-dated, while calling
+ * the old overloaded name silently assigns the legacy policy instead.
+ */
+function saleCommitClient(rpc: ReturnType<typeof vi.fn>): TillClient {
+  return {
+    from(table: string) {
+      if (table !== "product_variants") throw new Error(`unexpected table ${table}`)
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [
+              {
+                id: 101,
+                selling_price: 115,
+                qty_on_hand: 5,
+                is_active: true,
+                products: { name: "VAT test item", category_id: 7 },
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }
+    },
+    rpc,
+  } as unknown as TillClient
+}
+
+describe("commitSale VAT policy handoff", () => {
+  it("uses the distinct RPC and preserves the policy snapshot across a retry", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 801, error: null })
+    const supabase = saleCommitClient(rpc)
+    const input = {
+      shiftId: 1,
+      customerId: null,
+      cashierId: "7691c64f-c80c-44a8-9777-f0adccd43753",
+      discounts: [],
+      items: [{ variantId: 101, qty: 1, discount: 0 }],
+      payments: [{ method: "cash", amount: 115, tendered: 115 }],
+      idempotencyKey: "vat-policy-retry-801",
+      vatPolicyId: 42,
+      checkedOutAt: "2026-08-18T08:30:00.000Z",
+    }
+
+    await commitSale(
+      supabase,
+      { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
+      input,
+    )
+    await commitSale(
+      supabase,
+      { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
+      input,
+    )
+
+    const saleCalls = rpc.mock.calls.filter(([name]) =>
+      String(name).startsWith("complete_sale"),
+    )
+    expect(saleCalls).toEqual([
+      [
+        "complete_sale_keyed_at_policy",
+        expect.objectContaining({
+          p_key: "vat-policy-retry-801",
+          p_vat_policy_id: 42,
+          p_checked_out_at: "2026-08-18T08:30:00.000Z",
+        }),
+      ],
+      [
+        "complete_sale_keyed_at_policy",
+        expect.objectContaining({
+          p_key: "vat-policy-retry-801",
+          p_vat_policy_id: 42,
+          p_checked_out_at: "2026-08-18T08:30:00.000Z",
+        }),
+      ],
+    ])
   })
 })

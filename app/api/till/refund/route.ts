@@ -123,7 +123,9 @@ export async function POST(request: Request) {
 
   const { data: note } = await session.supabase
     .from("credit_notes")
-    .select("credit_no, total, refund_method")
+    .select(
+      "credit_no, total, refund_method, vat_policy_id, vat_enabled, vat_rate, vat_number, vat_amount",
+    )
     .eq("id", creditNoteId)
     .maybeSingle()
 
@@ -133,5 +135,10 @@ export async function POST(request: Request) {
     creditNo: note?.credit_no ?? "",
     total: note?.total === undefined ? 0 : Number(note.total),
     refundMethod: note?.refund_method ?? refundMethod,
+    vatPolicyId: note?.vat_policy_id ?? null,
+    vatEnabled: note?.vat_enabled ?? false,
+    vatRate: note?.vat_rate === undefined ? 0 : Number(note.vat_rate),
+    vatNumber: note?.vat_number ?? null,
+    vatAmount: note?.vat_amount === undefined ? 0 : Number(note.vat_amount),
   })
 }

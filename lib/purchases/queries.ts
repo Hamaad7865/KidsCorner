@@ -241,6 +241,12 @@ export type PurchaseDetail = {
   expectedDate: string | null
   status: PurchaseStatus
   totalAmount: number
+  /** Null on a draft/cancelled purchase; frozen once receipt books stock in. */
+  vatPolicyId: number | null
+  vatEnabled: boolean | null
+  /** Effective rate: zero when the frozen policy was disabled. */
+  vatRate: number | null
+  vatAmount: number | null
   notes: string | null
   supplierId: number
   supplierName: string | null
@@ -253,7 +259,8 @@ export async function getPurchase(id: number): Promise<PurchaseDetail | null> {
   const { data, error } = await supabase
     .from("purchases")
     .select(
-      `id, invoice_no, purchase_date, expected_date, status, total_amount, notes, supplier_id,
+      `id, invoice_no, purchase_date, expected_date, status, total_amount,
+       vat_policy_id, vat_enabled, vat_rate, vat_amount, notes, supplier_id,
        suppliers ( name ),
        purchase_items (
          id, variant_id, qty, unit_cost, line_total,
@@ -278,6 +285,10 @@ export async function getPurchase(id: number): Promise<PurchaseDetail | null> {
     expectedDate: data.expected_date,
     status: isPurchaseStatus(data.status) ? data.status : "draft",
     totalAmount: Number(data.total_amount),
+    vatPolicyId: data.vat_policy_id,
+    vatEnabled: data.vat_enabled,
+    vatRate: data.vat_rate === null ? null : Number(data.vat_rate),
+    vatAmount: data.vat_amount === null ? null : Number(data.vat_amount),
     notes: data.notes,
     supplierId: data.supplier_id,
     supplierName: data.suppliers?.name ?? null,
