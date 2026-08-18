@@ -7,8 +7,8 @@ import {
   getPaymentMethods,
   getShopIdentity,
   getShopName,
-  getVatRate,
 } from "@/lib/pos/queries"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 
 /**
  * Everything the Android till needs to draw its first screen, in one call.
@@ -44,16 +44,16 @@ export async function GET(request: Request) {
     deviceId = typeof data === "number" ? data : null
   }
 
-  const [shopName, vatRate, paymentMethods, shift, cashiers, identity] = await Promise.all([
+  const [shopName, vatPolicy, paymentMethods, shift, cashiers, identity] = await Promise.all([
     getShopName(supabase),
-    getVatRate(supabase),
+    // The current VAT policy the till caches and stamps on each sale. The rate
+    // it applies is the effective rate — zero while the shop is not registered.
+    getCurrentVatPolicy(supabase),
     getPaymentMethods(supabase),
     getOpenShift(supabase),
     listCashiersForDevice(supabase),
-    // For the receipt header. Absent keys come back null and the receipt omits
-    // the line — a Mauritian VAT receipt is required to carry the shop's
-    // registration number, so this being blank is a compliance gap the shop
-    // needs to close, not something to invent a value for.
+    // For the receipt header's address and phone. Absent keys come back null
+    // and the receipt omits the line.
     getShopIdentity(supabase),
   ])
 
@@ -65,8 +65,25 @@ export async function GET(request: Request) {
     shopName,
     shopAddress: identity.address,
     shopPhone: identity.phone,
-    vatNumber: identity.vatNumber,
-    vatRate,
+    /**
+     * The VAT policy, flat, exactly as Android caches it.
+     *
+     *   • `vatEnabled`        — is the shop VAT registered right now.
+     *   • `vatRate`           — the CONFIGURED rate, kept for the basket display
+     *                           and for older clients that only read this field.
+     *   • `effectiveVatRate`  — what a sale rung up now actually uses: zero when
+     *                           disabled, the configured rate when enabled.
+     *   • `vatNumber`         — the policy's registration number (prepared even
+     *                           while disabled; the till only prints it when
+     *                           enabled).
+     *   • `vatPolicyId`       — the immutable id the till stamps on each sale so
+     *                           the server freezes exactly this policy.
+     */
+    vatEnabled: vatPolicy.enabled,
+    vatRate: vatPolicy.configuredRate,
+    effectiveVatRate: vatPolicy.effectiveRate,
+    vatNumber: vatPolicy.vatNumber,
+    vatPolicyId: vatPolicy.id,
     paymentMethods: paymentMethods.length > 0 ? paymentMethods : ["cash"],
     shift,
     /**

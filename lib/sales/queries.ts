@@ -104,6 +104,19 @@ export type SaleDetail = {
   discount: number
   vatAmount: number
   total: number
+  /**
+   * The VAT policy this sale was frozen under — the whole point of the toggle.
+   *
+   * A receipt reads `vatEnabled` to decide whether it is a VAT Invoice (with the
+   * frozen number, rate and breakdown) or a plain Receipt, never today's shop
+   * setting. `vatEnabled` is explicit rather than inferred from `vatAmount > 0`,
+   * so an enabled zero-total sale is still a VAT invoice. Nullable because a
+   * pre-migration legacy row may carry no policy id.
+   */
+  vatPolicyId: number | null
+  vatEnabled: boolean
+  vatRate: number
+  vatNumber: string | null
   cashierName: string | null
   customerName: string | null
   customerId: number | null
@@ -180,6 +193,7 @@ export async function getSaleDetail(
     .from("sales")
     .select(
       `id, sale_no, sale_date, status, subtotal, discount, vat_amount, total,
+       vat_policy_id, vat_enabled, vat_rate, vat_number,
        customer_id,
        profiles ( full_name ),
        customers ( full_name ),
@@ -273,6 +287,14 @@ export async function getSaleDetail(
     discount: Number(data.discount),
     vatAmount: Number(data.vat_amount),
     total: Number(data.total),
+    vatPolicyId: data.vat_policy_id,
+    // Explicit, not inferred: an enabled zero-total sale is still a VAT invoice.
+    vatEnabled: data.vat_enabled,
+    vatRate: Number(data.vat_rate),
+    vatNumber:
+      typeof data.vat_number === "string" && data.vat_number.trim()
+        ? data.vat_number.trim()
+        : null,
     cashierName: data.profiles?.full_name ?? null,
     customerName: data.customers?.full_name ?? null,
     customerId: data.customer_id,
