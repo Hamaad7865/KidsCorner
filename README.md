@@ -72,8 +72,8 @@ what was applied and why. This file is what you run.
 node scripts/generate-catchup.mjs
 ```
 
-It ends with a SELECT that reports what was built. Expect **29 tables, 4 views,
-37 functions, 44 policies** — and, more importantly, `anon_can_execute` **0**,
+It ends with a SELECT that reports what was built. Expect **30 tables, 4 views,
+42 functions, 46 policies** — and, more importantly, `anon_can_execute` **0**,
 `definers_unpinned` **0**, `views_with_invoker` **4**. Any other answer on those
 three means the publishable key reaches further into the database than it
 should.

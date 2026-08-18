@@ -14,11 +14,46 @@
  * Run it after applying any migration, and commit the result. The numbered
  * files stay the historical record; this keeps the file people RUN honest.
  */
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { resolve } from "node:path"
 import pg from "pg"
 
-const env = readFileSync("C:/Projects/KidsCorner/.env.local", "utf8")
+// Output lands in the CURRENT worktree, so a feature branch regenerates its own
+// copy instead of silently rewriting the main checkout's file.
+const outputPath = resolve(process.cwd(), "supabase/catch-up.sql")
+
+if (process.argv.includes("--print-output-path")) {
+  // Exits before credentials are read or any connection is made — a dry run
+  // that proves where a real run would write.
+  console.log(outputPath)
+  process.exit(0)
+}
+
+// A real run must name the project it expects, and the connection string must
+// actually be that project — this file becomes the schema everyone runs, so
+// generating it from the wrong database is the worst quiet failure available.
+const expectFlag = process.argv.indexOf("--expect-project-ref")
+const expectedRef = expectFlag === -1 ? null : process.argv[expectFlag + 1]
+if (!expectedRef) {
+  console.error("Usage: node scripts/generate-catchup.mjs --expect-project-ref <ref>")
+  process.exit(1)
+}
+
+// Credentials stay in the main checkout's .env.local; a worktree may carry its
+// own copy, which then wins.
+const envPath = ["", "C:/Projects/KidsCorner/"]
+  .map((base) => resolve(base || process.cwd(), ".env.local"))
+  .find((p) => existsSync(p))
+if (!envPath) {
+  console.error("No .env.local found in the worktree or the main checkout.")
+  process.exit(1)
+}
+const env = readFileSync(envPath, "utf8")
 const url = env.match(/^SUPABASE_DB_UR\w*\s*=\s*"?([^"\r\n]+)"?/m)[1]
+if (!url.includes(expectedRef)) {
+  console.error(`Database URL does not contain expected project ref ${expectedRef}; refusing to run.`)
+  process.exit(1)
+}
 const c = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } })
 await c.connect()
 
@@ -167,11 +202,20 @@ for (const i of await q(`
 // ── functions ───────────────────────────────────────────────────────────────
 // Straight from pg_get_functiondef, which is the whole point of a snapshot:
 // whatever the live function is, that is what comes out, patches and all.
+//
+// The `private` schema holds helpers that application roles must never call
+// directly (the VAT migration introduced it); it is emitted first because the
+// public report functions call into it at runtime. Client roles get no USAGE,
+// so nothing in it is reachable through PostgREST.
 rule("FUNCTIONS")
+say("CREATE SCHEMA IF NOT EXISTS private;")
+say("REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;")
+say("")
 for (const f of await q(`
   select replace(pg_get_functiondef(p.oid), chr(13)||chr(10), chr(10)) as def
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' order by p.proname, p.pronargs`)) {
+   where n.nspname in ('public', 'private')
+   order by n.nspname = 'public', p.proname, p.pronargs`)) {
   say(f.def.trim() + ";")
   say("")
 }
@@ -345,7 +389,7 @@ SELECT
     (SELECT count(*) FROM categories) AS categories,
     (SELECT count(*) FROM settings)   AS settings;`)
 
-writeFileSync("C:/Projects/KidsCorner/supabase/catch-up.sql", out.join("\n") + "\n")
+writeFileSync(outputPath, out.join("\n") + "\n")
 console.log(`written: ${out.join("\n").length / 1024 | 0} KB, ${out.length} lines`)
 console.log(`tables ${tables.length}, constraints ${cons.length}`)
 await c.end()

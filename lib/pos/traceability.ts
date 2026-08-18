@@ -363,7 +363,7 @@ export async function getDeviceTrace(
         .from("credit_notes")
         .select(
           `id, credit_no, sale_id, created_at, total, refund_method, reason,
-           profiles ( full_name )`,
+           profiles!credit_notes_cashier_id_fkey ( full_name )`,
         )
         .in("shift_id", shiftIds),
       // Terminal starts, version changes, sign-ins, retire/restore — recorded

@@ -194,6 +194,7 @@ export type Database = {
       }
       credit_notes: {
         Row: {
+          approved_by: string | null
           cashier_id: string | null
           created_at: string
           credit_no: string
@@ -211,6 +212,7 @@ export type Database = {
           vat_rate: number
         }
         Insert: {
+          approved_by?: string | null
           cashier_id?: string | null
           created_at?: string
           credit_no: string
@@ -228,6 +230,7 @@ export type Database = {
           vat_rate: number
         }
         Update: {
+          approved_by?: string | null
           cashier_id?: string | null
           created_at?: string
           credit_no?: string
@@ -245,6 +248,13 @@ export type Database = {
           vat_rate?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "credit_notes_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "credit_notes_cashier_id_fkey"
             columns: ["cashier_id"]
@@ -367,6 +377,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      doc_counters: {
+        Row: {
+          day: string
+          kind: string
+          n: number
+        }
+        Insert: {
+          day: string
+          kind: string
+          n: number
+        }
+        Update: {
+          day?: string
+          kind?: string
+          n?: number
+        }
+        Relationships: []
       }
       module_access: {
         Row: {
@@ -1531,6 +1559,21 @@ export type Database = {
         }
         Returns: number
       }
+      complete_sale_keyed_at_policy: {
+        Args: {
+          p_cashier_id: string
+          p_checked_out_at: string
+          p_customer_id: number
+          p_discount: number
+          p_discounts: Json
+          p_items: Json
+          p_key: string
+          p_payments: Json
+          p_shift_id: number
+          p_vat_policy_id: number
+        }
+        Returns: number
+      }
       complete_sale_with_discounts: {
         Args: {
           p_cashier_id: string
@@ -1545,6 +1588,7 @@ export type Database = {
       }
       create_credit_note: {
         Args: {
+          p_approved_by?: string
           p_cashier_id: string
           p_items: Json
           p_reason: string
@@ -1578,6 +1622,7 @@ export type Database = {
       log_audit: {
         Args: {
           p_detail?: Json
+          p_device_id?: number
           p_event_type: string
           p_ref_id: string
           p_ref_type: string
@@ -1585,6 +1630,8 @@ export type Database = {
         }
         Returns: undefined
       }
+      next_doc_no: { Args: { p_kind: string }; Returns: string }
+      next_z_no: { Args: never; Returns: string }
       pin_lock_state: { Args: { p_profile_id: string }; Returns: number }
       receive_purchase: { Args: { p_purchase_id: number }; Returns: undefined }
       record_receipt_print: { Args: { p_sale_id: number }; Returns: number }
@@ -1624,16 +1671,16 @@ export type Database = {
         Returns: number
       }
       returned_qty: { Args: { p_sale_item_id: number }; Returns: number }
+      set_barcode_scheme: {
+        Args: { p_auto: boolean; p_next: number; p_prefix: string }
+        Returns: number
+      }
       set_vat_policy: {
         Args: {
           p_configured_rate: number
           p_enabled: boolean
-          p_vat_number: string | null
+          p_vat_number: string
         }
-        Returns: number
-      }
-      set_barcode_scheme: {
-        Args: { p_auto: boolean; p_next: number; p_prefix: string }
         Returns: number
       }
       shift_totals: { Args: { p_shift_id: number }; Returns: Json }

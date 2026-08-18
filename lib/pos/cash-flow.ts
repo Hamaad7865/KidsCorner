@@ -295,7 +295,7 @@ export async function getDeviceCashFlow(
         .from("credit_notes")
         .select(
           `id, credit_no, sale_id, shift_id, created_at, total, refund_method, reason,
-           profiles ( full_name ),
+           profiles!credit_notes_cashier_id_fkey ( full_name ),
            sales ( sale_no )`,
         )
         .in("shift_id", shiftIds)
