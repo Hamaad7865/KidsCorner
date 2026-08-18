@@ -49,6 +49,8 @@ declare
   v_old_keyed_sale_id bigint;
   v_old_plain_sale_id bigint;
   v_replayed_id bigint;
+  v_padded_sale_id bigint;
+  v_padded_key text := '  vat-padded-replay-test  ';
   v_checked_at timestamptz := clock_timestamp();
   v_unknown_id bigint;
   v_future_id bigint;
@@ -199,6 +201,25 @@ begin
     v_rejected := true;
   end;
   perform pg_temp.assert_true(v_rejected, 'a policy created after checkout must be rejected');
+
+  v_padded_sale_id := public.complete_sale_keyed_at_policy(
+    v_padded_key, null, null, v_staff, 0,
+    v_items, v_payments, '[]'::jsonb,
+    v_enabled_id, v_checked_at
+  );
+
+  -- The same supplied, whitespace-padded key must normalize identically for
+  -- lock, lookup and persistence. The invalid policy makes a missed replay
+  -- fail before this assertion rather than silently creating another sale.
+  v_replayed_id := public.complete_sale_keyed_at_policy(
+    v_padded_key, null, null, v_staff, 0,
+    '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+    v_future_id, v_checked_at
+  );
+  perform pg_temp.assert_true(
+    v_replayed_id = v_padded_sale_id,
+    'a padded idempotency key must replay before validating an invalid policy'
+  );
 
   -- The replay deliberately supplies an invalid future policy. Returning the
   -- first sale proves the idempotency lookup occurs before policy resolution.

@@ -121,7 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "The return did not complete." })
   }
 
-  const { data: note } = await session.supabase
+  const { data: note, error: noteError } = await session.supabase
     .from("credit_notes")
     .select(
       "credit_no, total, refund_method, vat_policy_id, vat_enabled, vat_rate, vat_number, vat_amount",
@@ -129,16 +129,29 @@ export async function POST(request: Request) {
     .eq("id", creditNoteId)
     .maybeSingle()
 
+  const committedReadFailure = () =>
+    NextResponse.json({
+      ok: false,
+      creditNoteId,
+      refundCommitted: true,
+      readFailed: true,
+      error:
+        "The return was recorded, but its details could not be loaded. Refresh sale history; do not submit it again.",
+    })
+
+  if (noteError) return committedReadFailure()
+  if (!note) return committedReadFailure()
+
   return NextResponse.json({
     ok: true,
     creditNoteId,
-    creditNo: note?.credit_no ?? "",
-    total: note?.total === undefined ? 0 : Number(note.total),
-    refundMethod: note?.refund_method ?? refundMethod,
-    vatPolicyId: note?.vat_policy_id ?? null,
-    vatEnabled: note?.vat_enabled ?? false,
-    vatRate: note?.vat_rate === undefined ? 0 : Number(note.vat_rate),
-    vatNumber: note?.vat_number ?? null,
-    vatAmount: note?.vat_amount === undefined ? 0 : Number(note.vat_amount),
+    creditNo: note.credit_no,
+    total: Number(note.total),
+    refundMethod: note.refund_method,
+    vatPolicyId: note.vat_policy_id,
+    vatEnabled: note.vat_enabled,
+    vatRate: Number(note.vat_rate),
+    vatNumber: note.vat_number,
+    vatAmount: Number(note.vat_amount),
   })
 }

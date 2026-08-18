@@ -416,6 +416,7 @@ security definer
 set search_path = ''
 as $$
 declare
+    v_key text := nullif(pg_catalog.btrim(p_key), '');
     v_existing bigint;
     v_sale_id bigint;
     v_policy public.vat_policies%rowtype;
@@ -432,12 +433,12 @@ declare
 begin
     -- This must precede policy resolution. A retry belongs to the already
     -- completed sale even if its cached policy would no longer validate.
-    if p_key is not null and pg_catalog.btrim(p_key) <> '' then
-        perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(p_key));
+    if v_key is not null then
+        perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(v_key));
 
         select id into v_existing
         from public.sales
-        where idempotency_key = p_key;
+        where idempotency_key = v_key;
 
         if v_existing is not null then
             return v_existing;
@@ -497,7 +498,7 @@ begin
         p_shift_id, p_customer_id, v_checked_out_at, v_subtotal,
         coalesce(p_discount, 0), v_vat_amount, v_total, p_cashier_id,
         v_policy.id, v_policy.enabled, v_effective_rate, v_snapshot_number,
-        nullif(pg_catalog.btrim(p_key), '')
+        v_key
     ) returning id into v_sale_id;
 
     update public.sales

@@ -20,7 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
  * This used to live inside the `"use server"` action, reachable only through a
  * cookie session. The Android till cannot send cookies — it authenticates with
  * a bearer token — and the obvious alternative, letting it call Supabase
- * directly, is not available: `complete_sale_keyed` takes `unit_price` per line
+ * directly, is not available: `complete_sale_keyed_at_policy` takes `unit_price` per line
  * and trusts it. The re-pricing, the discount settlement and the manager check
  * are *here*, in TypeScript, so a client that skips this layer skips all three.
  *
@@ -856,7 +856,7 @@ export type CommitSaleInput = {
 /**
  * Prices, settles and commits one sale. The single networked step.
  *
- * `complete_sale_keyed` is SECURITY DEFINER and does the whole write
+ * `complete_sale_keyed_at_policy` is SECURITY DEFINER and does the whole write
  * atomically — sale header, items, payments and a stock-out movement per line —
  * so this validates, re-derives the money, and forwards. If it fails the caller
  * keeps the cart and can retry, which is why this returns a result object
