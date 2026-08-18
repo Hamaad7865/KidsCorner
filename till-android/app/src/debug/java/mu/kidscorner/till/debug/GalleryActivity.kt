@@ -53,10 +53,18 @@ import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.data.StockCheckLocation
 import mu.kidscorner.till.data.StockCheckQuantity
 import mu.kidscorner.till.StockCheckUiState
+import mu.kidscorner.till.data.ZCashier
+import mu.kidscorner.till.data.ZMethod
+import mu.kidscorner.till.data.ZTotals
+import mu.kidscorner.till.data.ZVatBand
+import mu.kidscorner.till.data.ZVatIdentity
+import mu.kidscorner.till.print.CreditNoteDoc
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.toPlainText
+import mu.kidscorner.till.print.buildCreditNote
 import mu.kidscorner.till.print.buildReceipt
+import mu.kidscorner.till.print.buildZReport
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.ui.ActionsDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
@@ -580,6 +588,66 @@ class GalleryActivity : ComponentActivity() {
                             onDismiss = { showing = null },
                         )
 
+                        // ── VAT registration, on and off ──────────────────────
+                        "sellVatOn" -> VatSellSample(vatEnabled = true)
+                        "sellVatOff" -> VatSellSample(vatEnabled = false)
+                        "paymentVatOn" -> VatPaymentSample(vatEnabled = true)
+                        "paymentVatOff" -> VatPaymentSample(vatEnabled = false)
+
+                        "receiptVatOn" -> ReceiptPreviewDialog(
+                            preview = buildReceipt(
+                                sale = vatSaleDetail(vatEnabled = true),
+                                // The shop's CURRENT number differs from the
+                                // sale's frozen one — the receipt must show the
+                                // frozen VAT20123456, never this.
+                                shop = VAT_SHOP.copy(vatNumber = "VAT-CURRENT-99"),
+                                width = PaperWidth.Mm80,
+                            ).toPlainText(PaperWidth.Mm80),
+                            paper = PaperWidth.Mm80,
+                            onDismiss = { showing = null },
+                        )
+                        "receiptVatOff" -> ReceiptPreviewDialog(
+                            preview = buildReceipt(
+                                sale = vatSaleDetail(vatEnabled = false),
+                                shop = VAT_SHOP,
+                                width = PaperWidth.Mm80,
+                            ).toPlainText(PaperWidth.Mm80),
+                            paper = PaperWidth.Mm80,
+                            onDismiss = { showing = null },
+                        )
+                        "creditVatOn" -> ReceiptPreviewDialog(
+                            preview = buildCreditNote(
+                                doc = vatCreditNote(vatEnabled = true),
+                                shop = VAT_SHOP.copy(vatNumber = "VAT-CURRENT-99"),
+                                width = PaperWidth.Mm80,
+                            ).toPlainText(PaperWidth.Mm80),
+                            paper = PaperWidth.Mm80,
+                            onDismiss = { showing = null },
+                        )
+                        "creditVatOff" -> ReceiptPreviewDialog(
+                            preview = buildCreditNote(
+                                doc = vatCreditNote(vatEnabled = false),
+                                shop = VAT_SHOP,
+                                width = PaperWidth.Mm80,
+                            ).toPlainText(PaperWidth.Mm80),
+                            paper = PaperWidth.Mm80,
+                            onDismiss = { showing = null },
+                        )
+                        "zMixedVat" -> ReceiptPreviewDialog(
+                            preview = buildZReport(
+                                z = MIXED_Z,
+                                // Current shop number differs; the Z must show
+                                // the frozen one from its identities.
+                                shop = VAT_SHOP.copy(vatNumber = "VAT-CURRENT-99"),
+                                width = PaperWidth.Mm80,
+                                zNo = "Z00042",
+                                countedCash = 10_840.50,
+                                variance = 0.0,
+                            ).toPlainText(PaperWidth.Mm80),
+                            paper = PaperWidth.Mm80,
+                            onDismiss = { showing = null },
+                        )
+
                         else -> Menu { showing = it }
                     }
 
@@ -649,6 +717,10 @@ private val SCREENS = listOf(
     "pin", "pinError", "pinChecking", "pinOffline", "pinOfflineCold", "openShiftOffline", "sell", "sellEmpty", "stockCheck", "payment", "openShift", "closeShift", "closed", "complete",
     "customer", "held", "approval", "movement",
     "setup", "offline", "printer", "receipt", "settings", "refund", "actions", "note", "custom", "basket", "txns", "toast",
+    // VAT registration states, on and off, built through the real screens and
+    // document builders so a wrong label or a leaked figure is visible here.
+    "sellVatOff", "sellVatOn", "paymentVatOff", "paymentVatOn",
+    "receiptVatOff", "receiptVatOn", "creditVatOff", "creditVatOn", "zMixedVat",
 )
 
 // ─────────────────────────────────────────────── invented, but plausible ──
@@ -855,3 +927,126 @@ private val SAMPLE_MANAGERS = listOf(
     Cashier("m1", "Priya Ramdin", "owner", hasPin = true),
     Cashier("m2", "Fatima Bhugaloo", "manager", hasPin = true),
 )
+
+// ─────────────────────────────────────────────── VAT registration samples ──
+//
+// Deterministic states for the toggle, built through the REAL screens and
+// document builders. Historical samples deliberately pass a shop identity whose
+// current VAT number differs from the frozen one, so a document that adopts the
+// wrong number is visible on inspection rather than only in production.
+
+private val VAT_SHOP = ShopIdentity(
+    name = "Kids Corner",
+    address = "Royal Road, Curepipe",
+    phone = "5xxx xxxx",
+    vatNumber = "VAT20123456",
+)
+
+private fun vatSaleDetail(vatEnabled: Boolean) = SAMPLE_DETAIL.copy(
+    vatEnabled = vatEnabled,
+    vatRate = if (vatEnabled) 0.15 else 0.0,
+    vatNumber = if (vatEnabled) "VAT20123456" else null,
+    vatAmount = if (vatEnabled) 240.72 else 0.0,
+)
+
+private fun vatCreditNote(vatEnabled: Boolean) = CreditNoteDoc(
+    creditNo = "CN0007",
+    saleNo = "KC-00412",
+    dateIso = "2026-08-18T10:15:00.000Z",
+    refundMethod = "cash",
+    total = 565.71,
+    vatEnabled = vatEnabled,
+    vatRate = if (vatEnabled) 0.15 else 0.0,
+    vatNumber = if (vatEnabled) "VAT20123456" else null,
+    vatAmount = if (vatEnabled) 73.79 else 0.0,
+    cashierName = "Priya Ramdin",
+)
+
+/** A shift that traded across an enable, so it carries turnover and VAT bands. */
+private val MIXED_Z = ZTotals(
+    shiftId = 7,
+    openedAt = "2026-08-18T07:00:00.000Z",
+    asAt = "2026-08-18T17:00:00.000Z",
+    tickets = 12,
+    salesTotal = 16_222.99,
+    itemCount = 23,
+    discountTotal = 0.0,
+    avgBasket = 1_351.92,
+    vatTotal = 1_058.02,
+    methods = listOf(ZMethod("cash", 12, gross = 16_222.99, change = 0.0, net = 16_222.99)),
+    // Only the VAT-enabled half of the day forms a band; the rest is turnover
+    // with no VAT, which is exactly what a shift spanning an enable looks like.
+    vat = listOf(ZVatBand(15.0, "VAT 15.00%", excl = 7_053.48, vat = 1_058.02, incl = 8_111.50)),
+    vatIdentities = listOf(ZVatIdentity(policyId = 6, rate = 0.15, vatNumber = "VAT20123456")),
+    cashiers = listOf(ZCashier(null, "Priya Ramdin", 12, 16_222.99)),
+    openingFloat = 2_000.0,
+    cashTaken = 16_222.99,
+    expectedCash = 18_222.99,
+)
+
+@Composable
+private fun VatSellSample(vatEnabled: Boolean) {
+    var cart by remember { mutableStateOf(SAMPLE_LINES) }
+    SellScreen(
+        catalog = SAMPLE_CATALOG,
+        lines = cart,
+        totals = cartTotals(cart, 0.0, if (vatEnabled) 0.15 else 0.0),
+        cashier = SAMPLE_MANAGERS[0],
+        shopName = "Kids Corner",
+        tillOpen = true,
+        catalogLoading = false,
+        online = true,
+        vatRate = if (vatEnabled) 0.15 else 0.0,
+        vatEnabled = vatEnabled,
+        customer = null,
+        discount = null,
+        heldCount = 0,
+        queuedCount = 0,
+        onSwitchCashier = {},
+        onAdd = { cart = cart.withVariant(it) },
+        onAddScanned = { cart = cart.withVariant(it) },
+        onSetQty = { id, qty -> cart = cart.withQty(id, qty) },
+        onSetLineDiscount = { id, kind, value -> cart = cart.withLineDiscount(id, kind, value) },
+        onOpenActions = {},
+        onOpenStockCheck = {},
+        onOpenCustomItem = {},
+        onOpenNote = {},
+        onSetNote = {},
+        note = "",
+        onRemove = { id -> cart = cart.without(id) },
+        onClear = { cart = emptyList() },
+        onFindBarcode = { code -> SAMPLE_CATALOG.firstOrNull { it.barcode == code } },
+        onPay = {},
+        onLock = {},
+        onHold = {},
+        onOpenHeld = {},
+        onOpenCustomer = {},
+        onDetachCustomer = {},
+        onOpenDiscount = {},
+        onRemoveDiscount = {},
+        onOpenTill = {},
+        onCloseTill = {},
+        onOpenMovement = {},
+        onOpenHistory = {},
+    )
+}
+
+@Composable
+private fun VatPaymentSample(vatEnabled: Boolean) {
+    PaymentScreen(
+        totals = cartTotals(SAMPLE_LINES, 0.0, if (vatEnabled) 0.15 else 0.0),
+        lines = SAMPLE_LINES,
+        paymentMethods = listOf("cash", "card", "juice", "bank"),
+        cashierName = "Priya Ramdin",
+        vatEnabled = vatEnabled,
+        busy = false,
+        error = null,
+        frozen = false,
+        parkable = false,
+        onConfirm = { _, _ -> },
+        onRetry = {},
+        onPark = {},
+        onCancel = {},
+        onOpenDrawer = {},
+    )
+}
