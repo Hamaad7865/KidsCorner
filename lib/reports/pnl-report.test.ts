@@ -63,6 +63,59 @@ describe("getPnlReport", () => {
     expect(report.grossPct).toBeCloseTo(73.16, 2)
   })
 
+  it("uses each latest received purchase snapshot for VAT-exclusive inventory cost", async () => {
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 230,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 1,
+          variant_id: 101,
+          product_variants: { cost_price: 115 },
+        },
+        {
+          qty: 1,
+          variant_id: 202,
+          product_variants: { cost_price: 115 },
+        },
+      ],
+      purchases: [
+        {
+          id: 12,
+          total_amount: 115,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, unit_cost: 115 }],
+        },
+        {
+          id: 11,
+          total_amount: 115,
+          vat_enabled: true,
+          vat_amount: 15,
+          purchase_items: [{ variant_id: 202, unit_cost: 115 }],
+        },
+      ],
+      // Deliberately unrelated to both receipt snapshots. A report that asks
+      // today's setting for historical cost would produce a different result.
+      settings: [{ key: "vat_rate", value: 0.5 }],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    // Disabled receipt: Rs115 gross cost. Enabled receipt: Rs115 - Rs15 VAT.
+    expect(report.cost).toBe(215)
+    expect(report.gross).toBe(15)
+  })
+
   it("takes only money that left the drawer off the bottom line", async () => {
     client = build([
       { id: 1, amount: -500, reason: "Paid the bread supplier" },

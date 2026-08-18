@@ -1083,21 +1083,46 @@ begin
 end;
 $$;
 
--- Merge frozen enabled tax bands into the established daily-summary shape.
--- Headline turnover, payments, sellers and categories keep their existing
--- behavior; only the VAT columns are replaced, including copied returns.
-create or replace function private.merge_daily_vat_snapshot(
-    p_summary jsonb,
-    p_from date,
-    p_to date
-)
+-- Replace daily_summary as one snapshot-driven query. Running the mature body
+-- and overwriting its VAT JSON at the return boundary still executes its old
+-- tax-band calculation. Keeping the non-tax CTEs here preserves the public
+-- report contract while ensuring no historical read consults or derives a
+-- current policy/rate, even when the settings rows are absent.
+create or replace function public.daily_summary(p_from date, p_to date)
 returns jsonb
-language sql
+language plpgsql
 stable
-security invoker
+security definer
 set search_path = ''
 as $$
-    with tax_parts as (
+declare
+    v_out jsonb;
+begin
+    if p_from is null or p_to is null then
+        raise exception 'daily_summary needs a from and a to date';
+    end if;
+    if p_to < p_from then
+        raise exception 'daily_summary: % is before %', p_to, p_from;
+    end if;
+    if p_to - p_from > 400 then
+        raise exception 'daily_summary: range is longer than 400 days';
+    end if;
+
+    with
+    scoped as (
+        select
+            s.id,
+            (s.sale_date at time zone 'Indian/Mauritius')::date as day,
+            s.total,
+            s.vat_amount as vat,
+            coalesce(pr.full_name, 'Unknown') as cashier,
+            s.customer_id
+        from public.sales s
+        left join public.profiles pr on pr.id = s.cashier_id
+        where s.status = 'completed'
+          and (s.sale_date at time zone 'Indian/Mauritius')::date between p_from and p_to
+    ),
+    tax_parts as (
         select
             (s.sale_date at time zone 'Indian/Mauritius')::date as day,
             pg_catalog.to_char(
@@ -1125,7 +1150,73 @@ as $$
         where cn.vat_enabled
           and (cn.created_at at time zone 'Indian/Mauritius')::date between p_from and p_to
     ),
-    day_tax as (
+    lines as (
+        select
+            sc.day,
+            si.qty,
+            coalesce(nullif(pg_catalog.btrim(cat.name), ''), '(uncategorised)') as category,
+            si.line_total
+              * case when t.line_sum > 0 then sc.total / t.line_sum else 1 end as amount
+        from public.sale_items si
+        join scoped sc on sc.id = si.sale_id
+        join (
+            select si2.sale_id, pg_catalog.sum(si2.line_total) as line_sum
+            from public.sale_items si2
+            where si2.sale_id in (select id from scoped)
+            group by si2.sale_id
+        ) t on t.sale_id = si.sale_id
+        left join public.product_variants pv on pv.id = si.variant_id
+        left join public.products p on p.id = pv.product_id
+        left join public.categories cat on cat.id = p.category_id
+    ),
+    pays as (
+        select sc.day, sp.method, sp.amount
+        from public.sale_payments sp
+        join scoped sc on sc.id = sp.sale_id
+    ),
+    headline as (
+        select
+            day,
+            pg_catalog.count(*)::integer as tickets,
+            pg_catalog.count(distinct customer_id)::integer as customers,
+            pg_catalog.round(pg_catalog.sum(total), 2) as total_incl,
+            pg_catalog.round(pg_catalog.sum(vat), 2) as vat,
+            pg_catalog.round(pg_catalog.sum(total) - pg_catalog.sum(vat), 2) as total_excl,
+            pg_catalog.round(pg_catalog.sum(total) / pg_catalog.count(*), 2) as avg_incl,
+            pg_catalog.round(
+                (pg_catalog.sum(total) - pg_catalog.sum(vat)) / pg_catalog.count(*),
+                2
+            ) as avg_excl
+        from scoped
+        group by day
+    ),
+    day_items as (
+        select day, pg_catalog.sum(qty)::integer as items
+        from lines
+        group by day
+    ),
+    day_methods as (
+        select
+            day,
+            pg_catalog.jsonb_object_agg(
+                method,
+                pg_catalog.jsonb_build_object(
+                    'n', n,
+                    'amount', pg_catalog.round(amount, 2)
+                )
+            ) as by_method
+        from (
+            select
+                day,
+                method,
+                pg_catalog.count(*)::integer as n,
+                pg_catalog.sum(amount) as amount
+            from pays
+            group by day, method
+        ) m
+        group by day
+    ),
+    day_taxes as (
         select
             day,
             pg_catalog.jsonb_object_agg(
@@ -1137,63 +1228,130 @@ as $$
                 )
             ) as by_tax
         from (
-            select day, rate, pg_catalog.sum(incl) as incl, pg_catalog.sum(vat) as vat
+            select
+                day,
+                rate,
+                pg_catalog.sum(incl) as incl,
+                pg_catalog.sum(vat) as vat
             from tax_parts
             group by day, rate
-        ) grouped
+        ) t
         group by day
     ),
-    rows as (
-        select coalesce(
-            pg_catalog.jsonb_agg(
-                row_value || pg_catalog.jsonb_build_object(
-                    'by_tax', coalesce(dt.by_tax, '{}'::jsonb)
+    day_sellers as (
+        select
+            day,
+            pg_catalog.jsonb_object_agg(
+                cashier,
+                pg_catalog.jsonb_build_object(
+                    'n', n,
+                    'amount', pg_catalog.round(amount, 2)
                 )
-                order by row_value ->> 'day'
-            ),
-            '[]'::jsonb
-        ) as value
-        from pg_catalog.jsonb_array_elements(p_summary -> 'rows') row_value
-        left join day_tax dt on dt.day = (row_value ->> 'day')::date
+            ) as by_seller
+        from (
+            select
+                day,
+                cashier,
+                pg_catalog.count(*)::integer as n,
+                pg_catalog.sum(total) as amount
+            from scoped
+            group by day, cashier
+        ) s
+        group by day
+    ),
+    day_categories as (
+        select
+            day,
+            pg_catalog.jsonb_object_agg(
+                category,
+                pg_catalog.jsonb_build_object(
+                    'qty', qty,
+                    'amount', pg_catalog.round(amount, 2)
+                )
+            ) as by_category
+        from (
+            select
+                day,
+                category,
+                pg_catalog.sum(qty)::integer as qty,
+                pg_catalog.sum(amount) as amount
+            from lines
+            group by day, category
+        ) c
+        group by day
+    ),
+    cols as (
+        select
+            (
+                select coalesce(
+                    pg_catalog.jsonb_agg(distinct method order by method),
+                    '[]'::jsonb
+                )
+                from pays
+            ) as methods,
+            (
+                select coalesce(
+                    pg_catalog.jsonb_agg(distinct rate order by rate),
+                    '[]'::jsonb
+                )
+                from tax_parts
+            ) as taxes,
+            (
+                select coalesce(
+                    pg_catalog.jsonb_agg(distinct cashier order by cashier),
+                    '[]'::jsonb
+                )
+                from scoped
+            ) as sellers,
+            (
+                select coalesce(
+                    pg_catalog.jsonb_agg(distinct category order by category),
+                    '[]'::jsonb
+                )
+                from lines
+            ) as categories
     )
-    select p_summary || pg_catalog.jsonb_build_object(
-        'rows', (select value from rows),
-        'taxes', coalesce((
-            select pg_catalog.jsonb_agg(distinct rate order by rate)
-            from tax_parts
-        ), '[]'::jsonb)
-    );
-$$;
+    select pg_catalog.jsonb_build_object(
+        'from', p_from,
+        'to', p_to,
+        'rows', coalesce((
+            select pg_catalog.jsonb_agg(
+                pg_catalog.jsonb_build_object(
+                    'day', h.day,
+                    'tickets', h.tickets,
+                    'items', coalesce(di.items, 0),
+                    'customers', h.customers,
+                    'total_incl', h.total_incl,
+                    'vat', h.vat,
+                    'total_excl', h.total_excl,
+                    'avg_incl', h.avg_incl,
+                    'avg_excl', h.avg_excl,
+                    'by_method', coalesce(dm.by_method, '{}'::jsonb),
+                    'by_tax', coalesce(dt.by_tax, '{}'::jsonb),
+                    'by_seller', coalesce(ds.by_seller, '{}'::jsonb),
+                    'by_category', coalesce(dc.by_category, '{}'::jsonb)
+                )
+                order by h.day
+            )
+            from headline h
+            left join day_items di on di.day = h.day
+            left join day_methods dm on dm.day = h.day
+            left join day_taxes dt on dt.day = h.day
+            left join day_sellers ds on ds.day = h.day
+            left join day_categories dc on dc.day = h.day
+        ), '[]'::jsonb),
+        'methods', (select methods from cols),
+        'taxes', (select taxes from cols),
+        'sellers', (select sellers from cols),
+        'categories', (select categories from cols)
+    ) into v_out;
 
-revoke execute on function private.merge_daily_vat_snapshot(jsonb, date, date)
-    from public, anon, authenticated, service_role;
-
-do $$
-declare
-    v_def text;
-begin
-    select pg_catalog.replace(
-        pg_catalog.pg_get_functiondef(p.oid),
-        chr(13) || chr(10),
-        chr(10)
-    ) into v_def
-    from pg_catalog.pg_proc p
-    where p.proname = 'daily_summary'
-      and p.pronamespace = 'public'::pg_catalog.regnamespace;
-
-    if v_def is null
-       or pg_catalog.strpos(v_def, '    RETURN v_out;') = 0 then
-        raise exception 'daily_summary does not match the expected pre-VAT report definition';
-    end if;
-
-    v_def := pg_catalog.replace(
-        v_def,
-        '    RETURN v_out;',
-        '    RETURN private.merge_daily_vat_snapshot(v_out, p_from, p_to);'
-    );
-    execute v_def;
+    return v_out;
 end;
 $$;
+
+revoke execute on function public.daily_summary(date, date) from public, anon;
+grant execute on function public.daily_summary(date, date) to authenticated;
 
 -- Freeze the exact live identity array in its dedicated column. The stored
 -- totals object deliberately drops the new live-only key, preserving the

@@ -42,6 +42,7 @@ declare
   v_z_id bigint;
   v_frozen_totals jsonb;
   v_frozen_identities jsonb;
+  v_base timestamptz := pg_catalog.now() - interval '2 days';
   v_items jsonb := jsonb_build_array(jsonb_build_object(
     'variant_id', null,
     'description', 'VAT report fixture',
@@ -54,7 +55,7 @@ declare
     'amount', 230,
     'tendered', 230
   ));
-  v_day date := '2026-08-18';
+  v_day date := (v_base at time zone 'Indian/Mauritius')::date;
 begin
   select id into v_owner
   from public.profiles
@@ -69,31 +70,31 @@ begin
   returning id into v_device;
 
   insert into public.shifts (opened_by, opened_at, opening_float, device_id)
-  values (v_owner, '2026-08-18 08:00:00+04', 100, v_device)
+  values (v_owner, v_base, 100, v_device)
   returning id into v_shift;
 
   insert into public.vat_policies (
     enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    false, 0.15, null, '2026-08-18 07:00:00+04', v_owner
+    false, 0.15, null, v_base - interval '1 hour', v_owner
   ) returning id into v_disabled_policy;
 
   v_disabled_sale := public.complete_sale_keyed_at_policy(
     'vat-report-disabled-' || txid_current()::text,
     v_shift, null, v_owner, 0, v_items, v_payments, '[]'::jsonb,
-    v_disabled_policy, '2026-08-18 09:00:00+04'
+    v_disabled_policy, v_base + interval '1 hour'
   );
 
   insert into public.vat_policies (
     enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    true, 0.15, 'VAT-REPORT-15', '2026-08-18 07:30:00+04', v_owner
+    true, 0.15, 'VAT-REPORT-15', v_base + interval '90 minutes', v_owner
   ) returning id into v_enabled_policy;
 
   v_enabled_sale := public.complete_sale_keyed_at_policy(
     'vat-report-enabled-' || txid_current()::text,
     v_shift, null, v_owner, 0, v_items, v_payments, '[]'::jsonb,
-    v_enabled_policy, '2026-08-18 10:00:00+04'
+    v_enabled_policy, v_base + interval '2 hours'
   );
 
   select id into v_disabled_line
@@ -107,12 +108,15 @@ begin
     jsonb_build_array(jsonb_build_object('sale_item_id', v_disabled_line, 'qty', 1)),
     false, v_owner
   );
+  update public.credit_notes
+  set created_at = v_base + interval '3 hours'
+  where id = v_disabled_note;
 
   -- Make the opposite policy current before returning the enabled source.
   insert into public.vat_policies (
     enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    false, 0.20, 'PREPARED-20', '2026-08-18 10:30:00+04', v_owner
+    false, 0.20, 'PREPARED-20', v_base + interval '210 minutes', v_owner
   ) returning id into v_later_policy;
 
   v_enabled_note := public.create_credit_note(
@@ -120,6 +124,9 @@ begin
     jsonb_build_array(jsonb_build_object('sale_item_id', v_enabled_line, 'qty', 1)),
     false, v_owner
   );
+  update public.credit_notes
+  set created_at = v_base + interval '4 hours'
+  where id = v_enabled_note;
 
   perform pg_temp.assert_true(
     (select vat_policy_id = v_disabled_policy
@@ -139,22 +146,22 @@ begin
   returning id into v_supplier;
 
   insert into public.purchases (
-    supplier_id, invoice_no, purchase_date, total_amount, created_by
+    supplier_id, invoice_no, purchase_date, total_amount, created_by, created_at
   ) values (
-    v_supplier, 'VAT-DISABLED', v_day, 230, v_owner
+    v_supplier, 'VAT-DISABLED', v_day, 230, v_owner, v_base + interval '5 hours'
   ) returning id into v_disabled_purchase;
   perform public.receive_purchase(v_disabled_purchase);
 
   insert into public.vat_policies (
-    enabled, configured_rate, vat_number, created_by
+    enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    true, 0.15, 'VAT-PURCHASE-15', v_owner
+    true, 0.15, 'VAT-PURCHASE-15', v_base + interval '6 hours', v_owner
   ) returning id into v_enabled_policy;
 
   insert into public.purchases (
-    supplier_id, invoice_no, purchase_date, total_amount, created_by
+    supplier_id, invoice_no, purchase_date, total_amount, created_by, created_at
   ) values (
-    v_supplier, 'VAT-ENABLED', v_day, 230, v_owner
+    v_supplier, 'VAT-ENABLED', v_day, 230, v_owner, v_base + interval '7 hours'
   ) returning id into v_enabled_purchase;
   perform public.receive_purchase(v_enabled_purchase);
 
@@ -169,17 +176,18 @@ begin
     'a purchase received while enabled must freeze its input VAT'
   );
 
-  -- Put today's setting opposite to the historical enabled transactions.
+  -- Keep the current immutable policy opposite to the historical enabled
+  -- transactions, and remove the legacy settings pointers entirely. Report
+  -- reads must work from document snapshots under both conditions.
   insert into public.vat_policies (
-    enabled, configured_rate, vat_number, created_by
+    enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    false, 0.20, 'CURRENT-PREPARED-20', v_owner
+    false, 0.20, 'CURRENT-PREPARED-20', v_base + interval '8 hours', v_owner
   ) returning id into v_later_policy;
-  update public.settings set value = 'false'::jsonb where key = 'vat_enabled';
-  update public.settings set value = '0.20'::jsonb where key = 'vat_rate';
-  update public.settings set value = '"CURRENT-PREPARED-20"'::jsonb where key = 'vat_number';
+  delete from public.settings
+  where key in ('vat_enabled', 'vat_rate', 'vat_number');
 
-  v_x := public.z_totals(v_shift, clock_timestamp() + interval '1 minute');
+  v_x := public.z_totals(v_shift, v_base + interval '12 hours');
   perform pg_temp.assert_true(
     (v_x ->> 'sales_total')::numeric = 460,
     'disabled turnover must remain in the mixed shift gross total'
@@ -223,9 +231,9 @@ begin
   );
 
   insert into public.vat_policies (
-    enabled, configured_rate, vat_number, created_by
+    enabled, configured_rate, vat_number, created_at, created_by
   ) values (
-    true, 0.25, 'LATER-VAT-25', v_owner
+    true, 0.25, 'LATER-VAT-25', v_base + interval '13 hours', v_owner
   );
 
   perform pg_temp.assert_true(
