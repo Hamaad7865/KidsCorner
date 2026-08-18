@@ -205,6 +205,10 @@ export type Database = {
           subtotal: number
           total: number
           vat_amount: number
+          vat_enabled: boolean
+          vat_number: string | null
+          vat_policy_id: number
+          vat_rate: number
         }
         Insert: {
           cashier_id?: string | null
@@ -218,6 +222,10 @@ export type Database = {
           subtotal: number
           total: number
           vat_amount?: number
+          vat_enabled: boolean
+          vat_number?: string | null
+          vat_policy_id: number
+          vat_rate: number
         }
         Update: {
           cashier_id?: string | null
@@ -231,6 +239,10 @@ export type Database = {
           subtotal?: number
           total?: number
           vat_amount?: number
+          vat_enabled?: boolean
+          vat_number?: string | null
+          vat_policy_id?: number
+          vat_rate?: number
         }
         Relationships: [
           {
@@ -259,6 +271,13 @@ export type Database = {
             columns: ["shift_id"]
             isOneToOne: false
             referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_notes_vat_policy_id_fkey"
+            columns: ["vat_policy_id"]
+            isOneToOne: false
+            referencedRelation: "vat_policies"
             referencedColumns: ["id"]
           },
         ]
@@ -631,6 +650,10 @@ export type Database = {
           status: string
           supplier_id: number
           total_amount: number
+          vat_amount: number | null
+          vat_enabled: boolean | null
+          vat_policy_id: number | null
+          vat_rate: number | null
         }
         Insert: {
           created_at?: string
@@ -643,6 +666,10 @@ export type Database = {
           status?: string
           supplier_id: number
           total_amount?: number
+          vat_amount?: number | null
+          vat_enabled?: boolean | null
+          vat_policy_id?: number | null
+          vat_rate?: number | null
         }
         Update: {
           created_at?: string
@@ -655,6 +682,10 @@ export type Database = {
           status?: string
           supplier_id?: number
           total_amount?: number
+          vat_amount?: number | null
+          vat_enabled?: boolean | null
+          vat_policy_id?: number | null
+          vat_rate?: number | null
         }
         Relationships: [
           {
@@ -669,6 +700,13 @@ export type Database = {
             columns: ["supplier_id"]
             isOneToOne: false
             referencedRelation: "suppliers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "purchases_vat_policy_id_fkey"
+            columns: ["vat_policy_id"]
+            isOneToOne: false
+            referencedRelation: "vat_policies"
             referencedColumns: ["id"]
           },
         ]
@@ -896,6 +934,10 @@ export type Database = {
           subtotal: number
           total: number
           vat_amount: number
+          vat_enabled: boolean
+          vat_number: string | null
+          vat_policy_id: number
+          vat_rate: number
         }
         Insert: {
           cashier_id?: string | null
@@ -910,6 +952,10 @@ export type Database = {
           subtotal: number
           total: number
           vat_amount?: number
+          vat_enabled: boolean
+          vat_number?: string | null
+          vat_policy_id: number
+          vat_rate: number
         }
         Update: {
           cashier_id?: string | null
@@ -924,6 +970,10 @@ export type Database = {
           subtotal?: number
           total?: number
           vat_amount?: number
+          vat_enabled?: boolean
+          vat_number?: string | null
+          vat_policy_id?: number
+          vat_rate?: number
         }
         Relationships: [
           {
@@ -945,6 +995,13 @@ export type Database = {
             columns: ["shift_id"]
             isOneToOne: false
             referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_vat_policy_id_fkey"
+            columns: ["vat_policy_id"]
+            isOneToOne: false
+            referencedRelation: "vat_policies"
             referencedColumns: ["id"]
           },
         ]
@@ -1219,6 +1276,44 @@ export type Database = {
           },
         ]
       }
+      vat_policies: {
+        Row: {
+          configured_rate: number
+          created_at: string
+          created_by: string | null
+          enabled: boolean
+          id: number
+          is_legacy: boolean
+          vat_number: string | null
+        }
+        Insert: {
+          configured_rate: number
+          created_at?: string
+          created_by?: string | null
+          enabled: boolean
+          id?: number
+          is_legacy?: boolean
+          vat_number?: string | null
+        }
+        Update: {
+          configured_rate?: number
+          created_at?: string
+          created_by?: string | null
+          enabled?: boolean
+          id?: number
+          is_legacy?: boolean
+          vat_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vat_policies_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       z_reports: {
         Row: {
           closed_at: string
@@ -1229,6 +1324,7 @@ export type Database = {
           shift_id: number
           totals: Json
           variance: number
+          vat_identity_snapshot: Json
           z_no: string
         }
         Insert: {
@@ -1240,6 +1336,7 @@ export type Database = {
           shift_id: number
           totals: Json
           variance?: number
+          vat_identity_snapshot?: Json
           z_no: string
         }
         Update: {
@@ -1251,6 +1348,7 @@ export type Database = {
           shift_id?: number
           totals?: Json
           variance?: number
+          vat_identity_snapshot?: Json
           z_no?: string
         }
         Relationships: [
@@ -1526,6 +1624,14 @@ export type Database = {
         Returns: number
       }
       returned_qty: { Args: { p_sale_item_id: number }; Returns: number }
+      set_vat_policy: {
+        Args: {
+          p_configured_rate: number
+          p_enabled: boolean
+          p_vat_number: string | null
+        }
+        Returns: number
+      }
       set_barcode_scheme: {
         Args: { p_auto: boolean; p_next: number; p_prefix: string }
         Returns: number

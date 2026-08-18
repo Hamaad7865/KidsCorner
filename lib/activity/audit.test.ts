@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { changedFields, logAudit, logAudits, moneyChange } from "./audit"
+import type { Database } from "@/lib/supabase/database.types"
 
 describe("changedFields", () => {
   it("reports only what actually moved", () => {
@@ -106,6 +107,42 @@ describe("logAudit", () => {
       logAudits({ rpc } as never, [event("price.changed"), event("cost.changed")]),
     ).resolves.toBeUndefined()
     expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("passes the VAT policy action and old/new metadata contract unchanged", async () => {
+    const rpc = vi.fn(() => Promise.resolve({ error: null }))
+    const args = {
+      p_enabled: true,
+      p_configured_rate: 0.15,
+      p_vat_number: "TEST-VAT-001",
+    } satisfies Database["public"]["Functions"]["set_vat_policy"]["Args"]
+
+    await logAudit({ rpc } as never, {
+      type: "setting.changed",
+      refType: "setting",
+      refId: "vat_policy",
+      summary: "VAT policy changed",
+      detail: {
+        old: { enabled: false, rate: 0.15, vatNumber: null },
+        new: {
+          enabled: args.p_enabled,
+          rate: args.p_configured_rate,
+          vatNumber: args.p_vat_number,
+        },
+      },
+    })
+
+    expect(rpc).toHaveBeenCalledWith("log_audit", {
+      p_event_type: "setting.changed",
+      p_ref_type: "setting",
+      p_ref_id: "vat_policy",
+      p_summary: "VAT policy changed",
+      p_detail: {
+        old: { enabled: false, rate: 0.15, vatNumber: null },
+        new: { enabled: true, rate: 0.15, vatNumber: "TEST-VAT-001" },
+      },
+      p_device_id: null,
+    })
   })
 })
 
