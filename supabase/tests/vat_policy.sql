@@ -19,6 +19,40 @@ begin
 end;
 $$;
 
+-- Exercise initialization inputs independently from the rows created by the
+-- migration. Literal fixtures catch a hard-coded fallback or a failure to
+-- preserve valid prepared details.
+do $$
+declare
+  v_rate numeric;
+  v_number text;
+begin
+  select configured_rate, vat_number
+  into v_rate, v_number
+  from private.resolve_vat_policy_preparation(null, null);
+  perform pg_temp.assert_true(
+    v_rate = 0.15 and v_number is null,
+    'clean preparation must resolve to disabled-policy details 0.15 and null'
+  );
+
+  select configured_rate, vat_number
+  into v_rate, v_number
+  from private.resolve_vat_policy_preparation('0.18'::jsonb, '"  MU-VAT-123  "'::jsonb);
+  perform pg_temp.assert_true(
+    v_rate = 0.18 and v_number = 'MU-VAT-123',
+    'valid prepared rate and VAT number must be preserved and normalized'
+  );
+
+  select configured_rate, vat_number
+  into v_rate, v_number
+  from private.resolve_vat_policy_preparation('"not-a-rate"'::jsonb, '" MU-VAT-456 "'::jsonb);
+  perform pg_temp.assert_true(
+    v_rate = 0.15 and v_number = 'MU-VAT-456',
+    'invalid prepared rate alone must fall back to 0.15'
+  );
+end;
+$$;
+
 do $$
 declare
   v_legacy public.vat_policies%rowtype;
@@ -40,20 +74,6 @@ begin
 
   perform pg_temp.assert_true(v_current.id > v_legacy.id, 'current policy must be selected by highest id');
   perform pg_temp.assert_true(v_current.enabled is false, 'the migration must start with VAT disabled');
-  perform pg_temp.assert_true(
-    v_current.configured_rate = coalesce(
-      case
-        when v_legacy.configured_rate > 0 and v_legacy.configured_rate <= 1
-          then v_legacy.configured_rate
-      end,
-      0.15
-    ),
-    'the prepared rate must be preserved and 0.15 used only as fallback'
-  );
-  perform pg_temp.assert_true(
-    v_current.vat_number is not distinct from nullif(btrim(v_legacy.vat_number), ''),
-    'the prepared VAT number must be normalized and preserved'
-  );
 
   perform pg_temp.assert_true(
     not exists (
@@ -155,6 +175,15 @@ select pg_temp.assert_true(
   'client roles must not receive policy mutation privileges'
 );
 select pg_temp.assert_true(
+  has_table_privilege('service_role', 'public.vat_policies', 'SELECT')
+  and not has_table_privilege(
+    'service_role',
+    'public.vat_policies',
+    'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  ),
+  'service_role must have read-only policy access'
+);
+select pg_temp.assert_true(
   not has_function_privilege(
     'anon',
     'public.set_vat_policy(boolean,numeric,text)',
@@ -169,6 +198,38 @@ select pg_temp.assert_true(
     'EXECUTE'
   ),
   'authenticated callers need RPC execute privilege'
+);
+select pg_temp.assert_true(
+  not has_function_privilege(
+    'service_role',
+    'public.set_vat_policy(boolean,numeric,text)',
+    'EXECUTE'
+  ),
+  'service_role must not bypass the authenticated owner RPC path'
+);
+select pg_temp.assert_true(
+  not has_function_privilege('anon', 'public.prevent_vat_policy_mutation()', 'EXECUTE')
+  and not has_function_privilege('authenticated', 'public.prevent_vat_policy_mutation()', 'EXECUTE')
+  and not has_function_privilege('service_role', 'public.prevent_vat_policy_mutation()', 'EXECUTE'),
+  'the immutable-trigger helper must not be client executable'
+);
+select pg_temp.assert_true(
+  not has_function_privilege(
+    'anon',
+    'private.resolve_vat_policy_preparation(jsonb,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'private.resolve_vat_policy_preparation(jsonb,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'private.resolve_vat_policy_preparation(jsonb,jsonb)',
+    'EXECUTE'
+  ),
+  'the initialization helper must not be client executable'
 );
 
 do $$
@@ -216,6 +277,7 @@ declare
   v_new_id bigint;
   v_before_events bigint;
   v_after_events bigint;
+  v_event_actor uuid;
   v_detail jsonb;
 begin
   select id into v_owner
@@ -254,7 +316,7 @@ begin
     and ref_type = 'setting'
     and ref_id = 'vat_policy';
 
-  select detail into v_detail
+  select actor_id, detail into v_event_actor, v_detail
   from public.audit_events
   where event_type = 'setting.changed'
     and ref_type = 'setting'
@@ -265,6 +327,10 @@ begin
   perform pg_temp.assert_true(
     v_after_events = v_before_events + 1,
     'one policy change must emit exactly one VAT setting event'
+  );
+  perform pg_temp.assert_true(
+    v_event_actor = v_owner,
+    'VAT setting event actor must be the authenticated owner'
   );
   perform pg_temp.assert_true(
     v_detail -> 'old' ?& array['enabled', 'rate', 'vatNumber']
