@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest"
 
-import { parseMoney, parseQty } from "./columns"
+import {
+  parseMoney,
+  parseQty,
+  parseStockLocation,
+  TEMPLATE_HEADERS,
+  TEMPLATE_SAMPLE_ROWS,
+} from "./columns"
+
+describe("stock import columns", () => {
+  it("includes separate shelf and stock location columns in the template", () => {
+    expect(TEMPLATE_HEADERS).toContain("Shelf Location")
+    expect(TEMPLATE_HEADERS).toContain("Location")
+    expect(
+      TEMPLATE_SAMPLE_ROWS.every((row) => row.length === TEMPLATE_HEADERS.length),
+    ).toBe(true)
+  })
+
+  it("normalises the two supported stock locations and defaults blanks to Shop", () => {
+    expect(parseStockLocation(undefined)).toBe("Shop")
+    expect(parseStockLocation(" warehouse ")).toBe("Warehouse")
+    expect(parseStockLocation("SHOP")).toBe("Shop")
+    expect(parseStockLocation("Back room")).toBeNull()
+  })
+})
 
 /**
  * Number parsing for the CSV importer.

@@ -81,20 +81,31 @@ export async function saveProduct(
     categoryId: intOf(formData, "categoryId", 0),
     brandId: idOf(formData, "brandId"),
     gender: textOf(formData, "gender"),
+    shelfLocation: nullableTextOf(formData, "shelfLocation"),
     description: nullableTextOf(formData, "description"),
     imageUrl: nullableTextOf(formData, "imageUrl"),
     isActive: boolOf(formData, "isActive"),
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { id, name, categoryId, brandId, gender, description, imageUrl, isActive } =
-    parsed.data
+  const {
+    id,
+    name,
+    categoryId,
+    brandId,
+    gender,
+    shelfLocation,
+    description,
+    imageUrl,
+    isActive,
+  } = parsed.data
 
   const values = {
     name,
     category_id: categoryId,
     brand_id: brandId,
     gender,
+    shelf_location: shelfLocation,
     description,
     image_url: imageUrl,
     is_active: isActive,

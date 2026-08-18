@@ -87,6 +87,18 @@ export const IMPORT_FIELDS = [
     required: false,
     aliases: ["barcode", "bar code", "ean", "upc", "gtin"],
   },
+  {
+    key: "shelfLocation",
+    label: "Shelf Location",
+    required: false,
+    aliases: ["shelf location", "shelf", "shelf code", "rack", "rack location"],
+  },
+  {
+    key: "location",
+    label: "Location",
+    required: false,
+    aliases: ["location", "stock location", "stockroom", "shop warehouse"],
+  },
 ] as const
 
 export type ImportField = (typeof IMPORT_FIELDS)[number]["key"]
@@ -121,6 +133,19 @@ export function normaliseKey(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
+}
+
+export type StockLocationName = "Shop" | "Warehouse"
+
+/** Blank remains backwards-compatible with old templates by allocating to Shop. */
+export function parseStockLocation(
+  value: string | undefined,
+): StockLocationName | null {
+  const key = normaliseKey(value ?? "")
+  if (key === "") return "Shop"
+  if (key === "shop" || key === "shop floor") return "Shop"
+  if (key === "warehouse") return "Warehouse"
+  return null
 }
 
 /** Best-guess mapping from the sheet's header row to our fields. */
@@ -248,9 +273,9 @@ export const TEMPLATE_HEADERS = IMPORT_FIELDS.map((f) => f.label)
 // tee is sized "M" (Clothing Size); the sandals carry a Shoe Size. That is the
 // shape the importer expects — one size kind per row.
 export const TEMPLATE_SAMPLE_ROWS = [
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Navy", 180, 320, 12, "6291041500213"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "", "Navy", 180, 320, 8, "6291041500214"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Red", 180, 320, 5, ""],
-  ["Graphic tee", "T-Shirts", "Zara Kids", "Boy", "", "M", "", "Navy", 190, 340, 9, ""],
-  ["Canvas sandals", "Sandals", "", "Girl", "", "", "EU 24", "Pink", 240, 450, 6, ""],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Navy", 180, 320, 12, "6291041500213", "A12", "Shop"],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "", "Navy", 180, 320, 8, "6291041500214", "A12", "Shop"],
+  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Red", 180, 320, 5, "", "A12", "Warehouse"],
+  ["Graphic tee", "T-Shirts", "Zara Kids", "Boy", "", "M", "", "Navy", 190, 340, 9, "", "B03", "Shop"],
+  ["Canvas sandals", "Sandals", "", "Girl", "", "", "EU 24", "Pink", 240, 450, 6, "", "S08", "Warehouse"],
 ]

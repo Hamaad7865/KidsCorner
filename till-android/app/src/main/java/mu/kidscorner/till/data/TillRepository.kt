@@ -148,6 +148,9 @@ class TillRepository(
     suspend fun completeSale(sale: SaleRequest): Result<SaleResult> =
         authed { api.completeSale(it, sale) }
 
+    suspend fun stockCheck(productId: Int): Result<StockCheckResponse> =
+        authed { api.stockCheck(it, productId) }
+
     suspend fun shift(): Result<ShiftState> = authed { api.shift(it) }
 
     suspend fun openShift(

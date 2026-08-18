@@ -33,6 +33,8 @@ data class CatalogVariant(
     @PrimaryKey val id: Int,
     val productId: Int,
     val productName: String,
+    /** Optional product-level shelf code, repeated per cached variant. */
+    val shelfLocation: String? = null,
     val categoryId: Int? = null,
     val categoryName: String? = null,
     val sizeLabel: String = "",
@@ -96,7 +98,7 @@ interface CatalogDao {
 
 @Database(
     entities = [CatalogVariant::class, QueuedSale::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
@@ -148,6 +150,13 @@ abstract class TillDatabase : RoomDatabase() {
         val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `imageUrl` TEXT")
+            }
+        }
+
+        /** Keeps queued sales while adding the product's stock-finding hint. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `shelfLocation` TEXT")
             }
         }
     }

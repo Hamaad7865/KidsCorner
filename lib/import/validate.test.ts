@@ -111,3 +111,109 @@ describe("size columns", () => {
     expect(sizes.map((s) => s.sizeType).sort()).toEqual(["age_range", "shoe_size"])
   })
 })
+
+describe("stock and shelf locations", () => {
+  it("defaults a blank Location to Shop and accepts Warehouse", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs" }),
+        row(3, { ...base, clothingSize: "M", location: " warehouse " }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows[0].location).toBe("Shop")
+    expect(summary.rows[1].location).toBe("Warehouse")
+    expect(summary.rows.flatMap((r) => r.errors)).toEqual([])
+  })
+
+  it("rejects an unknown Location instead of silently allocating it", () => {
+    const [r] = validateRows(
+      [row(2, { ...base, ageRange: "2-3 yrs", location: "Back room" })],
+      lookup,
+      NO_BARCODES,
+    ).rows
+
+    expect(r.errors).toContain("Location must be Shop or Warehouse.")
+  })
+
+  it("allows one variant and barcode to repeat across Shop and Warehouse", () => {
+    const summary = validateRows(
+      [
+        row(2, {
+          ...base,
+          ageRange: "2-3 yrs",
+          barcode: "6291041500213",
+          shelfLocation: "A12",
+          location: "Shop",
+        }),
+        row(3, {
+          ...base,
+          ageRange: "2-3 yrs",
+          barcode: "6291041500213",
+          shelfLocation: "A12",
+          location: "Warehouse",
+        }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toEqual([])
+    expect(summary.rows.map((r) => r.barcode)).toEqual([
+      "6291041500213",
+      "6291041500213",
+    ])
+  })
+
+  it("still rejects one barcode assigned to different variants", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", barcode: "6291041500213" }),
+        row(3, { ...base, clothingSize: "M", barcode: "6291041500213" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows[1].errors).toContain(
+      "Barcode 6291041500213 is also on row 2.",
+    )
+  })
+
+  it("rejects conflicting prices for repeated location rows", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", location: "Shop" }),
+        row(3, {
+          ...base,
+          ageRange: "2-3 yrs",
+          sellPrice: "350",
+          location: "Warehouse",
+        }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toContain(
+      "Repeated variant has conflicting Sell Price values.",
+    )
+  })
+
+  it("rejects conflicting non-empty shelf locations for one product", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", shelfLocation: "A12" }),
+        row(3, { ...base, clothingSize: "M", shelfLocation: "B09" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toContain(
+      'Product "Item" has conflicting Shelf Location values.',
+    )
+  })
+})

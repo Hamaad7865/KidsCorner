@@ -39,6 +39,7 @@ import mu.kidscorner.till.data.SaleRequest
 import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.data.SessionStore
 import mu.kidscorner.till.data.ShiftTotals
+import mu.kidscorner.till.data.StockCheckLocation
 import mu.kidscorner.till.data.TillApi
 import mu.kidscorner.till.data.ZTotals
 import mu.kidscorner.till.data.TillDatabase
@@ -83,6 +84,9 @@ sealed interface TillScreen {
     /** Selling. */
     data class Selling(val cashier: Cashier) : TillScreen
 
+    /** Looking up live stock without changing the active sale. */
+    data class StockCheck(val cashier: Cashier) : TillScreen
+
     /** Taking payment for the basket. */
     data class Paying(val cashier: Cashier) : TillScreen
 
@@ -108,6 +112,13 @@ data class SaleOutcome(
     val queued: Boolean = false,
 )
 
+data class StockCheckUiState(
+    val productId: Int? = null,
+    val locations: List<StockCheckLocation> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+)
+
 data class TillState(
     val screen: TillScreen = TillScreen.Starting,
     val shop: Bootstrap? = null,
@@ -128,6 +139,7 @@ data class TillState(
 
     val catalog: List<CatalogVariant> = emptyList(),
     val catalogLoading: Boolean = false,
+    val stockCheck: StockCheckUiState = StockCheckUiState(),
 
     val lines: List<CartLine> = emptyList(),
     val totals: CartTotals = CartTotals(),
@@ -251,7 +263,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // migrate — but `queued_sales` holds sales the shop has taken money for
         // and not yet sent. Dropping those to satisfy a version bump would lose
         // real revenue silently.
-        .addMigrations(TillDatabase.MIGRATION_1_2, TillDatabase.MIGRATION_2_3)
+        .addMigrations(
+            TillDatabase.MIGRATION_1_2,
+            TillDatabase.MIGRATION_2_3,
+            TillDatabase.MIGRATION_3_4,
+        )
         .build()
 
     private val repo = TillRepository(
@@ -545,6 +561,91 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // that changes in the back office, and neither is worth its own refresh.
         repo.discounts().onSuccess { response ->
             if (response.ok) _state.update { it.copy(discountRules = response.discounts) }
+        }
+    }
+
+    // ---------------------------------------------------------- stock check
+
+    fun openStockCheck() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.StockCheck(cashier),
+                stockCheck = StockCheckUiState(),
+            )
+        }
+    }
+
+    /**
+     * Loads only live location balances. The catalogue and active basket stay
+     * exactly where they are, so Back returns to the sale in progress.
+     */
+    fun selectStockProduct(productId: Int) = viewModelScope.launch {
+        if (productId <= 0) return@launch
+        _state.update {
+            it.copy(
+                stockCheck = it.stockCheck.copy(
+                    productId = productId,
+                    locations = if (it.stockCheck.productId == productId) {
+                        it.stockCheck.locations
+                    } else {
+                        emptyList()
+                    },
+                    loading = true,
+                    error = null,
+                ),
+            )
+        }
+
+        repo.stockCheck(productId)
+            .onSuccess { response ->
+                _state.update {
+                    // A second selection may have started while this request
+                    // was in flight. Its answer must not replace the new one.
+                    if (it.stockCheck.productId != productId) {
+                        it
+                    } else {
+                        it.copy(
+                            stockCheck = it.stockCheck.copy(
+                                locations = response.locations,
+                                loading = false,
+                                error = null,
+                            ),
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    if (it.stockCheck.productId != productId) {
+                        it
+                    } else {
+                        it.copy(
+                            stockCheck = it.stockCheck.copy(
+                                loading = false,
+                                error = if (cause.message.isNetworkish()) {
+                                    "Could not reach the shop. Check the connection and try again."
+                                } else {
+                                    cause.message ?: "Live stock could not be loaded. Try again."
+                                },
+                            ),
+                        )
+                    }
+                }
+            }
+    }
+
+    fun retryStockCheck() {
+        _state.value.stockCheck.productId?.let(::selectStockProduct)
+    }
+
+    fun closeStockCheck() {
+        val screen = _state.value.screen as? TillScreen.StockCheck ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.Selling(screen.cashier),
+                stockCheck = StockCheckUiState(),
+            )
         }
     }
 
@@ -1341,6 +1442,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun cashierOf(screen: TillScreen): Cashier? = when (screen) {
         is TillScreen.Selling -> screen.cashier
+        is TillScreen.StockCheck -> screen.cashier
         is TillScreen.Paying -> screen.cashier
         is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.ClosingShift -> screen.cashier

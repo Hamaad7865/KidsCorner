@@ -40,6 +40,11 @@ export type JournalRow = {
   cashierName: string | null
   /** Payment methods, or the refund method on a credit note. */
   methods: string[]
+  /** Whether VAT registration was enabled when this document was created. */
+  vatEnabled: boolean
+  /** The effective rate frozen on the document (0 only when disabled). */
+  vatRate: number
+  vatStatus: "VAT registered" | "Not VAT registered"
   /** Excluding VAT. Negative on a credit note. */
   net: number
   /** The VAT within the gross. Negative on a credit note. */
@@ -78,6 +83,8 @@ export function saleLine(sale: {
   saleDate: string
   status: string
   vatAmount: number
+  vatEnabled: boolean
+  vatRate: number
   total: number
   customerName?: string | null
   cashierName?: string | null
@@ -94,6 +101,9 @@ export function saleLine(sale: {
     customerName: sale.customerName ?? null,
     cashierName: sale.cashierName ?? null,
     methods: sale.methods ?? [],
+    vatEnabled: sale.vatEnabled,
+    vatRate: sale.vatRate,
+    vatStatus: sale.vatEnabled ? "VAT registered" : "Not VAT registered",
     // Prices include VAT: the net is what is left after taking it out.
     net: round2(gross - vat),
     vat: round2(vat),
@@ -112,6 +122,8 @@ export function creditLine(note: {
   creditNo: string
   createdAt: string
   vatAmount: number
+  vatEnabled: boolean
+  vatRate: number
   total: number
   refundMethod?: string | null
   customerName?: string | null
@@ -125,6 +137,9 @@ export function creditLine(note: {
     customerName: note.customerName ?? null,
     cashierName: note.cashierName ?? null,
     methods: note.refundMethod ? [note.refundMethod] : [],
+    vatEnabled: note.vatEnabled,
+    vatRate: note.vatRate,
+    vatStatus: note.vatEnabled ? "VAT registered" : "Not VAT registered",
     net: round2(-(note.total - note.vatAmount)),
     vat: round2(-note.vatAmount),
     gross: round2(-note.total),
@@ -162,7 +177,7 @@ export async function getSalesJournal(
       supabase
         .from("sales")
         .select(
-          `id, sale_no, sale_date, status, vat_amount, total,
+          `id, sale_no, sale_date, status, vat_enabled, vat_rate, vat_amount, total,
            profiles ( full_name ),
            customers ( full_name ),
            sale_payments ( method )`,
@@ -174,7 +189,7 @@ export async function getSalesJournal(
       supabase
         .from("credit_notes")
         .select(
-          `id, credit_no, created_at, vat_amount, total, refund_method, reason,
+          `id, credit_no, created_at, vat_enabled, vat_rate, vat_amount, total, refund_method, reason,
            profiles ( full_name ),
            sales ( sale_no, customers ( full_name ) )`,
         )
@@ -199,6 +214,8 @@ export async function getSalesJournal(
         saleDate: sale.sale_date,
         status: sale.status,
         vatAmount: Number(sale.vat_amount),
+        vatEnabled: sale.vat_enabled,
+        vatRate: Number(sale.vat_rate),
         total: Number(sale.total),
         customerName: sale.customers?.full_name ?? null,
         cashierName: sale.profiles?.full_name ?? null,
@@ -213,6 +230,8 @@ export async function getSalesJournal(
         creditNo: note.credit_no,
         createdAt: note.created_at,
         vatAmount: Number(note.vat_amount),
+        vatEnabled: note.vat_enabled,
+        vatRate: Number(note.vat_rate),
         total: Number(note.total),
         refundMethod: note.refund_method,
         customerName: note.sales?.customers?.full_name ?? null,

@@ -121,6 +121,26 @@ data class PinResult(
 )
 
 @Serializable
+data class StockCheckQuantity(
+    val variantId: Int,
+    val qty: Int,
+)
+
+@Serializable
+data class StockCheckLocation(
+    val id: Int,
+    val name: String,
+    val quantities: List<StockCheckQuantity> = emptyList(),
+)
+
+@Serializable
+data class StockCheckResponse(
+    val ok: Boolean = true,
+    val productId: Int = 0,
+    val locations: List<StockCheckLocation> = emptyList(),
+)
+
+@Serializable
 private data class ApiError(
     val ok: Boolean = false,
     val error: String? = null,
@@ -273,6 +293,12 @@ class TillApi(private val http: HttpClient) {
 
     suspend fun catalog(token: String): CatalogResponse =
         http.get("$origin/api/till/catalog") { bearer(token) }.decode()
+
+    suspend fun stockCheck(token: String, productId: Int): StockCheckResponse =
+        http.get("$origin/api/till/stock-check") {
+            bearer(token)
+            parameter("productId", productId)
+        }.decode()
 
     suspend fun completeSale(token: String, sale: SaleRequest): SaleResult =
         http.post("$origin/api/till/sale") {

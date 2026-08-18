@@ -10,10 +10,11 @@ import { createClient } from "@/lib/supabase/server"
  * Two things this report is honest about rather than quietly wrong about, both
  * consequences of the schema and both stated on screen:
  *
- *   COST is each variant's CURRENT `cost_price`. `sale_items` records what was
- *   charged but not what the item cost that day, so a supplier price change
- *   moves historical margin with it. Same caveat the Margin report carries —
- *   deliberately the same source, so the two reports cannot disagree.
+ *   COST is each variant's latest received supplier cost. `sale_items` records
+ *   what was charged but not what the item cost that day, so a later receipt
+ *   moves historical margin with it. The receipt's immutable VAT snapshot says
+ *   whether that supplier cost is net or gross; variants with no receipt fall
+ *   back to their current catalogue cost.
  *
  *   EXPENSES are only cash paid out of the till. Carfectionist has an
  *   `expenses` table; Kids Corner records rent, wages and electricity nowhere,
@@ -37,7 +38,7 @@ export type PnlReport = {
   to: string
   /** Sales less credit notes, VAT taken out — what a VAT return calls turnover. */
   revenue: number
-  /** Stock consumed, at each variant's current cost. Returns come back off it. */
+  /** Stock consumed at latest received net/gross cost. Returns come back off it. */
   cost: number
   gross: number
   grossPct: number
@@ -47,6 +48,87 @@ export type PnlReport = {
   expenseRows: PnlExpense[]
   counts: { sales: number; credits: number; payouts: number }
   truncated: boolean
+}
+
+/** Net value from the immutable tax snapshot, never from today's rate. */
+export function frozenNet(document: {
+  total: number
+  vatEnabled: boolean
+  vatAmount: number
+}): number {
+  return round2(document.total - (document.vatEnabled ? document.vatAmount : 0))
+}
+
+type ReceivedPurchase = {
+  id: number
+  status: string
+  total_amount: number
+  vat_enabled: boolean | null
+  vat_amount: number | null
+  purchase_items: { variant_id: number; qty: number; unit_cost: number }[]
+}
+
+type PurchaseReceipt = {
+  id: number
+  variant_id: number
+  reference_id: number | null
+  created_at: string
+}
+
+function validReceiptsLatestFirst(receipts: PurchaseReceipt[]): PurchaseReceipt[] {
+  return receipts
+    .map((receipt) => ({ receipt, timestamp: Date.parse(receipt.created_at) }))
+    .filter(({ timestamp }) => Number.isFinite(timestamp))
+    .sort(
+      (a, b) => b.timestamp - a.timestamp || b.receipt.id - a.receipt.id,
+    )
+    .map(({ receipt }) => receipt)
+}
+
+/** Resolve each variant through its latest immutable purchase receipt event. */
+function latestPurchaseCosts(
+  rows: ReceivedPurchase[],
+  receipts: PurchaseReceipt[],
+): Map<number, number> {
+  const costs = new Map<number, number>()
+  const purchases = new Map(rows.map((purchase) => [purchase.id, purchase]))
+
+  for (const receipt of receipts) {
+    if (costs.has(receipt.variant_id) || receipt.reference_id === null) continue
+
+    const purchase = purchases.get(receipt.reference_id)
+    if (!purchase || purchase.status !== "received") continue
+
+    const matchingItems = purchase.purchase_items.filter(
+      (item) =>
+        item.variant_id === receipt.variant_id &&
+        Number.isFinite(Number(item.qty)) &&
+        Number(item.qty) > 0 &&
+        Number.isFinite(Number(item.unit_cost)),
+    )
+    if (matchingItems.length === 0) continue
+
+    const totalQty = matchingItems.reduce(
+      (sum, item) => sum + Number(item.qty),
+      0,
+    )
+    const grossUnitCost =
+      matchingItems.reduce(
+        (sum, item) => sum + Number(item.qty) * Number(item.unit_cost),
+        0,
+      ) / totalQty
+
+    const gross = Number(purchase.total_amount)
+    const net = frozenNet({
+      total: gross,
+      vatEnabled: purchase.vat_enabled === true,
+      vatAmount: Number(purchase.vat_amount ?? 0),
+    })
+    const netFactor = gross > 0 ? net / gross : 1
+    costs.set(receipt.variant_id, round2(grossUnitCost * netFactor))
+  }
+
+  return costs
 }
 
 /**
@@ -87,7 +169,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
     await Promise.all([
       supabase
         .from("sales")
-        .select("id, sale_date, total, vat_amount, status")
+        .select("id, sale_date, total, vat_enabled, vat_rate, vat_amount, status")
         .in("status", ["completed", "refunded"])
         .gte("sale_date", after)
         .lte("sale_date", before)
@@ -95,7 +177,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
         .limit(OVER_CAP),
       supabase
         .from("credit_notes")
-        .select("id, created_at, total, vat_amount")
+        .select("id, created_at, total, vat_enabled, vat_rate, vat_amount")
         .gte("created_at", after)
         .lte("created_at", before)
         .order("created_at", { ascending: true })
@@ -104,7 +186,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
       // inner join, so it covers exactly the sales counted as revenue above.
       supabase
         .from("sale_items")
-        .select("qty, sales!inner ( sale_date, status ), product_variants ( cost_price )")
+        .select("variant_id, qty, sales!inner ( sale_date, status ), product_variants ( cost_price )")
         .in("sales.status", ["completed", "refunded"])
         .gte("sales.sale_date", after)
         .lte("sales.sale_date", before)
@@ -112,7 +194,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
       // Returned goods went back on the shelf, so their cost was not consumed.
       supabase
         .from("credit_note_items")
-        .select("qty, credit_notes!inner ( created_at ), product_variants ( cost_price )")
+        .select("variant_id, qty, credit_notes!inner ( created_at ), product_variants ( cost_price )")
         .gte("credit_notes.created_at", after)
         .lte("credit_notes.created_at", before)
         .limit(OVER_CAP),
@@ -138,34 +220,120 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
   const returnRows = returnResult.data ?? []
   const movementRows = movementResult.data ?? []
 
+  const costVariantIds = [
+    ...new Set(
+      [...itemRows, ...returnRows]
+        .map((row) => row.variant_id)
+        .filter((id): id is number => id !== null),
+    ),
+  ]
+  const receiptResult =
+    costVariantIds.length > 0
+      ? await supabase
+          .from("stock_movements")
+          .select("id, variant_id, reference_id, created_at")
+          .eq("movement_type", "purchase")
+          .eq("reference_type", "purchase")
+          .not("reference_id", "is", null)
+          .in("variant_id", costVariantIds)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(OVER_CAP)
+      : { data: [], error: null }
+
+  if (receiptResult.error) throw receiptResult.error
+  const receiptRows = receiptResult.data ?? []
+  const receiptCandidates = validReceiptsLatestFirst(receiptRows).slice(
+    0,
+    ROW_CAP,
+  )
+  const receiptPurchaseIds = [
+    ...new Set(
+      receiptCandidates
+        .map((receipt) => receipt.reference_id)
+        .filter((id): id is number => id !== null),
+    ),
+  ]
+  const purchaseResult =
+    receiptPurchaseIds.length > 0
+      ? await supabase
+          .from("purchases")
+          .select(
+            "id, status, total_amount, vat_enabled, vat_amount, purchase_items!inner ( variant_id, qty, unit_cost )",
+          )
+          .eq("status", "received")
+          .in("id", receiptPurchaseIds)
+          .in("purchase_items.variant_id", costVariantIds)
+          .limit(OVER_CAP)
+      : { data: [], error: null }
+
+  if (purchaseResult.error) throw purchaseResult.error
+  const purchaseRows = purchaseResult.data ?? []
+
   const truncated =
     saleRows.length > ROW_CAP ||
     creditRows.length > ROW_CAP ||
     itemRows.length > ROW_CAP ||
     returnRows.length > ROW_CAP ||
-    movementRows.length > ROW_CAP
+    movementRows.length > ROW_CAP ||
+    receiptRows.length > ROW_CAP ||
+    purchaseRows.length > ROW_CAP
 
   const sales = saleRows.slice(0, ROW_CAP)
   const credits = creditRows.slice(0, ROW_CAP)
   const items = itemRows.slice(0, ROW_CAP)
   const returns = returnRows.slice(0, ROW_CAP)
   const movements = movementRows.slice(0, ROW_CAP)
+  const purchaseCosts = latestPurchaseCosts(
+    purchaseRows.slice(0, ROW_CAP),
+    receiptCandidates,
+  )
 
   // VAT is contained in the total, so net is the total LESS the frozen VAT —
   // never the total divided by today's rate, which would restate every sale
   // made before a rate change.
   const revenue = round2(
-    sales.reduce((sum, s) => sum + (Number(s.total) - Number(s.vat_amount)), 0) -
-      credits.reduce((sum, c) => sum + (Number(c.total) - Number(c.vat_amount)), 0),
+    sales.reduce(
+      (sum, s) =>
+        sum +
+        frozenNet({
+          total: Number(s.total),
+          vatEnabled: s.vat_enabled,
+          vatAmount: Number(s.vat_amount),
+        }),
+      0,
+    ) -
+      credits.reduce(
+        (sum, c) =>
+          sum +
+          frozenNet({
+            total: Number(c.total),
+            vatEnabled: c.vat_enabled,
+            vatAmount: Number(c.vat_amount),
+          }),
+        0,
+      ),
   )
 
   const cost = round2(
     items.reduce(
-      (sum, i) => sum + i.qty * Number(i.product_variants?.cost_price ?? 0),
+      (sum, i) =>
+        sum +
+        i.qty *
+          (i.variant_id === null
+            ? Number(i.product_variants?.cost_price ?? 0)
+            : (purchaseCosts.get(i.variant_id) ??
+              Number(i.product_variants?.cost_price ?? 0))),
       0,
     ) -
       returns.reduce(
-        (sum, r) => sum + r.qty * Number(r.product_variants?.cost_price ?? 0),
+        (sum, r) =>
+          sum +
+          r.qty *
+            (r.variant_id === null
+              ? Number(r.product_variants?.cost_price ?? 0)
+              : (purchaseCosts.get(r.variant_id) ??
+                Number(r.product_variants?.cost_price ?? 0))),
         0,
       ),
   )

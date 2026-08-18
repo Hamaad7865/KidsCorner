@@ -17,6 +17,20 @@ const session = {
 
 let requiresManager = false
 let approvalResult: { managerId: string } | { error: string } = { managerId: "mgr-1" }
+const completedNote = {
+  credit_no: "CN0001",
+  total: 250,
+  refund_method: "cash",
+  vat_policy_id: 17,
+  vat_enabled: true,
+  vat_rate: 0.15,
+  vat_number: "VAT-123",
+  vat_amount: 32.61,
+}
+let noteReadResult: {
+  data: typeof completedNote | null
+  error: { message: string } | null
+}
 
 vi.mock("@/lib/api/till-session", () => ({
   requireTillSession: async () => session,
@@ -55,13 +69,12 @@ const post = async (payload: Record<string, unknown>) => {
 beforeEach(() => {
   requiresManager = false
   approvalResult = { managerId: "mgr-1" }
+  noteReadResult = { data: completedNote, error: null }
   session.supabase.rpc = vi.fn().mockResolvedValue({ data: 21, error: null })
   session.supabase.from = vi.fn().mockReturnValue({
     select: () => ({
       eq: () => ({
-        maybeSingle: async () => ({
-          data: { credit_no: "CN0001", total: 250, refund_method: "cash" },
-        }),
+        maybeSingle: async () => noteReadResult,
       }),
     }),
   })
@@ -125,6 +138,19 @@ describe("when the shop asks for a manager", () => {
 })
 
 describe("the payload it accepts", () => {
+  it("returns the credit note's frozen VAT snapshot to the till", async () => {
+    const json = await post(body())
+
+    expect(json).toMatchObject({
+      ok: true,
+      vatPolicyId: 17,
+      vatEnabled: true,
+      vatRate: 0.15,
+      vatNumber: "VAT-123",
+      vatAmount: 32.61,
+    })
+  })
+
   it("merges two lines naming the same sale item", async () => {
     // Each would pass the RPC's already-returned check alone and together
     // exceed what was sold, refunding the line twice.
@@ -152,5 +178,32 @@ describe("the payload it accepts", () => {
     const json = await post(body({ reason: "  " }))
     expect(json.ok).toBe(false)
     expect(session.supabase.rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe("after the refund RPC commits", () => {
+  const committedReadFailure = {
+    ok: false,
+    creditNoteId: 21,
+    refundCommitted: true,
+    readFailed: true,
+    error:
+      "The return was recorded, but its details could not be loaded. Refresh sale history; do not submit it again.",
+  }
+
+  it("reports a snapshot query error without fabricating a successful zero-VAT note", async () => {
+    noteReadResult = { data: null, error: { message: "read replica timeout" } }
+
+    const json = await post(body())
+
+    expect(json).toEqual(committedReadFailure)
+  })
+
+  it("reports a missing snapshot without fabricating a successful zero-VAT note", async () => {
+    noteReadResult = { data: null, error: null }
+
+    const json = await post(body())
+
+    expect(json).toEqual(committedReadFailure)
   })
 })

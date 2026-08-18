@@ -63,6 +63,16 @@ describe("csvEscape", () => {
 })
 
 describe("toCsv", () => {
+  it("preserves frozen tax status, rate, net, VAT and gross column order", () => {
+    const csv = toCsv(
+      ["VAT status", "VAT rate", "Net", "VAT", "Gross"],
+      [["Not VAT registered", "", "115.00", "0.00", "115.00"]],
+    )
+    expect(csv).toBe(
+      "VAT status,VAT rate,Net,VAT,Gross\r\nNot VAT registered,,115.00,0.00,115.00",
+    )
+  })
+
   it("separates records with CRLF, as the RFC specifies", () => {
     const csv = toCsv(["a", "b"], [["1", "2"]])
     expect(csv).toBe("a,b\r\n1,2")

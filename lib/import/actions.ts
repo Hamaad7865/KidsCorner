@@ -7,6 +7,10 @@ import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
 import type { SizeType } from "@/lib/db-enums"
 import { round2, slugifyForSku } from "@/lib/format"
+import {
+  parseStockLocation,
+  type StockLocationName,
+} from "@/lib/import/columns"
 import { createClient } from "@/lib/supabase/server"
 
 /**
@@ -17,7 +21,7 @@ import { createClient } from "@/lib/supabase/server"
  * once, then rows are committed in chunks and the progress bar reflects actual
  * completed work rather than an animation.
  *
- * Every quantity goes in through `record_stock_movement` with
+ * Every quantity goes in through `record_stock_movement_at` with
  * `movement_type = 'import'`, per the spec's rule that `stock_movements` is the
  * truth and `qty_on_hand` is a cache no other code may write.
  */
@@ -44,6 +48,8 @@ export type CommitRow = {
   sellPrice: number
   quantity: number
   barcode: string | null
+  shelfLocation: string | null
+  location: StockLocationName
 }
 
 export type ChunkResult = {
@@ -183,19 +189,47 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
   const sizeIds = [...new Set(rows.map((r) => r.sizeId))]
   const colourIds = [...new Set(rows.map((r) => r.colourId))]
 
-  const [sizesResult, coloursResult] = await Promise.all([
+  const [sizesResult, coloursResult, locationsResult] = await Promise.all([
     supabase.from("sizes").select("id, label").in("id", sizeIds),
     supabase.from("colours").select("id, name").in("id", colourIds),
+    supabase.from("stock_locations").select("id, name").eq("is_active", true),
   ])
-  if (sizesResult.error || coloursResult.error) {
+  if (sizesResult.error || coloursResult.error || locationsResult.error) {
     return {
       ...result,
       ok: false,
-      error: (sizesResult.error ?? coloursResult.error)?.message,
+      error: (sizesResult.error ?? coloursResult.error ?? locationsResult.error)
+        ?.message,
     }
   }
   const sizeLabels = new Map((sizesResult.data ?? []).map((s) => [s.id, s.label]))
   const colourNames = new Map((coloursResult.data ?? []).map((c) => [c.id, c.name]))
+  const locationIds = new Map<StockLocationName, number>()
+  for (const row of locationsResult.data ?? []) {
+    const name = parseStockLocation(row.name)
+    if (name) locationIds.set(name, row.id)
+  }
+  if (!locationIds.has("Shop") || !locationIds.has("Warehouse")) {
+    return {
+      ...result,
+      ok: false,
+      error: "Shop and Warehouse must both be active before importing stock.",
+    }
+  }
+
+  const requestedLocationIds = new Map<CommitRow, number>()
+  for (const row of rows) {
+    const name = parseStockLocation(row.location)
+    const locationId = name ? locationIds.get(name) : undefined
+    if (locationId === undefined) {
+      return {
+        ...result,
+        ok: false,
+        error: `Spreadsheet row ${row.rowNumber} has an invalid stock location.`,
+      }
+    }
+    requestedLocationIds.set(row, locationId)
+  }
 
   // Spare barcodes for rows whose Barcode column was blank. Reserved once for
   // the chunk, then handed out only as *new* variants are inserted — a row that
@@ -222,10 +256,17 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
   const productKey = (r: CommitRow) =>
     `${r.categoryId}:${r.productName.trim().toLowerCase()}`
   const productIds = new Map<string, number>()
+  const productShelves = new Map<string, string>()
+  for (const row of rows) {
+    if (row.shelfLocation) {
+      productShelves.set(productKey(row), row.shelfLocation.trim())
+    }
+  }
 
   for (const row of rows) {
     const key = productKey(row)
     if (productIds.has(key)) continue
+    const shelfLocation = productShelves.get(key) ?? null
 
     const { data: existing, error: findError } = await supabase
       .from("products")
@@ -241,6 +282,15 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
 
     if (existing && existing.length > 0) {
       productIds.set(key, existing[0].id)
+      if (shelfLocation !== null) {
+        const { error: shelfError } = await supabase
+          .from("products")
+          .update({ shelf_location: shelfLocation })
+          .eq("id", existing[0].id)
+        if (shelfError) {
+          return { ...result, ok: false, error: shelfError.message }
+        }
+      }
       continue
     }
 
@@ -251,6 +301,7 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
         category_id: row.categoryId,
         brand_id: row.brandId,
         gender: row.gender,
+        shelf_location: shelfLocation,
       })
       .select("id")
       .maybeSingle()
@@ -410,13 +461,17 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
     }
 
     if (row.quantity > 0) {
-      const { error: movementError } = await supabase.rpc("record_stock_movement", {
-        p_variant_id: variantId,
-        p_type: "import",
-        p_qty: row.quantity,
-        p_reference_type: "excel_import",
-        p_notes: `Imported from spreadsheet row ${row.rowNumber}`,
-      })
+      const { error: movementError } = await supabase.rpc(
+        "record_stock_movement_at",
+        {
+          p_variant_id: variantId,
+          p_type: "import",
+          p_qty: row.quantity,
+          p_location_id: requestedLocationIds.get(row)!,
+          p_reference_type: "excel_import",
+          p_notes: `Imported from spreadsheet row ${row.rowNumber}`,
+        },
+      )
 
       if (movementError) {
         // The variant exists but its stock did not land — say so rather than

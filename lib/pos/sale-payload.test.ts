@@ -49,6 +49,44 @@ describe("the payload the tablet really sends", () => {
     ).toBeNull()
   })
 
+  it("accepts and preserves an immutable VAT policy snapshot", () => {
+    const parsed = completeSaleSchema.safeParse({
+      ...STUCK_PAYLOAD,
+      vatPolicyId: 42,
+      checkedOutAt: "2026-08-18T08:30:00.000Z",
+    })
+
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.vatPolicyId).toBe(42)
+      expect(parsed.data.checkedOutAt).toBe("2026-08-18T08:30:00.000Z")
+    }
+  })
+
+  it("treats explicit null policy fields as the legacy-client spelling", () => {
+    const parsed = completeSaleSchema.safeParse({
+      ...STUCK_PAYLOAD,
+      vatPolicyId: null,
+      checkedOutAt: null,
+    })
+
+    expect(parsed.success).toBe(true)
+    if (parsed.success) {
+      expect(parsed.data.vatPolicyId).toBeNull()
+      expect(parsed.data.checkedOutAt).toBeNull()
+    }
+  })
+
+  it("refuses a non-positive policy id and a malformed checkout instant", () => {
+    const parsed = completeSaleSchema.safeParse({
+      ...STUCK_PAYLOAD,
+      vatPolicyId: 0,
+      checkedOutAt: "yesterday afternoon",
+    })
+
+    expect(parsed.success).toBe(false)
+  })
+
   it("treats an explicit null the same as an absent field, everywhere", () => {
     // The rule this suite is really defending: for any field this server calls
     // optional, `null` and absent must mean the same thing. A client that

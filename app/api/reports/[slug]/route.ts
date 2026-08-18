@@ -6,19 +6,27 @@ import { isPaymentMethod } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
 import { formatDateTime, shopDayOf, shopTimeOf, shopToday } from "@/lib/format"
 import { getCollectedReport } from "@/lib/reports/collected"
+import { getDailySummary } from "@/lib/reports/daily-summary"
+import {
+  cellValue,
+  columnDefs,
+  parseSections,
+  totalsRow,
+} from "@/lib/reports/daily-summary-sections"
 import {
   getBestSellers,
   getMarginReport,
   getSalesSummary,
   getShiftReports,
 } from "@/lib/reports/queries"
-import { toCsv } from "@/lib/reports/csv"
+import { toCsv, type ReportCell } from "@/lib/reports/csv"
+import { toXlsx } from "@/lib/reports/xlsx"
 import { getSalesJournal } from "@/lib/reports/sales-journal"
 import { getVatReport } from "@/lib/reports/vat"
 import { getPnlReport } from "@/lib/reports/pnl"
 
 /**
- * CSV export for each report, mirroring the Carfectionist module's
+ * CSV/XLSX export for each report, mirroring the Carfectionist module's
  * /api/reports/[slug]/csv.
  *
  * A route handler rather than a server action because the browser needs a plain
@@ -53,6 +61,11 @@ export async function GET(
       .slice(0, 10)
 
   let csv: string
+  let sheet: { head: string[]; rows: ReportCell[][] } | undefined
+  const render = (head: string[], rows: ReportCell[][]): string => {
+    sheet = { head, rows }
+    return toCsv(head, rows)
+  }
 
   switch (slug) {
     // The accountant's document. Columns in the order a VAT return wants
@@ -60,7 +73,7 @@ export async function GET(
     // reconciles on its own without anybody re-adding it.
     case "journal": {
       const j = await getSalesJournal(from, to)
-      csv = toCsv(
+      csv = render(
         [
           "Date",
           "Time",
@@ -70,6 +83,8 @@ export async function GET(
           "Customer",
           "Cashier",
           "Method",
+          "VAT status",
+          "VAT rate",
           "Net",
           "VAT",
           "Gross",
@@ -88,6 +103,8 @@ export async function GET(
             r.customerName ?? "Walk-in",
             r.cashierName ?? "",
             r.methods.join(" + "),
+            r.vatStatus,
+            r.vatEnabled ? `${(r.vatRate * 100).toFixed(2)}%` : "",
             r.net.toFixed(2),
             r.vat.toFixed(2),
             r.gross.toFixed(2),
@@ -102,6 +119,8 @@ export async function GET(
             "",
             "",
             "",
+            "",
+            "",
             j.totals.net.toFixed(2),
             j.totals.vat.toFixed(2),
             j.totals.gross.toFixed(2),
@@ -111,9 +130,22 @@ export async function GET(
       )
       break
     }
+    case "daily": {
+      const d = await getDailySummary(from, to)
+      const cols = columnDefs(d, parseSections(search.get("sec") ?? undefined))
+      csv = render(
+        cols.map((column) => column.group),
+        [
+          cols.map((column) => column.head),
+          ...d.rows.map((row) => cols.map((column) => cellValue(column, row))),
+          totalsRow(d, cols),
+        ],
+      )
+      break
+    }
     case "summary": {
       const s = await getSalesSummary(from, to)
-      csv = toCsv(
+      csv = render(
         ["Day", "Sales", "Total"],
         s.byDay.map((d) => [d.date, d.saleCount, d.total.toFixed(2)]),
       )
@@ -128,7 +160,7 @@ export async function GET(
         to,
         m && isPaymentMethod(m) ? m : undefined,
       )
-      csv = toCsv(
+      csv = render(
         ["Date", "Type", "Document", "Customer", "Method", "Amount"],
         [
           // The shop's clock, matching the screen — the raw ISO instant is UTC,
@@ -154,7 +186,7 @@ export async function GET(
     // with the period total on the foot so the file reconciles on its own.
     case "vat": {
       const v = await getVatReport(from, to)
-      csv = toCsv(
+      csv = render(
         ["Month", "Output VAT", "Input VAT", "Net payable"],
         [
           ...v.months.map((m) => [
@@ -169,10 +201,8 @@ export async function GET(
             v.input.toFixed(2),
             v.net.toFixed(2),
           ],
-          // Carried into the file, not left on the screen: whoever opens this
-          // in Excel to fill in a return needs to know input VAT is derived.
           [
-            `Input VAT derived at ${(v.rate * 100).toFixed(1)}% from ${v.counts.purchases} received purchase(s) — check against supplier invoices before filing`,
+            `Frozen VAT from ${v.counts.sales} sale(s), ${v.counts.credits} credit note(s), and ${v.counts.purchases} received purchase(s) — check against source documents before filing`,
             "",
             "",
             v.truncated ? "TRUNCATED — narrow the dates" : "",
@@ -183,7 +213,7 @@ export async function GET(
     }
     case "pnl": {
       const p = await getPnlReport(from, to)
-      csv = toCsv(
+      csv = render(
         ["Line", "Detail", "Amount"],
         [
           ["Revenue", "Sales less credit notes, VAT taken out", p.revenue.toFixed(2)],
@@ -202,7 +232,7 @@ export async function GET(
     }
     case "cashiers": {
       const s = await getSalesSummary(from, to)
-      csv = toCsv(
+      csv = render(
         ["Cashier", "Sales", "Total"],
         s.byCashier.map((c) => [c.name, c.saleCount, c.total.toFixed(2)]),
       )
@@ -210,7 +240,7 @@ export async function GET(
     }
     case "bestsellers": {
       const rows = await getBestSellers(from, to, 500)
-      csv = toCsv(
+      csv = render(
         ["Product", "Variant", "Qty", "Revenue"],
         rows.map((b) => [b.productName, b.variant, b.qty, b.revenue.toFixed(2)]),
       )
@@ -218,7 +248,7 @@ export async function GET(
     }
     case "margin": {
       const rows = await getMarginReport(from, to, 500)
-      csv = toCsv(
+      csv = render(
         ["Product", "Qty", "Revenue", "Cost", "Margin", "Margin %"],
         rows.map((m) => [
           m.productName,
@@ -236,7 +266,7 @@ export async function GET(
         `${from}T00:00:00+04:00`,
         `${to}T23:59:59.999+04:00`,
       )
-      csv = toCsv(
+      csv = render(
         ["Discount", "Times used", "Given away"],
         rows.map((d) => [d.label, d.timesUsed, d.totalGiven.toFixed(2)]),
       )
@@ -244,7 +274,7 @@ export async function GET(
     }
     case "shifts": {
       const rows = await getShiftReports(from, to)
-      csv = toCsv(
+      csv = render(
         ["Shift", "Opened", "Closed", "Opened by", "Closed by", "Float",
          "Expected", "Counted", "Variance", "Notes"],
         rows.map((s) => [
@@ -266,13 +296,23 @@ export async function GET(
       return new NextResponse("Unknown report", { status: 404 })
   }
 
+  if (!sheet) return new NextResponse("Unknown report", { status: 404 })
+
+  const xlsx = search.get("format") === "xlsx"
+  const extension = xlsx ? "xlsx" : "csv"
+  const body = xlsx
+    ? toXlsx(sheet.head, sheet.rows, slug === "daily" ? "Daily summary" : slug)
+    : // BOM so Excel opens CSV as UTF-8 rather than mangling accented names.
+      `﻿${csv}`
+
   return new NextResponse(
-    // BOM so Excel opens it as UTF-8 rather than mangling accented product names.
-    `﻿${csv}`,
+    body,
     {
       headers: {
-        "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="kids-corner-${slug}-${from}-to-${to}.csv"`,
+        "Content-Type": xlsx
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="kids-corner-${slug}-${from}-to-${to}.${extension}"`,
         // Takings are not something a shared cache should hold on to.
         "Cache-Control": "no-store",
       },

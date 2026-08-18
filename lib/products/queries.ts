@@ -35,6 +35,7 @@ export type ProductListRow = {
   id: number
   name: string
   gender: Gender
+  shelfLocation: string | null
   imageUrl: string | null
   isActive: boolean
   categoryName: string | null
@@ -83,7 +84,7 @@ export async function listProducts(
   let query = supabase
     .from("products")
     .select(
-      `id, name, gender, image_url, is_active,
+      `id, name, gender, shelf_location, image_url, is_active,
        categories ( name ),
        brands ( name ),
        product_variants ( id, selling_price, qty_on_hand, reorder_level, is_active,
@@ -116,6 +117,7 @@ export async function listProducts(
       id: row.id,
       name: row.name,
       gender: toGender(row.gender),
+      shelfLocation: row.shelf_location,
       imageUrl: row.image_url,
       isActive: row.is_active,
       categoryName: row.categories?.name ?? null,
@@ -161,6 +163,7 @@ export type ProductDetail = {
   categoryId: number
   brandId: number | null
   gender: Gender
+  shelfLocation: string | null
   description: string | null
   imageUrl: string | null
   isActive: boolean
@@ -182,7 +185,7 @@ export const getProduct = cache(async (id: number): Promise<ProductDetail | null
   const { data, error } = await supabase
     .from("products")
     .select(
-      `id, name, category_id, brand_id, gender, description, image_url, is_active,
+      `id, name, category_id, brand_id, gender, shelf_location, description, image_url, is_active,
        categories ( name ),
        brands ( name ),
        product_variants (
@@ -210,6 +213,7 @@ export const getProduct = cache(async (id: number): Promise<ProductDetail | null
     categoryId: data.category_id,
     brandId: data.brand_id,
     gender: toGender(data.gender),
+    shelfLocation: data.shelf_location,
     description: data.description,
     imageUrl: data.image_url,
     isActive: data.is_active,
