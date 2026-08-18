@@ -12,14 +12,15 @@ import {
 } from "@/lib/barcodes/queries"
 import { MasterDataTabs } from "@/components/settings/master-data-tabs"
 import { ShopSettings } from "@/components/settings/shop-settings"
+import { VatSettings } from "@/components/settings/vat-settings"
 import { StaffPins } from "@/components/settings/staff-pins"
 import {
   getPaymentMethods,
   getRefundRequiresManager,
   getShopIdentity,
   getShopName,
-  getVatRate,
 } from "@/lib/pos/queries"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { listDiscounts } from "@/lib/discounts/queries"
 import { listStaffPinState } from "@/lib/pos/actions"
@@ -35,7 +36,7 @@ export default async function SettingsPage() {
     staff,
     discounts,
     shopName,
-    vatRate,
+    vatPolicy,
     paymentMethods,
     refundRequiresManager,
     accessGrid,
@@ -48,7 +49,7 @@ export default async function SettingsPage() {
     listStaffPinState(),
     listDiscounts(),
     getShopName(),
-    getVatRate(),
+    getCurrentVatPolicy(),
     getPaymentMethods(),
     getRefundRequiresManager(),
     getAccessGrid(),
@@ -68,16 +69,18 @@ export default async function SettingsPage() {
         </p>
       </header>
 
-      <ShopSettings
-        shopName={shopName}
-        shopAddress={identity.address ?? ""}
-        shopPhone={identity.phone ?? ""}
-        vatNumber={identity.vatNumber ?? ""}
-        vatRate={vatRate}
-        paymentMethods={paymentMethods}
-        refundRequiresManager={refundRequiresManager}
-        canManage={profile.role === "owner"}
-      />
+      <VatSettings policy={vatPolicy} canManage={profile.role === "owner"} />
+
+      <div className="border-t pt-6">
+        <ShopSettings
+          shopName={shopName}
+          shopAddress={identity.address ?? ""}
+          shopPhone={identity.phone ?? ""}
+          paymentMethods={paymentMethods}
+          refundRequiresManager={refundRequiresManager}
+          canManage={profile.role === "owner"}
+        />
+      </div>
 
       <div className="border-t pt-6">
         <BarcodesPanel
@@ -119,9 +122,10 @@ export default async function SettingsPage() {
       </div>
 
       <p className="text-muted-foreground border-t pt-4 text-xs">
-        Changing the VAT rate affects new sales only. Past sales keep the
-        <code> vat_amount</code> frozen against the rate they were rung up at, so
-        history never restates itself.
+        Enabling or disabling VAT, or changing the rate, affects new sales only.
+        Past sales keep the <code>vat_amount</code> and registration status frozen
+        against the policy they were rung up under, so history never restates
+        itself.
       </p>
     </div>
   )

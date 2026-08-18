@@ -34,27 +34,23 @@ export function ShopSettings({
   shopName,
   shopAddress,
   shopPhone,
-  vatNumber,
   refundRequiresManager,
-  vatRate,
   paymentMethods,
   canManage,
 }: {
   shopName: string
   /**
-   * The three the receipt has always wanted and never had.
+   * The two the receipt has always wanted and never had.
    *
-   * `getShopIdentity` has read `shop_address`, `shop_phone` and `vat_number`
-   * since the printer was built. No migration seeds them and no screen wrote
-   * them, so every receipt this shop has printed carries a name and nothing
-   * else. Empty strings rather than nulls — they feed uncontrolled inputs.
+   * `getShopIdentity` has read `shop_address` and `shop_phone` since the
+   * printer was built. No migration seeds them and no screen wrote them, so
+   * every receipt this shop has printed carries a name and nothing else. Empty
+   * strings rather than nulls — they feed uncontrolled inputs. (The VAT number
+   * moved to the VAT registration card.)
    */
   shopAddress: string
   shopPhone: string
-  vatNumber: string
   refundRequiresManager: boolean
-  /** Stored as a fraction; shown as a percentage. */
-  vatRate: number
   paymentMethods: string[]
   canManage: boolean
 }) {
@@ -69,8 +65,8 @@ export function ShopSettings({
       <div className="space-y-1">
         <h2 className="font-heading text-base font-medium">Shop</h2>
         <p className="text-muted-foreground text-sm">
-          What prints at the top of every receipt, the VAT rate money is
-          calculated with, and the methods the till offers.
+          What prints at the top of every receipt and the methods the till
+          offers. VAT is set in the VAT registration card above.
           {canManage ? "" : " Only the owner can change these."}
         </p>
       </div>
@@ -96,32 +92,6 @@ export function ShopSettings({
             {state.fieldErrors.shopName ? (
               <p className="text-destructive text-sm">{state.fieldErrors.shopName}</p>
             ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="vat-percent">VAT rate (%)</Label>
-            <Input
-              id="vat-percent"
-              name="vatPercent"
-              type="number"
-              step="0.01"
-              min="0"
-              max="100"
-              defaultValue={(vatRate * 100).toFixed(2).replace(/\.00$/, "")}
-              disabled={!canManage}
-              className="w-32"
-              aria-invalid={Boolean(state.fieldErrors.vatPercent)}
-            />
-            {state.fieldErrors.vatPercent ? (
-              <p className="text-destructive text-sm">
-                {state.fieldErrors.vatPercent}
-              </p>
-            ) : null}
-            <p className="text-muted-foreground text-xs">
-              Prices are VAT-<strong>inclusive</strong>: this is the portion
-              extracted from a total, not added to it. Changing it affects new
-              sales only — past sales keep the rate they were rung up at.
-            </p>
           </div>
 
           <div className="space-y-2 sm:col-span-2">
@@ -155,25 +125,6 @@ export function ShopSettings({
             {state.fieldErrors.shopPhone ? (
               <p className="text-destructive text-sm">{state.fieldErrors.shopPhone}</p>
             ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="vat-number">VAT number</Label>
-            <Input
-              id="vat-number"
-              name="vatNumber"
-              defaultValue={vatNumber}
-              placeholder="VAT20123456"
-              disabled={!canManage}
-              aria-invalid={Boolean(state.fieldErrors.vatNumber)}
-            />
-            {state.fieldErrors.vatNumber ? (
-              <p className="text-destructive text-sm">{state.fieldErrors.vatNumber}</p>
-            ) : null}
-            <p className="text-muted-foreground text-xs">
-              Printed on every receipt. A VAT-registered business has to show
-              it; leave it blank if the shop is not registered.
-            </p>
           </div>
         </div>
 
