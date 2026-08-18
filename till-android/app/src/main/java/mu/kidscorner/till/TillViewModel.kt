@@ -246,6 +246,34 @@ data class TillState(
     val queuedJustSent: Int = 0,
 )
 
+/**
+ * Folds a fresh bootstrap's VAT policy into the running state, mid-trade.
+ *
+ * Pure, so the rule can be tested without a device. It preserves everything the
+ * till is in the middle of — the active local shift, the cashier roster, the
+ * basket lines — and the payable total, because prices are VAT-inclusive so the
+ * total never moves when the rate does. Only the current VAT policy and the
+ * contained-VAT display change. The shift is kept from the running state, not
+ * taken from `fresh`: `getOpenShift` is shop-scoped, so in a two-till shop the
+ * fresh answer could name the other drawer.
+ */
+internal fun applyBootstrapPolicy(state: TillState, fresh: Bootstrap): TillState {
+    val current = state.shop
+    val merged = if (current == null) {
+        fresh
+    } else {
+        fresh.copy(shift = current.shift, cashiers = current.cashiers)
+    }
+    return state.copy(
+        shop = merged,
+        totals = cartTotals(
+            state.lines,
+            state.discount?.amount ?: 0.0,
+            merged.resolvedVatRate,
+        ),
+    )
+}
+
 class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
@@ -306,6 +334,55 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * rather than rung up twice. Rotated only once a sale actually finishes.
      */
     private var saleKey: String = UUID.randomUUID().toString()
+
+    /**
+     * The VAT policy and instant frozen for the current sale attempt.
+     *
+     * Keyed to [saleKey], so it lives and dies with the attempt: rotating the
+     * key on a finished or parked sale invalidates it automatically, and the
+     * next checkout mints a fresh one — no rotation site has to remember to
+     * clear it. Once minted it never changes for the attempt, so an approval,
+     * network or idempotency retry sends the exact same policy id and time.
+     */
+    private data class CheckoutFreeze(
+        val saleKey: String,
+        val policyId: Long?,
+        val checkedOutAt: String,
+    )
+
+    private var checkout: CheckoutFreeze? = null
+
+    /**
+     * Freezes the checkout policy and time for this attempt, once.
+     *
+     * Returns the existing freeze when [saleKey] has not rotated — the retry
+     * case — and mints a new one against the current cached policy otherwise. A
+     * null policy id is the legacy spelling and is preserved as-is, so the
+     * server maps it to the immutable legacy policy rather than today's current.
+     */
+    private fun freezeCheckout(): CheckoutFreeze {
+        checkout?.takeIf { it.saleKey == saleKey }?.let { return it }
+        return CheckoutFreeze(
+            saleKey = saleKey,
+            policyId = _state.value.shop?.vatPolicyId,
+            checkedOutAt = nowIso(),
+        ).also { checkout = it }
+    }
+
+    /**
+     * Pulls the current VAT policy and folds it into the running state.
+     *
+     * Called before trading and immediately before a checkout freezes, so the
+     * basket shows — and the sale stamps — the policy the shop has right now. On
+     * a failure the last cached policy stays in force, which is what lets an
+     * offline till still freeze a checkout against a known immutable id. Returns
+     * whether a fresh policy was applied.
+     */
+    private suspend fun refreshVatPolicy(): Boolean {
+        val fresh = repo.bootstrap().getOrNull() ?: return false
+        _state.update { applyBootstrapPolicy(it, fresh).copy(deviceId = fresh.deviceId ?: it.deviceId) }
+        return true
+    }
 
     /** A submitted sale whose fate is unknown, kept so it can be parked. */
     private data class FrozenSale(
@@ -382,6 +459,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 delay(QUEUE_HEARTBEAT_MS)
                 drainQueue()
                 noticeRemoteClose()
+                // The VAT policy is refreshed every beat — two minutes, not the
+                // twenty of a roster re-pull — so a toggle in the back office
+                // reaches the basket promptly. The roster changes far less often
+                // and keeps its slower cadence.
+                if (_state.value.online) refreshVatPolicy()
                 if (++beats % ROSTER_EVERY_BEATS == 0) refreshRoster()
             }
         }
@@ -1549,6 +1631,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         // customer standing there.
                         ?: if (result.offline) null else repo.shift().getOrNull()?.shift
 
+                    // A cashier taking the till online should trade on the
+                    // current policy, so refresh it before entering Selling or
+                    // Opening. Skipped offline, where there is nothing to fetch.
+                    if (!result.offline) refreshVatPolicy()
+
                     _state.update {
                         it.copy(
                             busy = false,
@@ -2031,6 +2118,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
         _state.update { it.copy(busy = true, error = null) }
 
+        // Refresh the policy so the sale stamps — and the basket showed — what
+        // the shop's registration is right now, then freeze it once. Online
+        // only; offline, the last cached policy stands and is frozen as-is. The
+        // freeze is keyed to saleKey, so a retry reuses this exact policy id and
+        // checkout time rather than re-reading a policy that may have moved.
+        if (_state.value.online) refreshVatPolicy()
+        val checkout = freezeCheckout()
+
         val request = SaleRequest(
             shiftId = shiftId,
             customerId = current.customer?.id,
@@ -2055,6 +2150,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             discounts = listOfNotNull(current.discount?.toRequest()),
             approval = approval,
             idempotencyKey = saleKey,
+            vatPolicyId = checkout.policyId,
+            checkedOutAt = checkout.checkedOutAt,
         )
 
         repo.completeSale(request)
