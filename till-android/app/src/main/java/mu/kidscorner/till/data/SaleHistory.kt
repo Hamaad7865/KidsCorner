@@ -95,6 +95,20 @@ data class SaleDetail(
     val discount: Double = 0.0,
     val vatAmount: Double = 0.0,
     val total: Double,
+    /**
+     * The sale's frozen VAT policy. A reprint reads these, never today's shop
+     * setting, so a receipt is a VAT invoice or a plain receipt exactly as it
+     * was on the day.
+     *
+     * `vatEnabled` defaults true and `vatRate` to the historical 15% so a detail
+     * decoded from a pre-feature build still renders as the VAT invoice it was.
+     * `vatEnabled` is explicit, not inferred from `vatAmount > 0`, so an enabled
+     * zero-total sale stays a VAT invoice.
+     */
+    val vatPolicyId: Long? = null,
+    val vatEnabled: Boolean = true,
+    val vatRate: Double = 0.15,
+    val vatNumber: String? = null,
     val cashierName: String? = null,
     val customerName: String? = null,
     val customerId: Int? = null,
@@ -157,6 +171,17 @@ data class RefundResponse(
     val creditNo: String = "",
     val total: Double = 0.0,
     val refundMethod: String = "",
+    /**
+     * The credit note's frozen VAT, reversed from the original sale — a VAT sale
+     * yields a VAT credit note even after the shop disables VAT, and a non-VAT
+     * sale a non-VAT one even after it registers. The printed credit note reads
+     * these, never today's setting. Legacy-compatible defaults: enabled true.
+     */
+    val vatPolicyId: Long? = null,
+    val vatEnabled: Boolean = true,
+    val vatRate: Double = 0.15,
+    val vatNumber: String? = null,
+    val vatAmount: Double = 0.0,
     val error: String? = null,
 )
 

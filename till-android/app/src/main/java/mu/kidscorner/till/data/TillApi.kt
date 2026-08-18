@@ -85,11 +85,39 @@ data class Bootstrap(
     val shopAddress: String? = null,
     val shopPhone: String? = null,
     val vatNumber: String? = null,
-    val vatRate: Double,
+    /**
+     * The CONFIGURED rate, kept for display and for the resolver below.
+     *
+     * Defaulted to 0.15 for one reason only: a bootstrap cached by a build from
+     * before this feature has no `vatEnabled`/`effectiveVatRate` keys, and such
+     * a cache must decode as VAT-enabled at the shop's historical rate — never
+     * as disabled. See [resolvedVatRate].
+     */
+    val vatRate: Double = 0.15,
+    /**
+     * Is the shop VAT registered right now. Default true is mandatory: a legacy
+     * cache without this key was written while the till only ever charged VAT.
+     */
+    val vatEnabled: Boolean = true,
+    /** What a sale rung up now actually uses: zero while disabled. Null on a legacy cache. */
+    val effectiveVatRate: Double? = null,
+    /** The immutable policy id the till stamps on each sale. Null on a legacy cache. */
+    val vatPolicyId: Long? = null,
     val paymentMethods: List<String>,
     val shift: OpenShift? = null,
     val cashiers: List<Cashier> = emptyList(),
-)
+) {
+    /**
+     * The rate the basket should apply.
+     *
+     * Prefers the server's explicit effective rate; falls back to the configured
+     * rate only when the shop is enabled, and to zero when disabled. A legacy
+     * cache (no effective rate, enabled defaulting true) therefore resolves to
+     * its cached configured rate — the pre-feature behaviour, exactly.
+     */
+    val resolvedVatRate: Double
+        get() = effectiveVatRate ?: if (vatEnabled) vatRate else 0.0
+}
 
 @Serializable
 data class PinRequest(
@@ -218,6 +246,18 @@ data class SaleRequest(
     val approval: Approval? = null,
     /** Names this attempt so a retry replays instead of charging again. */
     val idempotencyKey: String,
+    /**
+     * The immutable VAT policy this attempt was checked out under.
+     *
+     * Frozen once, at checkout, and sent byte-identical on every retry and every
+     * queued replay — the server resolves exactly this policy rather than
+     * applying whatever is current when the sale finally lands. Null is the
+     * legacy spelling: a payload from before this feature, which the server maps
+     * to the immutable legacy policy.
+     */
+    val vatPolicyId: Long? = null,
+    /** The local checkout instant, ISO-8601. Generated once and never regenerated on retry. */
+    val checkedOutAt: String? = null,
 )
 
 @Serializable

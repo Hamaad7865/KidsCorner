@@ -108,6 +108,25 @@ class OfflineGateTest {
         assertTrue(OfflineGate.merge(null, fresh).cashiers.isEmpty())
     }
 
+    @Test
+    fun `a fresh bootstrap's VAT policy replaces the cached one`() {
+        // The whole reason the till caches a policy: a shop that toggles VAT
+        // while the tablet was online must trade on the new policy, not the old
+        // cached one. merge takes the fresh answer wholesale, so the policy id,
+        // enabled flag and effective rate all move to the newer version.
+        val held = shopWithShiftOpenedAt("2026-08-03T05:12:00Z")
+            .copy(vatEnabled = true, effectiveVatRate = 0.15, vatPolicyId = 6)
+        val fresh = held.copy(vatEnabled = false, effectiveVatRate = 0.0, vatPolicyId = 7)
+
+        val merged = OfflineGate.merge(held, fresh)
+
+        assertEquals(false, merged.vatEnabled)
+        assertEquals(7L, merged.vatPolicyId)
+        assertEquals(0.0, merged.resolvedVatRate, 0.0)
+        // And the roster is still held over even as the policy changes.
+        assertEquals(1, merged.cashiers.size)
+    }
+
     // --------------------------------------------------------------- the PIN
 
     @Test

@@ -125,6 +125,14 @@ data class ZTotals(
     val methods: List<ZMethod> = emptyList(),
     val categories: List<ZCategory> = emptyList(),
     val vat: List<ZVatBand> = emptyList(),
+    /**
+     * The registration identities behind the VAT bands, frozen at close.
+     *
+     * Only VAT-enabled transactions contribute a band, so a disabled-only shift
+     * has none and its Z prints no VAT section. A mixed shift carries every
+     * enabled policy's number, read from the slip rather than today's setting.
+     */
+    val vatIdentities: List<ZVatIdentity> = emptyList(),
     val cashiers: List<ZCashier> = emptyList(),
     val hourly: List<ZHour> = emptyList(),
     val topSellers: List<ZTopSeller> = emptyList(),
@@ -167,6 +175,13 @@ data class ZVatBand(
     val excl: Double = 0.0,
     val vat: Double = 0.0,
     val incl: Double = 0.0,
+)
+
+@Serializable
+data class ZVatIdentity(
+    val policyId: Long = 0,
+    val rate: Double = 0.0,
+    val vatNumber: String? = null,
 )
 
 @Serializable
