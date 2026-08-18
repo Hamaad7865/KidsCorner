@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Scratch state from tooling — a port number and a token, never source.
 .superpowers/
+
+# Isolated feature worktrees created by Codex/Superpowers.
+.worktrees/
