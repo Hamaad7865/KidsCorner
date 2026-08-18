@@ -57,6 +57,8 @@ import mu.kidscorner.till.print.PrintResult
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.ReceiptLine
 import mu.kidscorner.till.print.ShopIdentity
+import mu.kidscorner.till.print.CreditNoteDoc
+import mu.kidscorner.till.print.buildCreditNote
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
 import mu.kidscorner.till.print.toPlainText
@@ -280,6 +282,15 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     private val printerSettings = PrinterSettings(app)
+
+    /**
+     * Credit notes already sent to the printer, by number.
+     *
+     * A credit note is a claim on the drawer, so it must print exactly once. The
+     * refund success path fires the print, and this set makes a second attempt
+     * for the same number — a resubmit, a recomposition — a no-op.
+     */
+    private val printedCreditNotes = mutableSetOf<String>()
 
     private val _state = MutableStateFlow(
         TillState(printerDescribe = printerSettings.transport(app).describe),
@@ -1155,6 +1166,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun postRefund(request: RefundRequest) {
         _state.update { it.copy(busy = true, historyError = null) }
+        // Captured before the success branch clears selectedSale, so the printed
+        // credit note can name the sale it reverses and its cashier.
+        val returnedSale = _state.value.selectedSale
         repo.refund(request)
             .onSuccess { response ->
                 val cashier = cashierOf(_state.value.screen)
@@ -1193,7 +1207,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 // once, and `toast` writes to the same flow — so from in there
                 // it fired twice and the outer copy, built from the state as it
                 // was before, threw the message away again.
-                if (went && !response.needsApproval) toast("Refunded ${formatRs(response.total)}")
+                if (went && !response.needsApproval) {
+                    toast("Refunded ${formatRs(response.total)}")
+                    printCreditNote(response, returnedSale)
+                }
             }
             .onFailure { cause ->
                 _state.update {
@@ -1359,6 +1376,56 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
+
+    /**
+     * Prints the credit note that follows a successful refund.
+     *
+     * The document reads from the refund's OWN frozen VAT snapshot — a VAT
+     * credit note or a plain one, exactly as the source sale was — never today's
+     * setting. Guarded by [printedCreditNotes] so a resubmit or a recomposition
+     * cannot print the same claim on the drawer twice. A print failure is a
+     * toast, not an error: the refund is committed and the note is on the shop's
+     * records, and it can be reprinted from the back office.
+     */
+    private fun printCreditNote(refund: RefundResponse, sale: SaleDetail?) {
+        val creditNo = refund.creditNo
+        if (creditNo.isBlank() || !printedCreditNotes.add(creditNo)) return
+
+        viewModelScope.launch {
+            val shop = _state.value.shop
+            val lines = buildCreditNote(
+                doc = CreditNoteDoc(
+                    creditNo = creditNo,
+                    saleNo = sale?.saleNo,
+                    dateIso = nowIso(),
+                    refundMethod = refund.refundMethod,
+                    total = refund.total,
+                    vatEnabled = refund.vatEnabled,
+                    vatRate = refund.vatRate,
+                    vatNumber = refund.vatNumber,
+                    vatAmount = refund.vatAmount,
+                    cashierName = sale?.cashierName,
+                ),
+                shop = ShopIdentity(
+                    name = shop?.shopName ?: "Kids Corner",
+                    address = shop?.shopAddress,
+                    phone = shop?.shopPhone,
+                ),
+                width = printerSettings.paper,
+            )
+
+            val result = printerSettings
+                .transport(getApplication())
+                .send(EscPos.encode(lines, printerSettings.paper))
+
+            if (result is PrintResult.Failed) {
+                toast("Credit note did not print — reprint it from the back office")
+            }
+        }
+    }
+
+    /** ISO-8601 instant for a document printed now, sliced by readableDate. */
+    private fun nowIso(): String = java.time.Instant.now().toString()
 
     /** Renders what would print, without printing or recording anything. */
     fun previewReceipt(saleId: Int) = viewModelScope.launch {

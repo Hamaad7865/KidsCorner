@@ -70,8 +70,17 @@ fun buildReceipt(
     }
 
     // ── the numbered sale block ─────────────────────────────────────────────
+    // The document type is the sale's own frozen status, never today's setting:
+    // a VAT invoice while the sale was rung up registered, a plain receipt
+    // otherwise. Explicit — an enabled zero-total sale is still a VAT invoice.
     add(ReceiptLine.Text("No. ${sale.saleNo}", Align.Centre, bold = true))
-    add(ReceiptLine.Text("VAT INVOICE ${sale.saleNo}", Align.Centre, bold = true))
+    add(
+        ReceiptLine.Text(
+            "${if (sale.vatEnabled) "VAT INVOICE" else "RECEIPT"} ${sale.saleNo}",
+            Align.Centre,
+            bold = true,
+        ),
+    )
     add(ReceiptLine.Text("Counter sale", Align.Centre))
     add(ReceiptLine.Text(readableDate(sale.saleDate), Align.Centre))
     // Never blank: a counter sale says so rather than leaving the customer
@@ -182,7 +191,9 @@ fun buildReceipt(
         }
     }
     add(ReceiptLine.Text("Total: " + suffixed(sale.total, currency), Align.Centre, bold = true))
-    if (sale.lines.isNotEmpty()) {
+    // The exclusive figure is a VAT-invoice concept, so it is printed only when
+    // the sale actually carried VAT — a plain receipt shows the total and stops.
+    if (sale.lines.isNotEmpty() && sale.vatEnabled) {
         add(
             ReceiptLine.Text(
                 "excl. VAT : " + suffixed(sale.total - sale.vatAmount, currency),
@@ -217,9 +228,10 @@ fun buildReceipt(
     }
 
     // ── tax breakdown ───────────────────────────────────────────────────────
-    // One rate, so one group — but printed in the reference's shape so a
-    // second rate would slot in beside it rather than need a new section.
-    if (sale.lines.isNotEmpty()) {
+    // Only on a VAT invoice: a plain receipt from an unregistered shop carries
+    // no VAT, tax or exclusive wording at all. Printed in the reference's shape
+    // so a second rate would slot in beside it rather than need a new section.
+    if (sale.lines.isNotEmpty() && sale.vatEnabled) {
         val base = sale.total - sale.vatAmount
         add(ReceiptLine.Text("VAT : " + suffixed(sale.vatAmount, currency)))
         val both = "excl. VAT = " + suffixed(base, currency) +
@@ -255,8 +267,13 @@ fun buildReceipt(
     if (reprintNumber > 1) {
         add(ReceiptLine.Text("Duplicata $reprintNumber", Align.Centre))
     }
-    shop.vatNumber?.takeIf { it.isNotBlank() }?.let {
-        add(ReceiptLine.Text("VAT number : ${it.removePrefix("VAT").trim()}", Align.Centre))
+    // The registration number frozen on the sale, not the shop's current one:
+    // a VAT invoice reprinted after the shop disabled VAT still shows the number
+    // it was issued under, and a plain receipt shows none.
+    if (sale.vatEnabled) {
+        sale.vatNumber?.takeIf { it.isNotBlank() }?.let {
+            add(ReceiptLine.Text("VAT number : ${it.removePrefix("VAT").trim()}", Align.Centre))
+        }
     }
     sale.cashierName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
     add(ReceiptLine.Feed())

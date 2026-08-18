@@ -465,4 +465,72 @@ class ReceiptTest {
         assertTrue(text.contains("Total:"))
         assertTrue(text.contains("565.71"))
     }
+
+    // -------------------------------------------------- the VAT registration
+
+    private fun enabledSale() = sale().copy(
+        vatEnabled = true,
+        vatRate = 0.15,
+        vatNumber = "VAT20123456",
+        vatAmount = 147.58,
+    )
+
+    private fun disabledSale() = sale().copy(
+        vatEnabled = false,
+        vatRate = 0.0,
+        vatNumber = null,
+        vatAmount = 0.0,
+    )
+
+    @Test
+    fun `a VAT-enabled sale prints a VAT invoice with the frozen number and breakdown`() {
+        // The shop identity passed in carries a DIFFERENT number and the sale is
+        // still printed from its own frozen snapshot — a reprint must not adopt
+        // today's registration.
+        for (width in PaperWidth.entries) {
+            val text = buildReceipt(enabledSale(), shop.copy(vatNumber = "VAT99999999"), width)
+                .toPlainText(width)
+            assertTrue("no VAT INVOICE label on ${width.label}", text.contains("VAT INVOICE"))
+            assertTrue("frozen number missing on ${width.label}", text.contains("20123456"))
+            assertFalse("adopted the shop's current number on ${width.label}", text.contains("99999999"))
+            assertTrue("VAT amount missing on ${width.label}", text.contains("147.58"))
+        }
+    }
+
+    @Test
+    fun `a disabled sale prints a plain receipt with no VAT wording anywhere`() {
+        for (width in PaperWidth.entries) {
+            val text = buildReceipt(disabledSale(), shop, width).toPlainText(width)
+            assertTrue("no RECEIPT label on ${width.label}", text.contains("RECEIPT"))
+            assertFalse("says VAT INVOICE on ${width.label}", text.contains("VAT INVOICE"))
+            // Not one VAT, tax or exclusive word — the header number is gone too.
+            assertFalse("leaked 'VAT' on ${width.label}", text.contains("VAT"))
+            assertFalse("leaked 'tax' on ${width.label}", text.lowercase().contains("tax"))
+            assertFalse("leaked 'excl' on ${width.label}", text.lowercase().contains("excl"))
+            // The money the customer paid is still there.
+            assertTrue("total missing on ${width.label}", text.contains("Total:"))
+        }
+    }
+
+    @Test
+    fun `an enabled zero-total sale is still a VAT invoice`() {
+        // Explicit status, never inferred from vatAmount > 0.
+        val zero = enabledSale().copy(
+            subtotal = 0.0, total = 0.0, vatAmount = 0.0,
+            lines = listOf(
+                SaleDetailLine(id = 1, productName = "Replacement", qty = 1, unitPrice = 0.0, lineTotal = 0.0),
+            ),
+            payments = emptyList(),
+        )
+        val text = buildReceipt(zero, shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
+        assertTrue(text.contains("VAT INVOICE"))
+    }
+
+    @Test
+    fun `a legacy sale detail with no VAT fields prints as a VAT invoice`() {
+        // The default fixture leaves the new fields at their decode defaults —
+        // vatEnabled true — exactly as a detail from a pre-feature server would.
+        val text = buildReceipt(sale(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
+        assertTrue(text.contains("VAT INVOICE"))
+    }
 }

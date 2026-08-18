@@ -28,9 +28,15 @@ fun buildZReport(
 ): List<ReceiptLine> = buildList {
     add(ReceiptLine.Text(shop.name, Align.Centre, bold = true, big = true))
     shop.address?.takeIf { it.isNotBlank() }?.let { add(ReceiptLine.Text(it, Align.Centre)) }
-    shop.vatNumber?.takeIf { it.isNotBlank() }?.let {
-        add(ReceiptLine.Text("VAT $it", Align.Centre))
-    }
+    // The registration numbers frozen on this slip, not the shop's current one:
+    // a Z closed while VAT was on keeps its number after the shop disables VAT,
+    // and a shift that only ever traded unregistered carries none and prints no
+    // VAT header line. Distinct numbers only, in case a mixed shift spans more
+    // than one enabled policy.
+    z.vatIdentities
+        .mapNotNull { it.vatNumber?.takeIf { n -> n.isNotBlank() } }
+        .distinct()
+        .forEach { add(ReceiptLine.Text("VAT $it", Align.Centre)) }
 
     add(ReceiptLine.Feed())
     add(ReceiptLine.Text("Z REPORT  $zNo", Align.Centre, bold = true))

@@ -6,6 +6,7 @@ import mu.kidscorner.till.data.ZMethod
 import mu.kidscorner.till.data.ZMovement
 import mu.kidscorner.till.data.ZTotals
 import mu.kidscorner.till.data.ZVatBand
+import mu.kidscorner.till.data.ZVatIdentity
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.buildZReport
@@ -53,6 +54,7 @@ class ZReportTest {
             ZCategory("(uncategorised)", lines = 2, qty = 3, incl = 1942.00),
         ),
         vat = listOf(ZVatBand(15.0, "VAT 15.00%", excl = 14106.95, vat = 2116.04, incl = 16222.99)),
+        vatIdentities = listOf(ZVatIdentity(policyId = 6, rate = 0.15, vatNumber = "VAT20123456")),
         cashiers = listOf(ZCashier(null, "boodoo.sheik786", 6, 16222.99)),
         movements = listOf(ZMovement(-500.0, "paid the bread supplier", "2026-07-29T11:20:00.000Z")),
         openingFloat = 1500.0,
@@ -125,6 +127,41 @@ class ZReportTest {
             .toPlainText(PaperWidth.Mm80)
         assertTrue(text.contains("VAT (included in prices)"))
         assertTrue(text.contains("net of VAT"))
+    }
+
+    @Test
+    fun `the header VAT number is the frozen one, not the shop's current one`() {
+        // A Z closed while registered keeps its number after the shop disables
+        // VAT. The shop identity here carries a different number and is ignored.
+        val text = buildZReport(real, shop.copy(vatNumber = "VAT99999999"), PaperWidth.Mm80, "Z00007", 11246.38, 0.0)
+            .toPlainText(PaperWidth.Mm80)
+        assertTrue("frozen number missing", text.contains("VAT20123456"))
+        assertTrue("adopted the shop's current number", !text.contains("99999999"))
+    }
+
+    @Test
+    fun `a disabled-only shift prints no VAT section or header at all`() {
+        // A shift that only ever traded while unregistered carries no bands and
+        // no identities, so the whole VAT section — and the header number — go.
+        val disabled = real.copy(vat = emptyList(), vatIdentities = emptyList(), vatTotal = 0.0)
+        val text = buildZReport(disabled, shop.copy(vatNumber = null), PaperWidth.Mm80, "Z00099", 11246.38, 0.0)
+            .toPlainText(PaperWidth.Mm80)
+        assertTrue("drew a VAT section", !text.contains("VAT (included in prices)"))
+        assertTrue("drew a VAT header line", !text.contains("VAT20123456"))
+        // The takings are still all there.
+        assertTrue(text.contains("SALES"))
+        assertTrue(text.contains("16,222.99"))
+    }
+
+    @Test
+    fun `a mixed shift keeps its frozen VAT bands regardless of the current setting`() {
+        // buildZReport reads only the slip: the bands and identities frozen on it
+        // print whatever the shop's registration is today.
+        val text = buildZReport(real, shop, PaperWidth.Mm80, "Z00007", 11246.38, 0.0)
+            .toPlainText(PaperWidth.Mm80)
+        assertTrue(text.contains("VAT (included in prices)"))
+        assertTrue(text.contains("VAT 15.00%"))
+        assertTrue(text.contains("2,116.04"))
     }
 
     @Test
