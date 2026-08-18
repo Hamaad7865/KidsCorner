@@ -35,6 +35,16 @@ export type SaleForReturn = {
   saleDate: string
   total: number
   status: SaleStatus
+  /**
+   * The sale's frozen VAT status. A credit note reverses the VAT of the
+   * ORIGINAL sale regardless of today's setting, so a VAT sale yields a VAT
+   * credit note even after the shop disables VAT, and a non-VAT sale yields a
+   * non-VAT credit note even after it registers.
+   */
+  vatEnabled: boolean
+  vatRate: number
+  vatNumber: string | null
+  vatAmount: number
   customerName: string | null
   cashierName: string | null
   lines: ReturnableLine[]
@@ -59,6 +69,7 @@ export const getSaleForReturn = cache(
         .from("sales")
         .select(
           `id, sale_no, sale_date, subtotal, discount, total, status,
+         vat_enabled, vat_rate, vat_number, vat_amount,
          customers ( full_name ),
          profiles ( full_name ),
          sale_items ( id, variant_id, qty, unit_price, discount, line_total,
@@ -118,6 +129,13 @@ export const getSaleForReturn = cache(
       saleDate: sale.sale_date,
       total: Number(sale.total),
       status: isSaleStatus(sale.status) ? sale.status : "completed",
+      vatEnabled: sale.vat_enabled,
+      vatRate: Number(sale.vat_rate),
+      vatNumber:
+        typeof sale.vat_number === "string" && sale.vat_number.trim()
+          ? sale.vat_number.trim()
+          : null,
+      vatAmount: Number(sale.vat_amount),
       customerName: sale.customers?.full_name ?? null,
       cashierName: sale.profiles?.full_name ?? null,
       lines,

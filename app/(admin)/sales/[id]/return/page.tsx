@@ -47,6 +47,11 @@ export default async function ReturnPage({
             {sale.status === "refunded" ? (
               <Badge variant="outline">Refunded</Badge>
             ) : null}
+            {/* The credit note follows the sale's frozen VAT, not today's
+                setting — a VAT sale returns VAT even after the shop disables it. */}
+            <Badge variant={sale.vatEnabled ? "default" : "secondary"}>
+              {sale.vatEnabled ? "VAT invoice" : "Not VAT registered"}
+            </Badge>
           </div>
           <p className="text-muted-foreground text-sm">
             {formatDateTime(sale.saleDate)} · {formatRs(sale.total)}

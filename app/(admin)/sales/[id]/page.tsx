@@ -17,6 +17,7 @@ import {
 import { requireAdminProfile } from "@/lib/auth/session"
 import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
+import { receiptTaxView } from "@/lib/receipts/tax-view"
 import { getSaleDetail } from "@/lib/sales/queries"
 
 export const metadata: Metadata = { title: "Sale" }
@@ -45,6 +46,16 @@ export default async function SaleDetailPage({
 
   const refunded = sale.creditNotes.reduce((sum, c) => sum + c.total, 0)
   const paid = sale.payments.reduce((sum, p) => sum + p.amount, 0)
+  // The sale's frozen VAT identity — a VAT invoice keeps its number and rate
+  // even after the shop later disables VAT; a disabled sale reads "Not VAT
+  // registered" even after the shop registers.
+  const tax = receiptTaxView({
+    vatEnabled: sale.vatEnabled,
+    vatRate: sale.vatRate,
+    vatNumber: sale.vatNumber,
+    vatAmount: sale.vatAmount,
+    total: sale.total,
+  })
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -222,10 +233,31 @@ export default async function SaleDetailPage({
               </div>
             ) : null}
 
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">VAT (included)</dt>
-              <dd className="tabular-nums">{formatRs(sale.vatAmount)}</dd>
-            </div>
+            {tax.isVatInvoice ? (
+              <>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">Net</dt>
+                  <dd className="tabular-nums">{formatRs(tax.netAmount)}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">
+                    VAT {tax.rateLabel} (included)
+                    {tax.vatNumber ? (
+                      <span className="text-muted-foreground/70">
+                        {" "}
+                        · {tax.vatNumber}
+                      </span>
+                    ) : null}
+                  </dt>
+                  <dd className="tabular-nums">{formatRs(tax.vatAmount)}</dd>
+                </div>
+              </>
+            ) : (
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">VAT</dt>
+                <dd className="text-muted-foreground">Not VAT registered</dd>
+              </div>
+            )}
             <div className="flex justify-between gap-4 border-t pt-2 text-base font-medium">
               <dt>Total</dt>
               <dd className="tabular-nums">{formatRs(sale.total)}</dd>

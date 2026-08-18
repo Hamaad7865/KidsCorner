@@ -7,6 +7,7 @@ import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
 import { changeDue } from "@/lib/pos/payments"
 import { getShopIdentity } from "@/lib/pos/queries"
+import { receiptTaxView } from "@/lib/receipts/tax-view"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = { title: "Receipt" }
@@ -43,6 +44,7 @@ export default async function ReceiptPage({
       .from("sales")
       .select(
         `id, sale_no, sale_date, subtotal, discount, vat_amount, total, status,
+         vat_enabled, vat_rate, vat_number,
          customers ( full_name ),
          profiles ( full_name ),
          sale_items ( qty, unit_price, discount, line_total,
@@ -52,15 +54,25 @@ export default async function ReceiptPage({
       .eq("id", saleId)
       .maybeSingle(),
     supabase.from("settings").select("value").eq("key", "shop_name").maybeSingle(),
-    // The same three the thermal receipt prints. Without this the browser
-    // receipt and the tablet's receipt described the same sale differently —
-    // and the browser one said "Mauritius" where the VAT number belongs.
+    // Address and phone for the header. The VAT number is NOT taken from here —
+    // it comes from the sale's own frozen snapshot below, so a receipt reprinted
+    // after the shop's registration changed still shows what it showed on the day.
     getShopIdentity(),
   ])
 
   if (!sale) notFound()
 
   const shop = typeof shopName?.value === "string" ? shopName.value : "Kids Corner"
+  // The document identity comes entirely from the sale's frozen VAT snapshot,
+  // never today's setting: a VAT invoice with its frozen number and breakdown,
+  // or a plain receipt with neither.
+  const tax = receiptTaxView({
+    vatEnabled: sale.vat_enabled,
+    vatRate: Number(sale.vat_rate),
+    vatNumber: sale.vat_number,
+    vatAmount: Number(sale.vat_amount),
+    total: Number(sale.total),
+  })
   const payments = sale.sale_payments ?? []
   // The shared answer, not a third one. This page used to total the tendered
   // figures across EVERY payment — a card row carrying a tendered value would
@@ -84,9 +96,12 @@ export default async function ReceiptPage({
           <h1 className="text-sm font-bold uppercase">{shop}</h1>
           {identity.address ? <p>{identity.address}</p> : <p>Mauritius</p>}
           {identity.phone ? <p>{identity.phone}</p> : null}
-          {/* A VAT-registered business has to show its number on a VAT
-              invoice, and this page is one — it itemises the VAT. */}
-          {identity.vatNumber ? <p>VAT {identity.vatNumber}</p> : null}
+          {/* Only a VAT invoice carries a registration number, and it is the one
+              frozen on the sale — not the shop's current number. */}
+          {tax.isVatInvoice && tax.vatNumber ? <p>VAT {tax.vatNumber}</p> : null}
+          {/* The document type: a VAT invoice or a plain receipt, decided by the
+              sale's frozen status. */}
+          <p className="mt-1 font-bold uppercase">{tax.documentLabel}</p>
           <p className="mt-1">{formatDateTime(sale.sale_date)}</p>
           <p>Sale {sale.sale_no}</p>
           {sale.profiles?.full_name ? <p>Served by {sale.profiles.full_name}</p> : null}
@@ -144,12 +159,23 @@ export default async function ReceiptPage({
           value={formatRs(Number(sale.total))}
           className="text-sm font-bold"
         />
-        {/* Prices are VAT-inclusive, so VAT is shown as contained, not added. */}
-        <Line
-          label="VAT included"
-          value={formatRs(Number(sale.vat_amount))}
-          className="opacity-70"
-        />
+        {/* On a VAT invoice only: prices are inclusive, so the net and the
+            contained VAT are shown as a breakdown of the total, not added to it.
+            A plain receipt shows nothing here at all. */}
+        {tax.isVatInvoice ? (
+          <>
+            <Line
+              label="Net"
+              value={formatRs(tax.netAmount)}
+              className="opacity-70"
+            />
+            <Line
+              label={`VAT ${tax.rateLabel} (incl.)`}
+              value={formatRs(tax.vatAmount)}
+              className="opacity-70"
+            />
+          </>
+        ) : null}
 
         <hr className="my-2 border-dashed border-black" />
 
