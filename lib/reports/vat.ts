@@ -1,6 +1,5 @@
 import { endOfShopDay, round2, shopDayOf, startOfShopDay } from "@/lib/format"
 import { createClient } from "@/lib/supabase/server"
-import { getVatRate } from "@/lib/pos/queries"
 
 /**
  * The VAT return position — ported from Carfectionist's "VAT report".
@@ -15,13 +14,8 @@ import { getVatRate } from "@/lib/pos/queries"
  *   sale committed, at the rate in force that day. Re-deriving it from today's
  *   rate would silently restate every sale made before a rate change.
  *
- *   INPUT VAT is derived, because it has to be. Carfectionist records
- *   `expenses.vat_amount` per expense; Kids Corner's `purchases` table has no
- *   VAT column — only `total_amount`, the supplier invoice. So it is taken out
- *   of that total by SUBTRACTION at the shop's configured rate, which is the
- *   same rule the whole app uses for a VAT-inclusive price. That makes it an
- *   estimate, and the screen says so: a supplier who is not VAT-registered
- *   charges no VAT at all, and nothing in the schema records which is which.
+ *   INPUT VAT is read from `purchases.vat_amount`, frozen when the purchase was
+ *   received. A later registration or rate change must not restate it.
  */
 
 /** Plenty for a year; the report says so if it is ever exceeded. */
@@ -41,7 +35,7 @@ export type VatMonth = {
   label: string
   /** VAT charged on sales, net of credit notes. */
   output: number
-  /** VAT contained in received purchases, derived at the configured rate. */
+  /** VAT frozen when received purchases entered the ledger. */
   input: number
   /** Positive: owed to the MRA. Negative: reclaimable. */
   net: number
@@ -50,8 +44,6 @@ export type VatMonth = {
 export type VatReport = {
   from: string
   to: string
-  /** The rate input VAT was derived at. */
-  rate: number
   output: number
   input: number
   net: number
@@ -101,6 +93,14 @@ export function monthsBetween(from: string, to: string): string[] {
 
 type Bucket = { output: number; input: number }
 
+/** VAT belongs to a return only when that document's frozen policy was enabled. */
+export function frozenVatAmount(document: {
+  vatEnabled: boolean
+  vatAmount: number
+}): number {
+  return document.vatEnabled ? round2(document.vatAmount) : 0
+}
+
 /**
  * Bucket one document into its shop month.
  *
@@ -123,7 +123,6 @@ export function bucketOf(
 
 export async function getVatReport(from: string, to: string): Promise<VatReport> {
   const supabase = await createClient()
-  const rate = await getVatRate()
 
   const after = startOfShopDay(from)
   const before = endOfShopDay(to)
@@ -131,7 +130,7 @@ export async function getVatReport(from: string, to: string): Promise<VatReport>
   const [salesResult, creditResult, purchaseResult] = await Promise.all([
     supabase
       .from("sales")
-      .select("id, sale_date, vat_amount, status")
+      .select("id, sale_date, vat_enabled, vat_rate, vat_amount, status")
       // A refunded sale still charged VAT on the day; the credit note that
       // reversed it takes that VAT off in its own month, which is how the MRA
       // expects a return to be corrected. Voids never charged anything.
@@ -142,7 +141,7 @@ export async function getVatReport(from: string, to: string): Promise<VatReport>
       .limit(OVER_CAP),
     supabase
       .from("credit_notes")
-      .select("id, created_at, vat_amount")
+      .select("id, created_at, vat_enabled, vat_rate, vat_amount")
       .gte("created_at", after)
       .lte("created_at", before)
       .order("created_at", { ascending: true })
@@ -152,7 +151,7 @@ export async function getVatReport(from: string, to: string): Promise<VatReport>
     // Draft orders have not been invoiced and cancelled ones never will be.
     supabase
       .from("purchases")
-      .select("id, purchase_date, total_amount, status")
+      .select("id, purchase_date, total_amount, status, vat_enabled, vat_rate, vat_amount")
       .eq("status", "received")
       .gte("purchase_date", from)
       .lte("purchase_date", to)
@@ -184,22 +183,28 @@ export async function getVatReport(from: string, to: string): Promise<VatReport>
   let input = 0
 
   for (const sale of sales) {
-    const vat = round2(Number(sale.vat_amount))
+    const vat = frozenVatAmount({
+      vatEnabled: sale.vat_enabled === true,
+      vatAmount: Number(sale.vat_amount),
+    })
     output = round2(output + vat)
     bucketOf(months, shopDayOf(sale.sale_date).slice(0, 7), vat, 0)
   }
 
   for (const note of credits) {
-    const vat = round2(Number(note.vat_amount))
+    const vat = frozenVatAmount({
+      vatEnabled: note.vat_enabled === true,
+      vatAmount: Number(note.vat_amount),
+    })
     output = round2(output - vat)
     bucketOf(months, shopDayOf(note.created_at).slice(0, 7), -vat, 0)
   }
 
   for (const purchase of purchases) {
-    // Contained in the total, never added to it — the same rule as a shelf
-    // price. `total / (1 + rate)` is the net; what is left is the VAT.
-    const total = Number(purchase.total_amount)
-    const vat = round2(total - total / (1 + rate))
+    const vat = frozenVatAmount({
+      vatEnabled: purchase.vat_enabled === true,
+      vatAmount: Number(purchase.vat_amount),
+    })
     input = round2(input + vat)
     bucketOf(months, purchase.purchase_date.slice(0, 7), 0, vat)
   }
@@ -207,7 +212,6 @@ export async function getVatReport(from: string, to: string): Promise<VatReport>
   return {
     from,
     to,
-    rate,
     output,
     input,
     net: round2(output - input),

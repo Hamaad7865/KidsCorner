@@ -20,23 +20,26 @@ const { getVatReport } = await import("./vat")
  */
 const SALES = [
   // 14:00 in Mauritius on 15 June — June either way.
-  { id: 1, sale_date: "2026-06-15T10:00:00+00:00", vat_amount: 30, status: "completed" },
+  { id: 1, sale_date: "2026-06-15T10:00:00+00:00", vat_enabled: false, vat_rate: 0, vat_amount: 0, status: "completed" },
   // 01:14 in Mauritius on 1 JULY, which is 21:14 on 30 June in UTC. This sale's
   // VAT belongs in the July return.
-  { id: 2, sale_date: "2026-06-30T21:14:00+00:00", vat_amount: 15, status: "completed" },
-  { id: 3, sale_date: "2026-07-20T06:00:00+00:00", vat_amount: 60, status: "refunded" },
+  { id: 2, sale_date: "2026-06-30T21:14:00+00:00", vat_enabled: true, vat_rate: 0.15, vat_amount: 15, status: "completed" },
+  { id: 3, sale_date: "2026-07-20T06:00:00+00:00", vat_enabled: true, vat_rate: 0.15, vat_amount: 60, status: "refunded" },
 ]
 
 const CREDITS = [
-  { id: 1, created_at: "2026-07-21T06:00:00+00:00", vat_amount: 10 },
+  { id: 1, created_at: "2026-07-21T06:00:00+00:00", vat_enabled: true, vat_rate: 0.15, vat_amount: 10 },
+  // A disabled sale returned after registration was enabled. It remains outside VAT.
+  { id: 2, created_at: "2026-07-22T06:00:00+00:00", vat_enabled: false, vat_rate: 0, vat_amount: 0 },
 ]
 
 const PURCHASES = [
-  { id: 1, purchase_date: "2026-06-12", total_amount: 23000, status: "received" },
-  { id: 2, purchase_date: "2026-07-04", total_amount: 11500, status: "received" },
+  { id: 1, purchase_date: "2026-06-12", total_amount: 23000, status: "received", vat_enabled: false, vat_rate: 0, vat_amount: 0 },
+  { id: 2, purchase_date: "2026-07-04", total_amount: 11500, status: "received", vat_enabled: true, vat_rate: 0.15, vat_amount: 1500 },
 ]
 
-const SETTINGS = [{ value: 0.15 }]
+// Deliberately opposite to the frozen rows. Historical output must ignore it.
+const SETTINGS = [{ value: 0.5 }]
 
 beforeEach(() => {
   client = fakeClient({
@@ -53,25 +56,24 @@ describe("getVatReport", () => {
     const june = report.months.find((m) => m.month === "2026-06")
     const july = report.months.find((m) => m.month === "2026-07")
 
-    // 30 in June; the 01:14 sale joins the 20 July one, less the credit note.
-    expect(june?.output).toBe(30)
+    // The disabled June sale remains gross turnover but contributes no output VAT.
+    expect(june?.output).toBe(0)
     expect(july?.output).toBe(65)
   })
 
-  it("takes input VAT out of a purchase total rather than adding it on", async () => {
-    // Rs 23,000 inclusive at 15% holds Rs 3,000 of VAT, not Rs 3,450.
+  it("uses only the VAT frozen when each purchase was received", async () => {
     const report = await getVatReport("2026-06-01", "2026-07-31")
-    expect(report.months.find((m) => m.month === "2026-06")?.input).toBe(3000)
+    expect(report.months.find((m) => m.month === "2026-06")?.input).toBe(0)
     expect(report.months.find((m) => m.month === "2026-07")?.input).toBe(1500)
-    expect(report.input).toBe(4500)
+    expect(report.input).toBe(1500)
   })
 
   it("nets the period and names the months in order", async () => {
     const report = await getVatReport("2026-06-01", "2026-07-31")
-    expect(report.output).toBe(95)
-    expect(report.net).toBe(-4405)
+    expect(report.output).toBe(65)
+    expect(report.net).toBe(-1435)
     expect(report.months.map((m) => m.label)).toEqual(["June 2026", "July 2026"])
-    expect(report.months.map((m) => m.net)).toEqual([-2970, -1435])
+    expect(report.months.map((m) => m.net)).toEqual([0, -1435])
   })
 
   it("shows a month inside the range that had no activity at all", async () => {
@@ -103,9 +105,9 @@ describe("getVatReport", () => {
     ])
   })
 
-  it("reports the rate it derived input VAT at", async () => {
+  it("does not expose today's configured rate as a historical report fact", async () => {
     const report = await getVatReport("2026-06-01", "2026-07-31")
-    expect(report.rate).toBe(0.15)
-    expect(report.counts).toEqual({ sales: 3, credits: 1, purchases: 2 })
+    expect(report).not.toHaveProperty("rate")
+    expect(report.counts).toEqual({ sales: 3, credits: 2, purchases: 2 })
   })
 })

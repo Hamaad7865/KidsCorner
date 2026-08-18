@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { endOfShopDay, startOfShopDay } from "@/lib/format"
-import { readZTotals, type ZTotals } from "@/lib/pos/shift-core"
+import { readZTotals, type VatIdentity, type ZTotals } from "@/lib/pos/shift-core"
 import { createClient } from "@/lib/supabase/server"
 
 /**
@@ -28,6 +28,8 @@ export type ZReportRow = {
   expectedCash: number
   variance: number
   totals: ZTotals
+  /** Frozen separately from totals so old slip JSON remains byte-for-byte unchanged. */
+  vatIdentities: VatIdentity[]
   /**
    * Money in the shift that the frozen slip does not account for.
    *
@@ -48,6 +50,7 @@ type RawZ = {
   expected_cash: string | number
   variance: string | number
   totals: unknown
+  vat_identity_snapshot: unknown
   closer?: { full_name: string } | null
 }
 
@@ -71,7 +74,7 @@ export async function listZReports(
   const { data, error } = await supabase
     .from("z_reports")
     .select(
-      `id, shift_id, z_no, closed_at, counted_cash, expected_cash, variance, totals,
+      `id, shift_id, z_no, closed_at, counted_cash, expected_cash, variance, totals, vat_identity_snapshot,
        closer:profiles!z_reports_closed_by_fkey ( full_name )`,
     )
     .gte("closed_at", startOfShopDay(from))
@@ -98,19 +101,26 @@ export async function listZReports(
     ]),
   )
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    shiftId: row.shift_id,
-    zNo: row.z_no,
-    closedAt: row.closed_at,
-    closedBy: row.closer?.full_name ?? null,
-    countedCash: num(row.counted_cash),
-    expectedCash: num(row.expected_cash),
-    variance: num(row.variance),
-    totals: readZTotals(row.totals),
-    unreported: byShift.get(row.shift_id)?.unreported ?? 0,
-    lateCount: byShift.get(row.shift_id)?.lateCount ?? 0,
-  }))
+  return (data ?? []).map((row) => {
+    const totals = readZTotals({
+      ...(row.totals as Record<string, unknown>),
+      vat_identities: row.vat_identity_snapshot,
+    })
+    return {
+      id: row.id,
+      shiftId: row.shift_id,
+      zNo: row.z_no,
+      closedAt: row.closed_at,
+      closedBy: row.closer?.full_name ?? null,
+      countedCash: num(row.counted_cash),
+      expectedCash: num(row.expected_cash),
+      variance: num(row.variance),
+      totals,
+      vatIdentities: totals.vatIdentities,
+      unreported: byShift.get(row.shift_id)?.unreported ?? 0,
+      lateCount: byShift.get(row.shift_id)?.lateCount ?? 0,
+    }
+  })
 }
 
 /** One slip, for the detail view and the reprint. */
@@ -120,7 +130,7 @@ export async function getZReport(id: number): Promise<ZReportRow | null> {
   const { data, error } = await supabase
     .from("z_reports")
     .select(
-      `id, shift_id, z_no, closed_at, counted_cash, expected_cash, variance, totals,
+      `id, shift_id, z_no, closed_at, counted_cash, expected_cash, variance, totals, vat_identity_snapshot,
        closer:profiles!z_reports_closed_by_fkey ( full_name )`,
     )
     .eq("id", id)
@@ -134,6 +144,11 @@ export async function getZReport(id: number): Promise<ZReportRow | null> {
     .eq("shift_id", data.shift_id)
     .maybeSingle<RawVariance>()
 
+  const totals = readZTotals({
+    ...(data.totals as Record<string, unknown>),
+    vat_identities: data.vat_identity_snapshot,
+  })
+
   return {
     id: data.id,
     shiftId: data.shift_id,
@@ -143,7 +158,8 @@ export async function getZReport(id: number): Promise<ZReportRow | null> {
     countedCash: num(data.counted_cash),
     expectedCash: num(data.expected_cash),
     variance: num(data.variance),
-    totals: readZTotals(data.totals),
+    totals,
+    vatIdentities: totals.vatIdentities,
     unreported: num(variance?.unreported),
     lateCount: variance?.late_count ?? 0,
   }

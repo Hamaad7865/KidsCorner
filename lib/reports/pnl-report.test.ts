@@ -18,13 +18,13 @@ const { getPnlReport } = await import("./pnl")
  * that failed to put its stock back would leave cost at 220 rather than 170.
  */
 const SALES = [
-  { id: 1, sale_date: "2026-07-02T06:00:00+00:00", total: 230, vat_amount: 30, status: "completed" },
-  { id: 2, sale_date: "2026-07-10T06:00:00+00:00", total: 115, vat_amount: 15, status: "completed" },
-  { id: 3, sale_date: "2026-07-20T06:00:00+00:00", total: 460, vat_amount: 60, status: "refunded" },
+  { id: 1, sale_date: "2026-07-02T06:00:00+00:00", total: 230, vat_enabled: true, vat_rate: 0.15, vat_amount: 30, status: "completed" },
+  { id: 2, sale_date: "2026-07-10T06:00:00+00:00", total: 115, vat_enabled: true, vat_rate: 0.15, vat_amount: 15, status: "completed" },
+  { id: 3, sale_date: "2026-07-20T06:00:00+00:00", total: 460, vat_enabled: true, vat_rate: 0.15, vat_amount: 60, status: "refunded" },
 ]
 
 const CREDITS = [
-  { id: 1, created_at: "2026-07-21T06:00:00+00:00", total: 76.67, vat_amount: 10 },
+  { id: 1, created_at: "2026-07-21T06:00:00+00:00", total: 76.67, vat_enabled: true, vat_rate: 0.15, vat_amount: 10 },
 ]
 
 const ITEMS = [

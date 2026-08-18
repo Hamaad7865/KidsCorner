@@ -10,7 +10,6 @@ import type { VatReport } from "@/lib/reports/vat"
 const vat = (over: Partial<VatReport> = {}): VatReport => ({
   from: "2026-06-01",
   to: "2026-07-31",
-  rate: 0.15,
   output: 14406.18,
   input: 5100,
   net: 9306.18,
@@ -88,6 +87,12 @@ describe("VatReturn renders", () => {
       createElement(VatReturn, { report: vat({ truncated: true }) }),
     )
     expect(html).toContain("must not be filed")
+  })
+
+  it("explains that historical VAT comes from document snapshots, not one current rate", () => {
+    const html = renderToStaticMarkup(createElement(VatReturn, { report: vat() }))
+    expect(html).toContain("frozen values")
+    expect(html).not.toContain("subtraction at")
   })
 })
 

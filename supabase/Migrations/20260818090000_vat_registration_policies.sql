@@ -948,4 +948,320 @@ $$;
 revoke execute on function public.receive_purchase(integer) from public, anon;
 grant execute on function public.receive_purchase(integer) to authenticated;
 
+-- ============================================================
+-- Snapshot-driven report aggregation
+-- ============================================================
+
+-- One shared calculation supplies the live X-read and the Z close. Gross
+-- turnover remains the existing z_totals figure; this helper replaces only VAT
+-- output with frozen enabled transaction bands and their copied returns.
+create or replace function private.shift_vat_snapshot(
+    p_shift_id integer,
+    p_as_at timestamptz
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+    with tax_parts as (
+        select
+            s.vat_policy_id as policy_id,
+            s.vat_rate,
+            s.vat_number,
+            s.total - s.vat_amount as net,
+            s.vat_amount as vat
+        from public.sales s
+        where s.shift_id = p_shift_id
+          and s.status in ('completed', 'refunded')
+          and s.sale_date <= p_as_at
+          and s.vat_enabled
+
+        union all
+
+        select
+            cn.vat_policy_id,
+            cn.vat_rate,
+            cn.vat_number,
+            -(cn.total - cn.vat_amount),
+            -cn.vat_amount
+        from public.credit_notes cn
+        where cn.shift_id = p_shift_id
+          and cn.created_at <= p_as_at
+          and cn.vat_enabled
+    ),
+    bands as (
+        select
+            vat_rate,
+            pg_catalog.round(pg_catalog.sum(net), 2) as excl,
+            pg_catalog.round(pg_catalog.sum(vat), 2) as vat,
+            pg_catalog.round(pg_catalog.sum(net) + pg_catalog.sum(vat), 2) as incl
+        from tax_parts
+        group by vat_rate
+    ),
+    identities as (
+        select distinct policy_id, vat_rate, vat_number
+        from tax_parts
+    )
+    select pg_catalog.jsonb_build_object(
+        'vat_total', coalesce((select pg_catalog.round(pg_catalog.sum(vat), 2) from tax_parts), 0),
+        'vat', coalesce((
+            select pg_catalog.jsonb_agg(
+                pg_catalog.jsonb_build_object(
+                    'rate', b.vat_rate * 100,
+                    'label', case
+                        when b.vat_rate = 0 then 'Zero-rated 0.00%'
+                        else 'VAT ' || pg_catalog.to_char(b.vat_rate * 100, 'FM990.00') || '%'
+                    end,
+                    'excl', b.excl,
+                    'vat', b.vat,
+                    'incl', b.incl
+                )
+                order by b.vat_rate desc
+            )
+            from bands b
+        ), '[]'::jsonb),
+        'vat_identities', coalesce((
+            select pg_catalog.jsonb_agg(
+                pg_catalog.jsonb_build_object(
+                    'policyId', i.policy_id,
+                    'rate', i.vat_rate,
+                    'vatNumber', i.vat_number
+                )
+                order by i.policy_id
+            )
+            from identities i
+        ), '[]'::jsonb)
+    );
+$$;
+
+revoke execute on function private.shift_vat_snapshot(integer, timestamptz)
+    from public, anon, authenticated, service_role;
+
+-- Keep every mature non-VAT section of z_totals unchanged. Its old derived VAT
+-- block is overwritten by the helper at the return boundary, and the last
+-- current-settings read is removed so historical reads have no policy pointer.
+do $$
+declare
+    v_def text;
+    v_old_setting text :=
+        '    SELECT coalesce((value #>> ''{}'')::NUMERIC, 0.15) INTO v_default_vat' || chr(10)
+        || '      FROM settings WHERE key = ''vat_rate'';' || chr(10)
+        || '    IF v_default_vat IS NULL THEN v_default_vat := 0.15; END IF;';
+    v_old_return text :=
+        '        ''credited'',       round(v_credited, 2)' || chr(10)
+        || '    );' || chr(10)
+        || 'END;';
+    v_new_return text :=
+        '        ''credited'',       round(v_credited, 2)' || chr(10)
+        || '    ) || private.shift_vat_snapshot(p_shift_id, p_as_at);' || chr(10)
+        || 'END;';
+begin
+    select pg_catalog.replace(
+        pg_catalog.pg_get_functiondef(p.oid),
+        chr(13) || chr(10),
+        chr(10)
+    ) into v_def
+    from pg_catalog.pg_proc p
+    where p.proname = 'z_totals'
+      and p.pronamespace = 'public'::pg_catalog.regnamespace;
+
+    if v_def is null
+       or pg_catalog.strpos(v_def, v_old_setting) = 0
+       or pg_catalog.strpos(v_def, v_old_return) = 0 then
+        raise exception 'z_totals does not match the expected pre-VAT report definition';
+    end if;
+
+    v_def := pg_catalog.replace(
+        v_def,
+        v_old_setting,
+        '    v_default_vat := 0; -- compatibility variable; frozen output is merged below'
+    );
+    v_def := pg_catalog.replace(v_def, v_old_return, v_new_return);
+    execute v_def;
+end;
+$$;
+
+-- Merge frozen enabled tax bands into the established daily-summary shape.
+-- Headline turnover, payments, sellers and categories keep their existing
+-- behavior; only the VAT columns are replaced, including copied returns.
+create or replace function private.merge_daily_vat_snapshot(
+    p_summary jsonb,
+    p_from date,
+    p_to date
+)
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+    with tax_parts as (
+        select
+            (s.sale_date at time zone 'Indian/Mauritius')::date as day,
+            pg_catalog.to_char(
+                pg_catalog.round(s.vat_rate * 100, 2),
+                'FM990.00'
+            ) as rate,
+            s.total as incl,
+            s.vat_amount as vat
+        from public.sales s
+        where s.status in ('completed', 'refunded')
+          and s.vat_enabled
+          and (s.sale_date at time zone 'Indian/Mauritius')::date between p_from and p_to
+
+        union all
+
+        select
+            (cn.created_at at time zone 'Indian/Mauritius')::date,
+            pg_catalog.to_char(
+                pg_catalog.round(cn.vat_rate * 100, 2),
+                'FM990.00'
+            ),
+            -cn.total,
+            -cn.vat_amount
+        from public.credit_notes cn
+        where cn.vat_enabled
+          and (cn.created_at at time zone 'Indian/Mauritius')::date between p_from and p_to
+    ),
+    day_tax as (
+        select
+            day,
+            pg_catalog.jsonb_object_agg(
+                rate,
+                pg_catalog.jsonb_build_object(
+                    'incl', pg_catalog.round(incl, 2),
+                    'excl', pg_catalog.round(incl - vat, 2),
+                    'vat', pg_catalog.round(vat, 2)
+                )
+            ) as by_tax
+        from (
+            select day, rate, pg_catalog.sum(incl) as incl, pg_catalog.sum(vat) as vat
+            from tax_parts
+            group by day, rate
+        ) grouped
+        group by day
+    ),
+    rows as (
+        select coalesce(
+            pg_catalog.jsonb_agg(
+                row_value || pg_catalog.jsonb_build_object(
+                    'by_tax', coalesce(dt.by_tax, '{}'::jsonb)
+                )
+                order by row_value ->> 'day'
+            ),
+            '[]'::jsonb
+        ) as value
+        from pg_catalog.jsonb_array_elements(p_summary -> 'rows') row_value
+        left join day_tax dt on dt.day = (row_value ->> 'day')::date
+    )
+    select p_summary || pg_catalog.jsonb_build_object(
+        'rows', (select value from rows),
+        'taxes', coalesce((
+            select pg_catalog.jsonb_agg(distinct rate order by rate)
+            from tax_parts
+        ), '[]'::jsonb)
+    );
+$$;
+
+revoke execute on function private.merge_daily_vat_snapshot(jsonb, date, date)
+    from public, anon, authenticated, service_role;
+
+do $$
+declare
+    v_def text;
+begin
+    select pg_catalog.replace(
+        pg_catalog.pg_get_functiondef(p.oid),
+        chr(13) || chr(10),
+        chr(10)
+    ) into v_def
+    from pg_catalog.pg_proc p
+    where p.proname = 'daily_summary'
+      and p.pronamespace = 'public'::pg_catalog.regnamespace;
+
+    if v_def is null
+       or pg_catalog.strpos(v_def, '    RETURN v_out;') = 0 then
+        raise exception 'daily_summary does not match the expected pre-VAT report definition';
+    end if;
+
+    v_def := pg_catalog.replace(
+        v_def,
+        '    RETURN v_out;',
+        '    RETURN private.merge_daily_vat_snapshot(v_out, p_from, p_to);'
+    );
+    execute v_def;
+end;
+$$;
+
+-- Freeze the exact live identity array in its dedicated column. The stored
+-- totals object deliberately drops the new live-only key, preserving the
+-- historical Z JSON contract; readers combine the separate frozen column.
+create or replace function public.close_shift_z(
+    p_shift_id integer,
+    p_counted_cash numeric,
+    p_notes text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+    v_now timestamptz := pg_catalog.now();
+    v_totals jsonb;
+    v_identities jsonb;
+    v_expected numeric;
+    v_variance numeric;
+    v_counted numeric := pg_catalog.round(coalesce(p_counted_cash, 0), 2);
+    v_z_no text;
+    v_z_id bigint;
+    v_user uuid := auth.uid();
+begin
+    perform 1
+    from public.shifts
+    where id = p_shift_id and closed_at is null
+    for update;
+    if not found then
+        raise exception 'That shift is already closed, or does not exist';
+    end if;
+
+    v_totals := public.z_totals(p_shift_id, v_now);
+    v_identities := coalesce(v_totals -> 'vat_identities', '[]'::jsonb);
+    v_expected := (v_totals ->> 'expected_cash')::numeric;
+    v_variance := pg_catalog.round(v_counted - v_expected, 2);
+
+    update public.shifts
+    set closed_by = v_user,
+        closed_at = v_now,
+        counted_cash = v_counted,
+        expected_cash = v_expected,
+        variance = v_variance,
+        notes = p_notes
+    where id = p_shift_id;
+
+    v_z_no := public.next_z_no();
+
+    insert into public.z_reports (
+        shift_id, z_no, closed_at, closed_by,
+        counted_cash, expected_cash, variance, totals, vat_identity_snapshot
+    ) values (
+        p_shift_id, v_z_no, v_now, v_user,
+        v_counted, v_expected, v_variance,
+        v_totals - 'vat_identities', v_identities
+    ) returning id into v_z_id;
+
+    return pg_catalog.jsonb_build_object(
+        'z_id', v_z_id,
+        'z_no', v_z_no,
+        'counted_cash', v_counted,
+        'expected_cash', v_expected,
+        'variance', v_variance,
+        'totals', v_totals,
+        'vat_identity_snapshot', v_identities
+    );
+end;
+$$;
+
 commit;

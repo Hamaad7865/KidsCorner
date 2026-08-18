@@ -130,6 +130,12 @@ export default async function ReportsPage({
 
   const link = (key: string) =>
     `/reports?report=${key}&from=${from}&to=${to}`
+  const exportHref = (format: "csv" | "xlsx") =>
+    `/api/reports/${active}?from=${from}&to=${to}${
+      active === "daily" ? `&sec=${[...sections].join(",") || "none"}` : ""
+    }${active === "methods" && method ? `&m=${method}` : ""}${
+      format === "xlsx" ? "&format=xlsx" : ""
+    }`
 
   return (
     <div className="space-y-6">
@@ -186,19 +192,20 @@ export default async function ReportsPage({
           variant="ghost"
           render={
             <a
-              href={
-                active === "daily"
-                  ? `/api/reports/daily-summary?from=${from}&to=${to}&sec=${[...sections].join(",") || "none"}`
-                  : `/api/reports/${active}?from=${from}&to=${to}${
-                      active === "methods" && method ? `&m=${method}` : ""
-                    }`
-              }
+              href={exportHref("csv")}
               download
             />
           }
         >
           <Download aria-hidden />
           CSV
+        </Button>
+        <Button
+          variant="ghost"
+          render={<a href={exportHref("xlsx")} download />}
+        >
+          <Download aria-hidden />
+          Excel
         </Button>
       </form>
 
@@ -562,6 +569,8 @@ export default async function ReportsPage({
                   <TableHead className="w-36">Reference</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead className="w-32">Method</TableHead>
+                  <TableHead className="w-36">VAT status</TableHead>
+                  <TableHead className="w-24 text-right">Rate</TableHead>
                   <TableHead className="w-28 text-right">Net</TableHead>
                   <TableHead className="w-28 text-right">VAT</TableHead>
                   <TableHead className="w-32 text-right">Gross</TableHead>
@@ -570,7 +579,7 @@ export default async function ReportsPage({
               <TableBody>
                 {journal.rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
+                      <TableCell colSpan={9} className="text-muted-foreground py-8 text-center">
                       No documents in this period.
                     </TableCell>
                   </TableRow>
@@ -614,6 +623,14 @@ export default async function ReportsPage({
                       <TableCell className="text-muted-foreground text-xs">
                         {row.methods.join(" + ") || "—"}
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {row.vatStatus}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-right text-xs tabular-nums">
+                        {row.vatEnabled
+                          ? `${(row.vatRate * 100).toFixed(2)}%`
+                          : "—"}
+                      </TableCell>
                       {/* Negative figures are the point of this report, so they
                           are shown as negative rather than dressed up. */}
                       <TableCell
@@ -646,7 +663,7 @@ export default async function ReportsPage({
 
                 {journal.rows.length > 0 ? (
                   <TableRow className="bg-muted/40 font-semibold">
-                    <TableCell colSpan={4}>Total for the period</TableCell>
+                    <TableCell colSpan={6}>Total for the period</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {formatRs(journal.totals.net)}
                     </TableCell>

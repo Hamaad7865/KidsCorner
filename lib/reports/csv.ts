@@ -36,7 +36,9 @@ export function csvEscape(value: string | number): string {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+export type ReportCell = string | number
+
 /** A whole sheet. CRLF between records, as the RFC specifies. */
-export function toCsv(head: string[], rows: (string | number)[][]): string {
+export function toCsv(head: string[], rows: ReportCell[][]): string {
   return [head, ...rows].map((r) => r.map(csvEscape).join(",")).join("\r\n")
 }

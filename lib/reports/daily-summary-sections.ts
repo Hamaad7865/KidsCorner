@@ -98,6 +98,8 @@ export function columnDefs(
   }
 
   if (on.has("taxes")) {
+    // `daily_summary` exposes only explicitly enabled frozen rates. A disabled
+    // transaction remains in headline turnover but never becomes a 0% band.
     for (const rate of summary.taxes) {
       cols.push({
         group: "VAT",

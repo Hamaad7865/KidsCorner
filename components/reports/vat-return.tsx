@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { formatPercent, formatRs, shopToday } from "@/lib/format"
+import { formatRs, shopToday } from "@/lib/format"
 import type { VatReport } from "@/lib/reports/vat"
 import { cn } from "@/lib/utils"
 
@@ -83,17 +83,12 @@ export function VatReturn({ report }: { report: VatReport }) {
       </div>
 
       <p className="text-muted-foreground text-sm">
-        Output VAT is read from each sale as it was charged, at the rate in
-        force that day — not re-derived, so a rate change never restates an
-        older sale. Input VAT is taken out of each received purchase by
-        subtraction at {formatPercent(report.rate, 1)}, because the
-        supplier invoice is recorded as one VAT-inclusive total.
+        Output and input VAT are read from the frozen values on each sale,
+        credit note and received purchase. Registration or rate changes never
+        restate an older document.
       </p>
       <p className="text-warning-foreground bg-warning-muted rounded-lg px-3.5 py-2.5 text-sm">
-        Check input VAT against the paper before filing. A supplier who
-        isn&rsquo;t VAT-registered charges none, and nothing here records which
-        of yours are — so this figure is the most VAT those purchases could
-        carry, not the amount you can certainly reclaim.
+        Check input VAT against the supplier invoice before filing.
       </p>
 
       {/* ── VAT by month — the figure each MRA return asks for ── */}

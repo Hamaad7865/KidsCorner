@@ -146,6 +146,8 @@ export type ShiftCloseSummary = {
   zId: number
   /** The frozen figures, exactly as stored. */
   totals: ZTotals
+  /** The exact identity array frozen in z_reports.vat_identity_snapshot. */
+  vatIdentities: VatIdentity[]
 }
 
 /**
@@ -174,6 +176,7 @@ export type ZTotals = {
   }[]
   categories: { name: string; lines: number; qty: number; incl: number }[]
   vat: { rate: number; label: string; excl: number; vat: number; incl: number }[]
+  vatIdentities: VatIdentity[]
   cashiers: { cashierId: string | null; name: string; saleCount: number; total: number }[]
   hourly: { hour: number; count: number; total: number }[]
   topSellers: { name: string; qty: number; total: number }[]
@@ -189,6 +192,12 @@ export type ZTotals = {
   credited: number
 }
 
+export type VatIdentity = {
+  policyId: number
+  rate: number
+  vatNumber: string | null
+}
+
 const num = (value: unknown): number => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -196,6 +205,14 @@ const num = (value: unknown): number => {
 
 const list = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? (value as Record<string, unknown>[]) : []
+
+const readVatIdentities = (value: unknown): VatIdentity[] =>
+  list(value).map((identity) => ({
+    policyId: num(identity.policyId),
+    rate: num(identity.rate),
+    vatNumber:
+      typeof identity.vatNumber === "string" ? identity.vatNumber : null,
+  }))
 
 /**
  * Reshapes the RPC's snake_case JSON into the app's camelCase.
@@ -236,6 +253,7 @@ export function readZTotals(raw: unknown): ZTotals {
       vat: num(v.vat),
       incl: num(v.incl),
     })),
+    vatIdentities: readVatIdentities(t.vat_identities),
     cashiers: list(t.cashiers).map((c) => ({
       cashierId: typeof c.cashier_id === "string" ? c.cashier_id : null,
       name: String(c.name ?? "Unknown"),
@@ -332,6 +350,10 @@ export async function closeShiftFor(
   }
 
   const result = (data ?? {}) as Record<string, unknown>
+  const totals = readZTotals(result.totals)
+  const vatIdentities = readVatIdentities(
+    result.vat_identity_snapshot ?? totals.vatIdentities,
+  )
 
   return {
     ok: true,
@@ -341,7 +363,8 @@ export async function closeShiftFor(
       variance: round2(Number(result.variance)),
       zNo: String(result.z_no ?? ""),
       zId: Number(result.z_id ?? 0),
-      totals: readZTotals(result.totals),
+      totals,
+      vatIdentities,
     },
   }
 }

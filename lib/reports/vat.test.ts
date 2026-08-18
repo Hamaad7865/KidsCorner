@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest"
 
 import { shopDayOf } from "@/lib/format"
-import { bucketOf, monthLabel, monthsBetween } from "./vat"
+import { bucketOf, frozenVatAmount, monthLabel, monthsBetween } from "./vat"
+
+describe("frozenVatAmount", () => {
+  it("excludes a disabled document even if a stale amount is present", () => {
+    expect(frozenVatAmount({ vatEnabled: false, vatAmount: 999 })).toBe(0)
+  })
+
+  it("uses the amount frozen on an enabled document", () => {
+    expect(frozenVatAmount({ vatEnabled: true, vatAmount: 15 })).toBe(15)
+  })
+})
 
 describe("monthsBetween", () => {
   it("fills every month the range touches, including the empty ones", () => {

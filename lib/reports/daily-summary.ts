@@ -37,6 +37,7 @@ export type DailySummary = {
   rows: DailySummaryRow[]
   /** The column headers that actually traded in the period. */
   methods: string[]
+  /** Frozen enabled VAT rates only; disabled turnover has no synthetic band. */
   taxes: string[]
   sellers: string[]
   categories: string[]

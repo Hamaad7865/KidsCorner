@@ -49,6 +49,15 @@ export type PnlReport = {
   truncated: boolean
 }
 
+/** Net value from the immutable tax snapshot, never from today's rate. */
+export function frozenNet(document: {
+  total: number
+  vatEnabled: boolean
+  vatAmount: number
+}): number {
+  return round2(document.total - (document.vatEnabled ? document.vatAmount : 0))
+}
+
 /**
  * Pay-outs grouped by what they were for, biggest first.
  *
@@ -87,7 +96,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
     await Promise.all([
       supabase
         .from("sales")
-        .select("id, sale_date, total, vat_amount, status")
+        .select("id, sale_date, total, vat_enabled, vat_rate, vat_amount, status")
         .in("status", ["completed", "refunded"])
         .gte("sale_date", after)
         .lte("sale_date", before)
@@ -95,7 +104,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
         .limit(OVER_CAP),
       supabase
         .from("credit_notes")
-        .select("id, created_at, total, vat_amount")
+        .select("id, created_at, total, vat_enabled, vat_rate, vat_amount")
         .gte("created_at", after)
         .lte("created_at", before)
         .order("created_at", { ascending: true })
@@ -155,8 +164,26 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
   // never the total divided by today's rate, which would restate every sale
   // made before a rate change.
   const revenue = round2(
-    sales.reduce((sum, s) => sum + (Number(s.total) - Number(s.vat_amount)), 0) -
-      credits.reduce((sum, c) => sum + (Number(c.total) - Number(c.vat_amount)), 0),
+    sales.reduce(
+      (sum, s) =>
+        sum +
+        frozenNet({
+          total: Number(s.total),
+          vatEnabled: s.vat_enabled,
+          vatAmount: Number(s.vat_amount),
+        }),
+      0,
+    ) -
+      credits.reduce(
+        (sum, c) =>
+          sum +
+          frozenNet({
+            total: Number(c.total),
+            vatEnabled: c.vat_enabled,
+            vatAmount: Number(c.vat_amount),
+          }),
+        0,
+      ),
   )
 
   const cost = round2(

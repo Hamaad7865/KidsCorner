@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest"
 
+import { frozenNet } from "./pnl"
 import { groupPayouts } from "./pnl"
+
+describe("frozenNet", () => {
+  it("keeps disabled turnover gross even when today's shop policy is enabled", () => {
+    expect(frozenNet({ total: 115, vatEnabled: false, vatAmount: 0 })).toBe(115)
+  })
+
+  it("subtracts the VAT frozen on an enabled historical document", () => {
+    expect(frozenNet({ total: 115, vatEnabled: true, vatAmount: 15 })).toBe(100)
+  })
+})
 
 describe("groupPayouts", () => {
   it("counts only money leaving the drawer", () => {

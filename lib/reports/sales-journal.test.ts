@@ -17,6 +17,8 @@ const sale = (over: Partial<Parameters<typeof saleLine>[0]> = {}) =>
     status: "completed",
     // A VAT-inclusive 2,300 at 15%: 300 of VAT inside it, 2,000 net.
     vatAmount: 300,
+    vatEnabled: true,
+    vatRate: 0.15,
     total: 2_300,
     ...over,
   })
@@ -27,6 +29,25 @@ describe("VAT is derived by subtraction, never added on top", () => {
     expect(row.gross).toBe(2_300)
     expect(row.vat).toBe(300)
     expect(row.net).toBe(2_000)
+  })
+
+  it("exposes the frozen registration status and effective rate", () => {
+    expect(sale()).toMatchObject({
+      vatEnabled: true,
+      vatRate: 0.15,
+      vatStatus: "VAT registered",
+    })
+  })
+
+  it("labels a disabled sale without inventing a zero-rate VAT band", () => {
+    expect(sale({ vatEnabled: false, vatRate: 0, vatAmount: 0 })).toMatchObject({
+      net: 2_300,
+      vat: 0,
+      gross: 2_300,
+      vatEnabled: false,
+      vatRate: 0,
+      vatStatus: "Not VAT registered",
+    })
   })
 
   it("keeps net + VAT equal to gross", () => {
@@ -42,6 +63,8 @@ describe("credit notes are negative", () => {
     creditNo: "CN260731-1",
     createdAt: "2026-07-31T16:00:00Z",
     vatAmount: 150,
+    vatEnabled: true,
+    vatRate: 0.15,
     total: 1_150,
     refundMethod: "cash",
     againstReference: "S260731-1",
@@ -105,6 +128,8 @@ describe("journalTotals", () => {
         creditNo: "CN-1",
         createdAt: "2026-07-31T17:00:00Z",
         vatAmount: 75,
+        vatEnabled: true,
+        vatRate: 0.15,
         total: 575,
       }),
     ]
