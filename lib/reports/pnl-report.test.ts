@@ -91,17 +91,19 @@ describe("getPnlReport", () => {
       purchases: [
         {
           id: 12,
+          status: "received",
           total_amount: 115,
           vat_enabled: false,
           vat_amount: 0,
-          purchase_items: [{ variant_id: 101, unit_cost: 115 }],
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 115 }],
         },
         {
           id: 11,
+          status: "received",
           total_amount: 115,
           vat_enabled: true,
           vat_amount: 15,
-          purchase_items: [{ variant_id: 202, unit_cost: 115 }],
+          purchase_items: [{ variant_id: 202, qty: 1, unit_cost: 115 }],
         },
       ],
       stock_movements: [
@@ -193,17 +195,19 @@ describe("getPnlReport", () => {
       purchases: [
         {
           id: 20,
+          status: "received",
           total_amount: 115,
           vat_enabled: true,
           vat_amount: 15,
-          purchase_items: [{ variant_id: 101, unit_cost: 115 }],
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 115 }],
         },
         {
           id: 10,
+          status: "received",
           total_amount: 130,
           vat_enabled: false,
           vat_amount: 0,
-          purchase_items: [{ variant_id: 101, unit_cost: 130 }],
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 130 }],
         },
       ],
     })
@@ -242,6 +246,155 @@ describe("getPnlReport", () => {
       "status",
       "received",
     ])
+  })
+
+  it("skips an unreceived newest candidate and breaks equal receipt times by movement id", async () => {
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 230,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 1,
+          variant_id: 101,
+          product_variants: { cost_price: 999 },
+        },
+      ],
+      // Deliberately unsorted: correctness must not depend on PostgREST or on
+      // the report fake applying the requested order.
+      stock_movements: [
+        {
+          id: 100,
+          variant_id: 101,
+          reference_id: 10,
+          created_at: "2026-07-01T10:00:00+00:00",
+        },
+        {
+          id: 300,
+          variant_id: 101,
+          reference_id: 999,
+          created_at: "2026-07-03T10:00:00+00:00",
+        },
+        {
+          id: 201,
+          variant_id: 101,
+          reference_id: 20,
+          created_at: "2026-07-02T10:00:00+00:00",
+        },
+        {
+          id: 202,
+          variant_id: 101,
+          reference_id: 30,
+          created_at: "2026-07-02T10:00:00+00:00",
+        },
+      ],
+      purchases: [
+        {
+          id: 10,
+          status: "received",
+          total_amount: 110,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 110 }],
+        },
+        {
+          id: 20,
+          status: "received",
+          total_amount: 120,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 120 }],
+        },
+        {
+          id: 30,
+          status: "received",
+          total_amount: 130,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 130 }],
+        },
+        // The fake intentionally returns this despite the server-side filter,
+        // proving application code validates the selected header status.
+        {
+          id: 999,
+          status: "draft",
+          total_amount: 999,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [{ variant_id: 101, qty: 1, unit_cost: 999 }],
+        },
+      ],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    // Draft 999 is skipped. Purchases 20 and 30 share a timestamp, so the
+    // higher receipt movement id selects purchase 30.
+    expect(report.cost).toBe(130)
+  })
+
+  it("weights duplicate variant lines by quantity without counting duplicate movements", async () => {
+    client = fakeClient({
+      sales: [
+        {
+          id: 1,
+          sale_date: "2026-07-10T06:00:00+00:00",
+          total: 600,
+          vat_enabled: false,
+          vat_rate: 0,
+          vat_amount: 0,
+          status: "completed",
+        },
+      ],
+      sale_items: [
+        {
+          qty: 2,
+          variant_id: 202,
+          product_variants: { cost_price: 999 },
+        },
+      ],
+      stock_movements: [
+        {
+          id: 401,
+          variant_id: 202,
+          reference_id: 40,
+          created_at: "2026-07-04T10:00:00+00:00",
+        },
+        {
+          id: 400,
+          variant_id: 202,
+          reference_id: 40,
+          created_at: "2026-07-04T10:00:00+00:00",
+        },
+      ],
+      purchases: [
+        {
+          id: 40,
+          status: "received",
+          total_amount: 520,
+          vat_enabled: false,
+          vat_amount: 0,
+          purchase_items: [
+            { variant_id: 202, qty: 1, unit_cost: 100 },
+            { variant_id: 202, qty: 3, unit_cost: 140 },
+          ],
+        },
+      ],
+    })
+
+    const report = await getPnlReport("2026-07-01", "2026-07-31")
+
+    // Weighted unit cost is (1*100 + 3*140) / 4 = 130. Two sold units cost
+    // 260; the duplicate receipt movement must not apply that cost twice.
+    expect(report.cost).toBe(260)
   })
 
   it("takes only money that left the drawer off the bottom line", async () => {

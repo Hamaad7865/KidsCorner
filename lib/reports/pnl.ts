@@ -61,26 +61,61 @@ export function frozenNet(document: {
 
 type ReceivedPurchase = {
   id: number
+  status: string
   total_amount: number
   vat_enabled: boolean | null
   vat_amount: number | null
-  purchase_items: { variant_id: number; unit_cost: number }[]
+  purchase_items: { variant_id: number; qty: number; unit_cost: number }[]
+}
+
+type PurchaseReceipt = {
+  id: number
+  variant_id: number
+  reference_id: number | null
+  created_at: string
 }
 
 /** Resolve each variant through its latest immutable purchase receipt event. */
 function latestPurchaseCosts(
   rows: ReceivedPurchase[],
-  receiptPurchaseByVariant: ReadonlyMap<number, number>,
+  receipts: PurchaseReceipt[],
 ): Map<number, number> {
   const costs = new Map<number, number>()
   const purchases = new Map(rows.map((purchase) => [purchase.id, purchase]))
+  const receiptTime = (createdAt: string) => {
+    const timestamp = Date.parse(createdAt)
+    return Number.isNaN(timestamp) ? Number.NEGATIVE_INFINITY : timestamp
+  }
 
-  for (const [variantId, purchaseId] of receiptPurchaseByVariant) {
-    const purchase = purchases.get(purchaseId)
-    const item = purchase?.purchase_items.find(
-      (purchaseItem) => purchaseItem.variant_id === variantId,
+  const latestFirst = [...receipts].sort((a, b) => {
+    const timestampOrder = receiptTime(b.created_at) - receiptTime(a.created_at)
+    return timestampOrder || b.id - a.id
+  })
+
+  for (const receipt of latestFirst) {
+    if (costs.has(receipt.variant_id) || receipt.reference_id === null) continue
+
+    const purchase = purchases.get(receipt.reference_id)
+    if (!purchase || purchase.status !== "received") continue
+
+    const matchingItems = purchase.purchase_items.filter(
+      (item) =>
+        item.variant_id === receipt.variant_id &&
+        Number.isFinite(Number(item.qty)) &&
+        Number(item.qty) > 0 &&
+        Number.isFinite(Number(item.unit_cost)),
     )
-    if (!purchase || !item) continue
+    if (matchingItems.length === 0) continue
+
+    const totalQty = matchingItems.reduce(
+      (sum, item) => sum + Number(item.qty),
+      0,
+    )
+    const grossUnitCost =
+      matchingItems.reduce(
+        (sum, item) => sum + Number(item.qty) * Number(item.unit_cost),
+        0,
+      ) / totalQty
 
     const gross = Number(purchase.total_amount)
     const net = frozenNet({
@@ -89,7 +124,7 @@ function latestPurchaseCosts(
       vatAmount: Number(purchase.vat_amount ?? 0),
     })
     const netFactor = gross > 0 ? net / gross : 1
-    costs.set(variantId, round2(Number(item.unit_cost) * netFactor))
+    costs.set(receipt.variant_id, round2(grossUnitCost * netFactor))
   }
 
   return costs
@@ -207,25 +242,20 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
 
   if (receiptResult.error) throw receiptResult.error
   const receiptRows = receiptResult.data ?? []
-  const receiptPurchaseByVariant = new Map<number, number>()
-
-  // Rows are latest-first; movement id makes equal timestamps deterministic.
-  for (const receipt of receiptRows.slice(0, ROW_CAP)) {
-    if (
-      receipt.reference_id !== null &&
-      !receiptPurchaseByVariant.has(receipt.variant_id)
-    ) {
-      receiptPurchaseByVariant.set(receipt.variant_id, receipt.reference_id)
-    }
-  }
-
-  const receiptPurchaseIds = [...new Set(receiptPurchaseByVariant.values())]
+  const receiptCandidates = receiptRows.slice(0, ROW_CAP)
+  const receiptPurchaseIds = [
+    ...new Set(
+      receiptCandidates
+        .map((receipt) => receipt.reference_id)
+        .filter((id): id is number => id !== null),
+    ),
+  ]
   const purchaseResult =
     receiptPurchaseIds.length > 0
       ? await supabase
           .from("purchases")
           .select(
-            "id, total_amount, vat_enabled, vat_amount, purchase_items!inner ( variant_id, unit_cost )",
+            "id, status, total_amount, vat_enabled, vat_amount, purchase_items!inner ( variant_id, qty, unit_cost )",
           )
           .eq("status", "received")
           .in("id", receiptPurchaseIds)
@@ -252,7 +282,7 @@ export async function getPnlReport(from: string, to: string): Promise<PnlReport>
   const movements = movementRows.slice(0, ROW_CAP)
   const purchaseCosts = latestPurchaseCosts(
     purchaseRows.slice(0, ROW_CAP),
-    receiptPurchaseByVariant,
+    receiptCandidates,
   )
 
   // VAT is contained in the total, so net is the total LESS the frozen VAT —
