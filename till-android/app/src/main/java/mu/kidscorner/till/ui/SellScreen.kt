@@ -84,6 +84,7 @@ import kotlinx.coroutines.delay
 import mu.kidscorner.till.data.AppliedDiscountLocal
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.CartTotals
+import mu.kidscorner.till.data.VatDisplay
 import mu.kidscorner.till.data.Cashier
 import mu.kidscorner.till.data.CatalogVariant
 import mu.kidscorner.till.data.Customer
@@ -195,6 +196,8 @@ fun SellScreen(
     catalogLoading: Boolean,
     online: Boolean,
     vatRate: Double,
+    /** Whether the shop is VAT registered — hides all VAT wording when off. */
+    vatEnabled: Boolean,
     customer: Customer?,
     discount: AppliedDiscountLocal?,
     heldCount: Int,
@@ -507,6 +510,7 @@ fun SellScreen(
                     lines = lines,
                     totals = totals,
                     vatRate = vatRate,
+                    vatEnabled = vatEnabled,
                     tillOpen = tillOpen,
                     customer = customer,
                     discount = discount,
@@ -1144,6 +1148,7 @@ private fun CartPane(
     lines: List<CartLine>,
     totals: CartTotals,
     vatRate: Double,
+    vatEnabled: Boolean,
     tillOpen: Boolean,
     customer: Customer?,
     discount: AppliedDiscountLocal?,
@@ -1172,6 +1177,7 @@ private fun CartPane(
         CartFooter(
             totals = totals,
             vatRate = vatRate,
+            vatEnabled = vatEnabled,
             discount = discount,
             note = note,
             onOpenDiscount = onOpenDiscount,
@@ -1744,6 +1750,7 @@ private fun Badge(
 private fun CartFooter(
     totals: CartTotals,
     vatRate: Double,
+    vatEnabled: Boolean,
     discount: AppliedDiscountLocal?,
     note: String,
     customer: Customer?,
@@ -1791,25 +1798,29 @@ private fun CartFooter(
                     letterSpacing = 1.4.sp,
                     color = Handoff.Muted3,
                 )
-                Text(
-                    "incl. VAT ${(vatRate * 100).toInt()}%  ${formatAmount(totals.vat)}",
-                    fontFamily = PlexMono,
-                    fontSize = 11.5.sp,
-                    // Muted3 and Medium, not Muted4 and Normal.
-                    //
-                    // Asked for as "a bit pale", and it was worse than pale:
-                    // Muted4 on this panel measures 3.03:1, under the 4.5:1
-                    // that text needs. It passed check-contrast only because
-                    // Muted4 carries an exemption reading "mostly an icon" —
-                    // true where it was written, not true here, where it is a
-                    // VAT figure on a receipt. Muted3 is 4.78:1.
-                    //
-                    // Same grey as the TOTAL label beside it; the hierarchy
-                    // between them is carried by size and letter-spacing, so
-                    // nothing needed a paler colour to stay subordinate.
-                    fontWeight = FontWeight.Medium,
-                    color = Handoff.Muted3,
-                )
+                // The contained-VAT note, or nothing at all when the shop is not
+                // VAT registered — the line is removed, not shown as "VAT 0%".
+                VatDisplay.sellVatNote(vatEnabled, vatRate, totals.vat)?.let { note ->
+                    Text(
+                        note,
+                        fontFamily = PlexMono,
+                        fontSize = 11.5.sp,
+                        // Muted3 and Medium, not Muted4 and Normal.
+                        //
+                        // Asked for as "a bit pale", and it was worse than pale:
+                        // Muted4 on this panel measures 3.03:1, under the 4.5:1
+                        // that text needs. It passed check-contrast only because
+                        // Muted4 carries an exemption reading "mostly an icon" —
+                        // true where it was written, not true here, where it is a
+                        // VAT figure on a receipt. Muted3 is 4.78:1.
+                        //
+                        // Same grey as the TOTAL label beside it; the hierarchy
+                        // between them is carried by size and letter-spacing, so
+                        // nothing needed a paler colour to stay subordinate.
+                        fontWeight = FontWeight.Medium,
+                        color = Handoff.Muted3,
+                    )
+                }
             }
             Text(
                 formatAmount(totals.total),

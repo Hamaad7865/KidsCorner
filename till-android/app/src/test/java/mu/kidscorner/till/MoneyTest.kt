@@ -67,6 +67,27 @@ class MoneyTest {
     }
 
     @Test
+    fun `a disabled shop charges the same total with exactly zero VAT`() {
+        // The whole promise of the toggle: prices are inclusive, so turning VAT
+        // off must not move the payable total — only the contained VAT, to zero.
+        val enabled = cartTotals(listOf(line(642.64, 1)), saleDiscount = 0.0, vatRate = 0.15)
+        val disabled = cartTotals(listOf(line(642.64, 1)), saleDiscount = 0.0, vatRate = 0.0)
+
+        assertEquals(enabled.total, disabled.total, 0.0)
+        // Exactly zero — no 642.64 - 642.64/1.0 rounding tail.
+        assertEquals(0.0, disabled.vat, 0.0)
+    }
+
+    @Test
+    fun `a zero rate yields no divide or rounding anomaly across awkward totals`() {
+        for (price in listOf(0.01, 1.005, 99.99, 642.64, 12_345.67)) {
+            val totals = cartTotals(listOf(line(price, 1)), saleDiscount = 0.0, vatRate = 0.0)
+            assertEquals("total unchanged at rate 0 for $price", round2(price), totals.total, 0.0)
+            assertEquals("zero VAT at rate 0 for $price", 0.0, totals.vat, 0.0)
+        }
+    }
+
+    @Test
     fun `a sale discount applies after line discounts and cannot go below zero`() {
         val lines = listOf(line(100.0, 2, discount = 20.0))
         // 200 gross, 20 off the line = 180, then a 500 sale discount clamps to 180.

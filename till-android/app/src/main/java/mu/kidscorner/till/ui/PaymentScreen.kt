@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.CartTotals
+import mu.kidscorner.till.data.VatDisplay
 import mu.kidscorner.till.data.SalePayment
 import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
@@ -94,6 +95,8 @@ fun PaymentScreen(
     lines: List<CartLine>,
     paymentMethods: List<String>,
     cashierName: String,
+    /** Whether the shop is VAT registered — chooses the total's label. */
+    vatEnabled: Boolean,
     busy: Boolean,
     error: String?,
     frozen: Boolean,
@@ -348,7 +351,7 @@ fun PaymentScreen(
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Total incl. tax",
+                        VatDisplay.paymentTotalLabel(vatEnabled),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Handoff.Muted,

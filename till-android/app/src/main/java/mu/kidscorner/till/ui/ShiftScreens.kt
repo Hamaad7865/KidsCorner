@@ -440,10 +440,18 @@ fun CloseShiftScreen(
                                 color = Handoff.Ink,
                                 modifier = Modifier.padding(bottom = 10.dp),
                             )
-                            DrawerRow("Discounts given", formatRs(totals.discountTotal))
-                            // VAT-inclusive: this is the portion already inside
-                            // the totals above, never something added to them.
-                            DrawerRow("VAT within sales", formatRs(totals.vatTotal))
+                            if (totals.discountTotal != 0.0) {
+                                DrawerRow("Discounts given", formatRs(totals.discountTotal))
+                            }
+                            // VAT-inclusive: the portion already inside the totals
+                            // above, never something added to them. Shown only when
+                            // the shift actually took VAT — a shift traded entirely
+                            // while unregistered draws no VAT row, even if it gave
+                            // discounts. Driven by the frozen sum, not the current
+                            // registration setting.
+                            if (totals.vatTotal != 0.0) {
+                                DrawerRow("VAT within sales", formatRs(totals.vatTotal))
+                            }
                         }
                     }
                 }

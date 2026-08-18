@@ -1624,7 +1624,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         cartTotals(
             lines,
             saleDiscount = state.discount?.amount ?: 0.0,
-            vatRate = state.shop?.vatRate ?: 0.15,
+            // The effective rate: zero while the shop is not VAT registered, so a
+            // disabled basket contains no VAT while the payable total is unchanged.
+            vatRate = state.shop?.resolvedVatRate ?: 0.15,
         )
 
     /** Recomputes totals after anything that can change them. */
