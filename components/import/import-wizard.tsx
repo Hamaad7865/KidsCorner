@@ -37,6 +37,7 @@ import { formatRs } from "@/lib/format"
 import {
   createMissingMasters,
   findExistingBarcodes,
+  findExistingProductCodes,
   importChunk,
   type ChunkResult,
   type CommitRow,
@@ -67,6 +68,7 @@ const UNMAPPED = "__none__"
 
 /** Module-level so its identity is stable across renders. */
 const NO_BARCODES: ReadonlySet<string> = new Set<string>()
+const NO_PRODUCT_CODES: ReadonlySet<string> = new Set<string>()
 
 type Step = 1 | 2 | 3
 
@@ -108,6 +110,9 @@ export function ImportWizard({ master }: { master: MasterData }) {
   const [existingBarcodes, setExistingBarcodes] = useState<Set<string>>(new Set())
   /** Set when the duplicate-barcode check could not complete. */
   const [barcodeCheckError, setBarcodeCheckError] = useState<string | null>(null)
+  const [existingProductCodes, setExistingProductCodes] = useState<Set<string>>(new Set())
+  /** Set when the duplicate-product-code check could not complete. */
+  const [productCodeCheckError, setProductCodeCheckError] = useState<string | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
   const [isParsing, startParsing] = useTransition()
 
@@ -162,6 +167,16 @@ export function ImportWizard({ master }: { master: MasterData }) {
     [rawRows],
   )
 
+  /** Product codes as the *current* mapping sees them, in their typed case. */
+  const fileProductCodes = useMemo(
+    () => [
+      ...new Set(
+        rawRows.map((r) => (r.values.productCode ?? "").trim()).filter(Boolean),
+      ),
+    ],
+    [rawRows],
+  )
+
   // Re-checked whenever the mapped barcode values change, so remapping the
   // Barcode column in step 2 revalidates against the database rather than
   // keeping the answer from upload time.
@@ -185,6 +200,25 @@ export function ImportWizard({ master }: { master: MasterData }) {
     }
   }, [fileBarcodes])
 
+  // Same idea, for the Product Code column.
+  useEffect(() => {
+    if (fileProductCodes.length === 0) return
+    let cancelled = false
+    findExistingProductCodes(fileProductCodes).then((result) => {
+      if (cancelled) return
+      if (result.ok) {
+        setExistingProductCodes(new Set(result.taken))
+        setProductCodeCheckError(null)
+      } else {
+        setExistingProductCodes(new Set())
+        setProductCodeCheckError(result.error)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [fileProductCodes])
+
   const summary: ValidationSummary = useMemo(
     () =>
       validateRows(rawRows, lookup, {
@@ -192,8 +226,10 @@ export function ImportWizard({ master }: { master: MasterData }) {
         // there is nothing to collide with, and clearing state synchronously
         // inside an effect just causes a cascading render.
         existingBarcodes: fileBarcodes.length === 0 ? NO_BARCODES : existingBarcodes,
+        existingProductCodes:
+          fileProductCodes.length === 0 ? NO_PRODUCT_CODES : existingProductCodes,
       }),
-    [rawRows, lookup, existingBarcodes, fileBarcodes],
+    [rawRows, lookup, existingBarcodes, fileBarcodes, existingProductCodes, fileProductCodes],
   )
 
   const handleFile = useCallback((file: File) => {
@@ -247,11 +283,13 @@ export function ImportWizard({ master }: { master: MasterData }) {
       wch:
         header === "Product Name"
           ? 28
-          : header === "Shelf Location"
-            ? 18
-            : header === "Location"
-              ? 14
-              : Math.max(12, header.length + 2),
+          : header === "Product Code"
+            ? 16
+            : header === "Shelf Location"
+              ? 18
+              : header === "Location"
+                ? 14
+                : Math.max(12, header.length + 2),
     }))
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, "Products")
@@ -325,6 +363,7 @@ export function ImportWizard({ master }: { master: MasterData }) {
     const commitRows: CommitRow[] = ready.map((row) => ({
       rowNumber: row.rowNumber,
       productName: row.productName,
+      productCode: row.productCode,
       categoryId: row.categoryId as number,
       brandId: row.brandId,
       gender: row.gender,
@@ -433,6 +472,18 @@ export function ImportWizard({ master }: { master: MasterData }) {
           </Alert>
         ) : null}
 
+        {productCodeCheckError ? (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden />
+            <AlertTitle>Product codes could not be checked</AlertTitle>
+            <AlertDescription>
+              {productCodeCheckError} Importing is held until this succeeds — a
+              file whose product codes have not been checked could give two
+              products the same one.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <ColumnMapper headers={headers} mapping={mapping} onChange={setMapping} />
 
         <SummaryBar
@@ -483,7 +534,8 @@ export function ImportWizard({ master }: { master: MasterData }) {
                 isImporting ||
                 readyCount === 0 ||
                 missingRequired.length > 0 ||
-                barcodeCheckError !== null
+                barcodeCheckError !== null ||
+                productCodeCheckError !== null
               }
             >
               {isImporting ? (
@@ -516,6 +568,8 @@ export function ImportWizard({ master }: { master: MasterData }) {
         setProgress(0)
         setImportError(null)
         setExistingBarcodes(new Set())
+        setExistingProductCodes(new Set())
+        setProductCodeCheckError(null)
       }}
     />
   )
@@ -782,6 +836,7 @@ function PreviewTable({ summary }: { summary: ValidationSummary }) {
             <TableRow>
               <TableHead className="w-14">Row</TableHead>
               <TableHead>Product</TableHead>
+              <TableHead className="w-28">Code</TableHead>
               <TableHead className="w-28">Size</TableHead>
               <TableHead className="w-28">Colour</TableHead>
               <TableHead className="w-32">Shelf</TableHead>
@@ -807,6 +862,7 @@ function PreviewTable({ summary }: { summary: ValidationSummary }) {
                     {row.rowNumber}
                   </TableCell>
                   <TableCell className="font-medium">{row.productName || "—"}</TableCell>
+                  <TableCell>{row.productCode || "—"}</TableCell>
                   <TableCell>{row.sizeLabel || "—"}</TableCell>
                   <TableCell>{row.colourName || "—"}</TableCell>
                   <TableCell>{row.shelfLocation || "—"}</TableCell>

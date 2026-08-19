@@ -15,6 +15,15 @@ export const IMPORT_FIELDS = [
     required: true,
     aliases: ["product name", "product", "name", "item", "item name", "description"],
   },
+  // Optional at the file level even though the New Product form requires one —
+  // a supplier's sheet often predates the shop assigning its own code, and the
+  // product can still be imported and coded later from its detail page.
+  {
+    key: "productCode",
+    label: "Product Code",
+    required: false,
+    aliases: ["product code", "code", "item code", "stock code", "staff code", "product id"],
+  },
   {
     key: "category",
     label: "Category",
@@ -273,9 +282,9 @@ export const TEMPLATE_HEADERS = IMPORT_FIELDS.map((f) => f.label)
 // tee is sized "M" (Clothing Size); the sandals carry a Shoe Size. That is the
 // shape the importer expects — one size kind per row.
 export const TEMPLATE_SAMPLE_ROWS = [
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Navy", 180, 320, 12, "6291041500213", "A12", "Shop"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "", "Navy", 180, 320, 8, "6291041500214", "A12", "Shop"],
-  ["Striped cotton t-shirt", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Red", 180, 320, 5, "", "A12", "Warehouse"],
-  ["Graphic tee", "T-Shirts", "Zara Kids", "Boy", "", "M", "", "Navy", 190, 340, 9, "", "B03", "Shop"],
-  ["Canvas sandals", "Sandals", "", "Girl", "", "", "EU 24", "Pink", 240, 450, 6, "", "S08", "Warehouse"],
+  ["Striped cotton t-shirt", "PC-1001", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Navy", 180, 320, 12, "6291041500213", "A12", "Shop"],
+  ["Striped cotton t-shirt", "PC-1001", "T-Shirts", "Zara Kids", "Boy", "3-4 yrs", "", "", "Navy", 180, 320, 8, "6291041500214", "A12", "Shop"],
+  ["Striped cotton t-shirt", "PC-1001", "T-Shirts", "Zara Kids", "Boy", "2-3 yrs", "", "", "Red", 180, 320, 5, "", "A12", "Warehouse"],
+  ["Graphic tee", "PC-1002", "T-Shirts", "Zara Kids", "Boy", "", "M", "", "Navy", 190, 340, 9, "", "B03", "Shop"],
+  ["Canvas sandals", "PC-1003", "Sandals", "", "Girl", "", "", "EU 24", "Pink", 240, 450, 6, "", "S08", "Warehouse"],
 ]

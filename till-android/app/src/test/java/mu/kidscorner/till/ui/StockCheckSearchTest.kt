@@ -15,6 +15,7 @@ class StockCheckSearchTest {
             productId = 10,
             productName = "Chemise cotton",
             shelfLocation = "A12",
+            productCode = "PC-1023",
             sizeLabel = "6",
             colourName = "Blue",
             sku = "CH010-6-BLUE",
@@ -26,6 +27,7 @@ class StockCheckSearchTest {
             productId = 10,
             productName = "Chemise cotton",
             shelfLocation = "A12",
+            productCode = "PC-1023",
             sizeLabel = "7",
             colourName = "Red",
             sku = "CH010-7-RED",
@@ -52,6 +54,7 @@ class StockCheckSearchTest {
         assertEquals(1, matches.size)
         assertEquals(10, matches.single().productId)
         assertEquals("A12", matches.single().shelfLocation)
+        assertEquals("PC-1023", matches.single().productCode)
         assertEquals(listOf(101, 102), matches.single().variants.map { it.id })
         assertFalse(matches.single().barcodeMatch)
     }
@@ -61,6 +64,21 @@ class StockCheckSearchTest {
         val matches = stockCheckMatches("7-red", catalog)
 
         assertEquals(listOf(10), matches.map { it.productId })
+    }
+
+    @Test
+    fun `product code substring finds its product, case insensitively`() {
+        val matches = stockCheckMatches("pc-1023", catalog)
+
+        assertEquals(listOf(10), matches.map { it.productId })
+    }
+
+    @Test
+    fun `a product with no code yet is unaffected by a code query`() {
+        val matches = stockCheckMatches("PC-1023", catalog)
+
+        assertEquals(listOf(10), matches.map { it.productId })
+        assertTrue(matches.none { it.productId == 20 })
     }
 
     @Test

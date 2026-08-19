@@ -129,6 +129,25 @@ export function ProductForm({
         <FieldError id="product-name-error" message={state.fieldErrors.name} />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="product-code">Product code</Label>
+        <Input
+          id="product-code"
+          name="productCode"
+          defaultValue={product?.productCode ?? ""}
+          placeholder="e.g. PC-1023"
+          maxLength={40}
+          aria-invalid={Boolean(state.fieldErrors.productCode)}
+          aria-describedby={
+            state.fieldErrors.productCode ? "product-code-error" : "product-code-help"
+          }
+        />
+        <p id="product-code-help" className="text-muted-foreground text-xs">
+          How staff identify this product — must be unique.
+        </p>
+        <FieldError id="product-code-error" message={state.fieldErrors.productCode} />
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor="product-category">Category</Label>

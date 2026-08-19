@@ -4,7 +4,7 @@ import type { TillClient } from "./sale-core"
 import { loadCatalog } from "./queries"
 
 describe("loadCatalog", () => {
-  it("maps the product shelf location onto each cached variant", async () => {
+  it("maps the product shelf location and product code onto each cached variant", async () => {
     const query = {
       select: vi.fn(),
       eq: vi.fn(),
@@ -29,6 +29,7 @@ describe("loadCatalog", () => {
             category_id: 3,
             image_url: null,
             shelf_location: "A12",
+            product_code: "PC-1023",
             categories: { name: "T-Shirts" },
           },
           sizes: { label: "6", sort_order: 6 },
@@ -47,6 +48,7 @@ describe("loadCatalog", () => {
       productId: 7,
       productName: "Chemise cotton",
       shelfLocation: "A12",
+      productCode: "PC-1023",
     })
   })
 })

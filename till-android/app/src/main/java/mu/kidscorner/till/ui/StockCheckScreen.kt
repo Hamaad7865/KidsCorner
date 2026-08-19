@@ -230,6 +230,7 @@ private fun productFrom(
     return StockCheckProduct(
         productId = productId,
         productName = first.productName,
+        productCode = variants.firstNotNullOfOrNull { it.productCode },
         shelfLocation = variants.firstNotNullOfOrNull { it.shelfLocation },
         variants = variants.sortedWith(compareBy<CatalogVariant> { it.sizeSort }.thenBy { it.id }),
         barcodeMatch = false,
@@ -253,12 +254,12 @@ private fun MatchList(
             query.isBlank() -> EmptyMessage(
                 icon = Icons.Default.Inventory2,
                 title = "Find a product",
-                detail = "Type a name or SKU, or scan its barcode.",
+                detail = "Type a name, SKU or product code, or scan its barcode.",
             )
             matches.isEmpty() -> EmptyMessage(
                 icon = Icons.Default.Search,
                 title = "No matching product",
-                detail = "Try another name, SKU or barcode.",
+                detail = "Try another name, SKU, product code or barcode.",
             )
             else -> LazyColumn {
                 item {
@@ -284,10 +285,13 @@ private fun MatchList(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "Shelf ${product.shelfLocation ?: "not set"} · " +
+                            (product.productCode?.let { "$it · " } ?: "") +
+                                "Shelf ${product.shelfLocation ?: "not set"} · " +
                                 "${product.variants.size} variant${if (product.variants.size == 1) "" else "s"}",
                             color = Handoff.Muted2,
                             fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -325,6 +329,11 @@ private fun StockDetails(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(product.productName, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Code: ${product.productCode ?: "Not set"}",
+                        color = Handoff.Muted,
+                        fontSize = 14.sp,
+                    )
                     Text(
                         "Shelf location: ${product.shelfLocation ?: "Not set"}",
                         color = Handoff.Muted,

@@ -30,7 +30,10 @@ const lookup: MasterLookup = buildLookup({
   ] as unknown as Size[],
 })
 
-const NO_BARCODES = { existingBarcodes: new Set<string>() }
+const NO_BARCODES = {
+  existingBarcodes: new Set<string>(),
+  existingProductCodes: new Set<string>(),
+}
 
 function row(rowNumber: number, values: Partial<Record<ImportField, string>>): RawRow {
   return { rowNumber, values }
@@ -215,5 +218,91 @@ describe("stock and shelf locations", () => {
     expect(summary.rows.flatMap((r) => r.errors)).toContain(
       'Product "Item" has conflicting Shelf Location values.',
     )
+  })
+})
+
+describe("product code", () => {
+  it("allows one product code to repeat across a product's own variant rows", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", productCode: "PC-1023" }),
+        row(3, { ...base, clothingSize: "M", productCode: "PC-1023" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toEqual([])
+    expect(summary.rows.map((r) => r.productCode)).toEqual(["PC-1023", "PC-1023"])
+  })
+
+  it("is case-insensitive when matching a product's own repeated code", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", productCode: "PC-1023" }),
+        row(3, { ...base, clothingSize: "M", productCode: "pc-1023" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toEqual([])
+  })
+
+  it("rejects conflicting non-empty product codes for one product", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", productCode: "PC-1023" }),
+        row(3, { ...base, clothingSize: "M", productCode: "PC-9999" }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows.flatMap((r) => r.errors)).toContain(
+      'Product "Item" has conflicting Product Code values.',
+    )
+  })
+
+  it("rejects the same code claimed by two different products in the file", () => {
+    const summary = validateRows(
+      [
+        row(2, { ...base, ageRange: "2-3 yrs", productCode: "PC-1023" }),
+        row(3, {
+          ...base,
+          productName: "Other item",
+          ageRange: "2-3 yrs",
+          productCode: "PC-1023",
+        }),
+      ],
+      lookup,
+      NO_BARCODES,
+    )
+
+    expect(summary.rows[1].errors).toContain("Product code PC-1023 is also on row 2.")
+  })
+
+  it("rejects a product code already taken in the database", () => {
+    const summary = validateRows(
+      [row(2, { ...base, ageRange: "2-3 yrs", productCode: "PC-1023" })],
+      lookup,
+      { existingBarcodes: new Set(), existingProductCodes: new Set(["pc-1023"]) },
+    )
+
+    expect(summary.rows[0].errors).toContain(
+      "Product code PC-1023 already belongs to another product.",
+    )
+    expect(summary.rows[0].productCode).toBeNull()
+  })
+
+  it("leaves a blank product code as null without an error", () => {
+    const [r] = validateRows(
+      [row(2, { ...base, ageRange: "2-3 yrs" })],
+      lookup,
+      NO_BARCODES,
+    ).rows
+
+    expect(r.productCode).toBeNull()
+    expect(r.errors).toEqual([])
   })
 })

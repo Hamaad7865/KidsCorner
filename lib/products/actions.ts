@@ -54,7 +54,12 @@ async function requireCatalogManager(): Promise<FormState | null> {
 function describeDbError(error: { code?: string; message: string }): string {
   switch (error.code) {
     case "23505":
-      return "That SKU or barcode is already used by another variant."
+      // Shared by every mutation below, so a 23505 can be the product code's
+      // unique index (saveProduct) or the variant SKU/barcode ones (the rest) —
+      // the constraint name in the message is what tells them apart.
+      return /product_code/i.test(error.message)
+        ? "That product code is already used by another product."
+        : "That SKU or barcode is already used by another variant."
     case "23503":
       return "That category, brand, size or colour no longer exists. Refresh and try again."
     case "42501":
@@ -76,6 +81,7 @@ export async function saveProduct(
   const parsed = productSchema.safeParse({
     id: idOf(formData, "id"),
     name: textOf(formData, "name"),
+    productCode: textOf(formData, "productCode"),
     // 0 rather than null when unset, so zod reports "Pick a category" as a
     // field error instead of a type error.
     categoryId: intOf(formData, "categoryId", 0),
@@ -91,6 +97,7 @@ export async function saveProduct(
   const {
     id,
     name,
+    productCode,
     categoryId,
     brandId,
     gender,
@@ -102,6 +109,7 @@ export async function saveProduct(
 
   const values = {
     name,
+    product_code: productCode,
     category_id: categoryId,
     brand_id: brandId,
     gender,

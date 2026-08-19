@@ -35,6 +35,8 @@ data class CatalogVariant(
     val productName: String,
     /** Optional product-level shelf code, repeated per cached variant. */
     val shelfLocation: String? = null,
+    /** How staff identify the product itself — also product-level, also repeated. */
+    val productCode: String? = null,
     val categoryId: Int? = null,
     val categoryName: String? = null,
     val sizeLabel: String = "",
@@ -98,7 +100,7 @@ interface CatalogDao {
 
 @Database(
     entities = [CatalogVariant::class, QueuedSale::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
@@ -157,6 +159,13 @@ abstract class TillDatabase : RoomDatabase() {
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `shelfLocation` TEXT")
+            }
+        }
+
+        /** Same idea as 3→4, for the code staff identify the product by. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `productCode` TEXT")
             }
         }
     }

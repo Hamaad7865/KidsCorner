@@ -101,6 +101,11 @@ export default async function ProductDetailPage({
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <h1 className="font-heading text-xl font-semibold">{product.name}</h1>
+                {product.productCode ? (
+                  <span className="text-muted-foreground font-mono text-sm">
+                    {product.productCode}
+                  </span>
+                ) : null}
                 <ActiveBadge isActive={product.isActive} />
               </div>
               <p className="text-muted-foreground text-sm">

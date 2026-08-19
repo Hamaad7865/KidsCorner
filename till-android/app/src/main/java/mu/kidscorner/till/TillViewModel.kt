@@ -313,6 +313,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             TillDatabase.MIGRATION_1_2,
             TillDatabase.MIGRATION_2_3,
             TillDatabase.MIGRATION_3_4,
+            TillDatabase.MIGRATION_4_5,
         )
         .build()
 

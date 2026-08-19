@@ -142,6 +142,11 @@ export default async function ProductsPage({
                       >
                         {product.name}
                       </Link>
+                      {product.productCode ? (
+                        <span className="text-muted-foreground ml-2 font-mono text-xs">
+                          {product.productCode}
+                        </span>
+                      ) : null}
                       {product.shelfLocation ? (
                         <p className="text-muted-foreground text-xs">
                           Shelf {product.shelfLocation}

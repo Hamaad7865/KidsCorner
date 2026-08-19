@@ -64,6 +64,7 @@ export type MissingMaster = {
 export type ValidatedRow = {
   rowNumber: number
   productName: string
+  productCode: string | null
   categoryName: string
   brandName: string | null
   gender: "boy" | "girl" | "unisex"
@@ -103,13 +104,27 @@ export function validateRows(
   rows: RawRow[],
   lookup: MasterLookup,
   // ReadonlySet: this function only ever reads from it.
-  options: { existingBarcodes: ReadonlySet<string> },
+  options: {
+    existingBarcodes: ReadonlySet<string>
+    /**
+     * Lowercased — product code uniqueness is case-insensitive, so the caller
+     * folds case before building this set and every comparison below folds
+     * the sheet's value the same way.
+     */
+    existingProductCodes: ReadonlySet<string>
+  },
 ): ValidationSummary {
   // Barcode must be unique across the whole file as well as against the
   // database — two rows claiming the same barcode would collide on insert.
   const seenBarcodes = new Map<
     string,
     { rowNumber: number; variantKey: string }
+  >()
+  // Product code the same way, but scoped to the product rather than the
+  // variant: every size/colour row for one product is expected to repeat it.
+  const seenProductCodes = new Map<
+    string,
+    { rowNumber: number; productKey: string }
   >()
   const missingByKey = new Map<string, MissingMaster>()
 
@@ -122,6 +137,7 @@ export function validateRows(
     const brandName = text(row, "brand")
     const colourName = text(row, "colour")
     const barcodeRaw = text(row, "barcode")
+    const productCodeRaw = text(row, "productCode")
     const shelfLocationRaw = text(row, "shelfLocation")
     const shelfLocation = shelfLocationRaw === "" ? null : shelfLocationRaw
     const parsedLocation = parseStockLocation(row.values.location)
@@ -175,6 +191,9 @@ export function validateRows(
       normaliseKey(sizeLabel),
       normaliseKey(colourName),
     ].join(":")
+    // The variant key's first two components — a product's rows share one
+    // code, the way they share one shelf location, regardless of size/colour.
+    const productKey = [normaliseKey(categoryName), normaliseKey(productName)].join(":")
 
     let barcode: string | null = barcodeRaw === "" ? null : barcodeRaw
     if (barcode) {
@@ -188,6 +207,23 @@ export function validateRows(
           barcode = null
         } else if (firstSeen === undefined) {
           seenBarcodes.set(barcode, { rowNumber: row.rowNumber, variantKey })
+        }
+      }
+    }
+
+    let productCode: string | null = productCodeRaw === "" ? null : productCodeRaw
+    if (productCode) {
+      const codeKey = productCode.toLowerCase()
+      if (options.existingProductCodes.has(codeKey)) {
+        errors.push(`Product code ${productCode} already belongs to another product.`)
+        productCode = null
+      } else {
+        const firstSeen = seenProductCodes.get(codeKey)
+        if (firstSeen !== undefined && firstSeen.productKey !== productKey) {
+          errors.push(`Product code ${productCode} is also on row ${firstSeen.rowNumber}.`)
+          productCode = null
+        } else if (firstSeen === undefined) {
+          seenProductCodes.set(codeKey, { rowNumber: row.rowNumber, productKey })
         }
       }
     }
@@ -221,6 +257,7 @@ export function validateRows(
     return {
       rowNumber: row.rowNumber,
       productName,
+      productCode,
       categoryName,
       brandName: brandName === "" ? null : brandName,
       gender: parseGender(row.values.gender),
@@ -306,6 +343,20 @@ export function validateRows(
     rows.forEach((row) => addError(row, message))
   }
 
+  // Product code, same rule as shelf location: one value per product, blanks
+  // ignored so it only needs filling in on one row.
+  for (const rows of products.values()) {
+    const codes = new Set(
+      rows
+        .map((row) => row.productCode)
+        .filter((value): value is string => value !== null)
+        .map((value) => value.toLowerCase()),
+    )
+    if (codes.size <= 1) continue
+    const message = `Product "${rows[0].productName}" has conflicting Product Code values.`
+    rows.forEach((row) => addError(row, message))
+  }
+
   return {
     rows: validated,
     ready: validated.filter((r) => r.errors.length === 0 && r.missing.length === 0)
@@ -325,7 +376,7 @@ export function importableRows(summary: ValidationSummary): ValidatedRow[] {
 
 /** CSV of every rejected row and why, for the downloadable error report. */
 export function buildErrorReport(summary: ValidationSummary): string {
-  const header = "Row,Product Name,Size,Colour,Shelf Location,Location,Problems"
+  const header = "Row,Product Name,Product Code,Size,Colour,Shelf Location,Location,Problems"
   const escape = (value: string) => `"${value.replace(/"/g, '""')}"`
 
   const lines = summary.rows
@@ -334,6 +385,7 @@ export function buildErrorReport(summary: ValidationSummary): string {
       [
         row.rowNumber,
         escape(row.productName),
+        escape(row.productCode ?? ""),
         escape(row.sizeLabel),
         escape(row.colourName),
         escape(row.shelfLocation ?? ""),

@@ -174,7 +174,8 @@ CREATE TABLE IF NOT EXISTS products (
     image_url text,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    shelf_location text
+    shelf_location text,
+    product_code text
 );
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -774,6 +775,7 @@ CREATE INDEX IF NOT EXISTS idx_credit_notes_shift ON public.credit_notes USING b
 CREATE INDEX IF NOT EXISTS idx_credit_notes_vat_policy_id ON public.credit_notes USING btree (vat_policy_id);
 CREATE INDEX IF NOT EXISTS idx_discounts_active ON public.discounts USING btree (is_active, scope);
 CREATE INDEX IF NOT EXISTS idx_pos_devices_active ON public.pos_devices USING btree (is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique_idx ON public.products USING btree (lower(product_code)) WHERE (product_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON public.product_variants USING btree (barcode);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants USING btree (product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_without_barcode ON public.product_variants USING btree (product_id) WHERE (barcode IS NULL);
