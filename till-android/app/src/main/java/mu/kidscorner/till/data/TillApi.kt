@@ -21,6 +21,9 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import mu.kidscorner.till.BuildConfig
+import okhttp3.Dns
+import java.net.Inet6Address
+import java.net.InetAddress
 
 /**
  * The till's client for `/api/till`.
@@ -453,6 +456,17 @@ class TillApi(private val http: HttpClient) {
          */
         fun httpClient(): HttpClient = HttpClient(OkHttp) {
             expectSuccess = false
+            engine {
+                // Some networks — the Android emulator, and shop routers that
+                // advertise IPv6 without a working uplink — return AAAA records
+                // that black-hole. OkHttp tries the returned addresses in order,
+                // so an IPv6-first list burns the whole 5s connect budget (twice,
+                // once per AAAA) before it ever reaches the reachable IPv4 route,
+                // and the till shows Offline against a server that is actually up.
+                // Handing OkHttp IPv4 first makes it connect on the first try;
+                // genuine IPv6-only networks still work, as IPv6 stays in the list.
+                config { dns(Ipv4FirstDns) }
+            }
             install(ContentNegotiation) {
                 json(
                     Json {
@@ -486,6 +500,16 @@ class TillApi(private val http: HttpClient) {
                 requestTimeoutMillis = 15_000
                 socketTimeoutMillis = 15_000
             }
+        }
+
+        /**
+         * Resolves like the system, but orders IPv4 ahead of IPv6 so OkHttp
+         * tries a reachable route first on networks whose IPv6 black-holes.
+         * A stable sort keeps the server's own ordering within each family.
+         */
+        private object Ipv4FirstDns : Dns {
+            override fun lookup(hostname: String): List<InetAddress> =
+                Dns.SYSTEM.lookup(hostname).sortedBy { it is Inet6Address }
         }
 
         /** Built once — a Json instance is expensive enough not to make per call. */
