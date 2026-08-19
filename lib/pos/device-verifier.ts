@@ -15,20 +15,29 @@
  * yields a string the server has never seen.
  *
  * What it does NOT buy, and lib/pos/pin.ts is already honest about this: a
- * four-digit PIN is 10,000 values. 310k iterations costs a tablet about a
- * second per guess and a GPU rather less than that for the whole space. The
+ * four-digit PIN is 10,000 values. 100k iterations costs a tablet a fraction of
+ * a second per guess and a GPU rather less than that for the whole space. The
  * verifier is not what makes the PIN safe — the throttle at the keypad, the
  * lockout in the database, and the fact that a stolen tablet gets reported
  * are. What this buys is revocation: clear a PIN or deactivate a login in the
  * back office and the verifier stops being served, so the tablet drops it at
  * its next sync without anyone having to touch the device.
  *
- * 310_000 is OWASP's PBKDF2-SHA256 figure, and matches the Android
- * `PinHasher` byte for byte — device-verifier.test.ts pins a vector that
- * PinSecurityTest.kt checks against, so the two cannot drift apart quietly.
+ * The count is 100k, not OWASP's 310k, because this runs on Cloudflare Workers,
+ * whose Web Crypto rejects PBKDF2 iteration counts ABOVE 100,000 outright:
+ * minting at 310k throws `NotSupportedError`, which surfaced as a 500 on every
+ * successful till sign-in (a wrong PIN is refused before the mint is reached).
+ * Node — where the tests and local dev run — has no such cap, so it went unseen
+ * until the till hit the deployed Worker. The Android `PinHasher` reads the
+ * count out of the verifier string rather than assuming one, so it verifies
+ * whatever is minted; the cross-language vector in device-verifier.test.ts is
+ * pinned at 1,000 iterations and is unaffected. lib/pos/pin.ts already sits at
+ * this same 100k ceiling.
  */
 
-const ITERATIONS = 310_000
+// Cloudflare Workers' Web Crypto rejects PBKDF2 iteration counts above this.
+const MAX_WORKERS_ITERATIONS = 100_000
+const ITERATIONS = MAX_WORKERS_ITERATIONS
 const KEY_BITS = 256
 const SALT_BYTES = 16
 
@@ -96,6 +105,11 @@ export async function deviceVerifierMatches(
   const parts = stored.split(":")
   const iterations = Number(parts[2])
   if (!Number.isInteger(iterations) || iterations < 1) return false
+  // A verifier minted before this cap existed (e.g. the old 310k) cannot be
+  // recomputed on Workers at all. Treat it as non-matching so the caller mints a
+  // fresh one at the supported cost, rather than throwing NotSupportedError in
+  // the middle of a sign-in.
+  if (iterations > MAX_WORKERS_ITERATIONS) return false
 
   const salt = new Uint8Array(Buffer.from(parts[3], "base64"))
   if (salt.length === 0) return false

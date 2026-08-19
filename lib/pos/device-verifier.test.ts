@@ -42,12 +42,29 @@ describe("device verifier", () => {
 
   it("mints at the cost it claims, and a different salt every time", async () => {
     const [a, b] = [await mintDeviceVerifier("1234"), await mintDeviceVerifier("1234")]
-    // Not an aesthetic check: dropping the iteration count would make every
-    // shipped verifier cheaper to grind, and nothing else would fail.
-    expect(a.startsWith("pbkdf2:sha256:310000:")).toBe(true)
+    // 100k, the most Cloudflare Workers' Web Crypto will do: a higher count
+    // throws NotSupportedError at mint time and 500s the sign-in. Lower still and
+    // every shipped verifier gets cheaper to grind, and nothing else would fail.
+    expect(a.startsWith("pbkdf2:sha256:100000:")).toBe(true)
     expect(a).not.toEqual(b)
     expect(await deviceVerifierMatches("1234", a)).toBe(true)
     expect(await deviceVerifierMatches("1234", b)).toBe(true)
+  })
+
+  it("never mints above the Workers PBKDF2 ceiling", async () => {
+    // The whole bug in one line: Workers rejects >100000, so the minted count
+    // must never exceed it, or a correct PIN 500s on the deployed till.
+    const count = Number((await mintDeviceVerifier("1234")).split(":")[2])
+    expect(count).toBeLessThanOrEqual(100_000)
+  })
+
+  it("rejects an over-ceiling stored verifier instead of throwing", async () => {
+    // A legacy 310k verifier cannot be recomputed on Workers. It must read as
+    // "does not match" — which makes the caller re-mint a fresh, supported one —
+    // rather than throwing NotSupportedError mid-sign-in.
+    const legacy =
+      "pbkdf2:sha256:310000:S2lkc0Nvcm5lclRpbGwhIQ==:AC4CSs7AfaJLrvK/10tjh3K/JebHyW4cydmO8KKHW8A="
+    expect(await deviceVerifierMatches("4271", legacy)).toBe(false)
   })
 
   it("refuses a pin_code, which is the other hash entirely", async () => {
