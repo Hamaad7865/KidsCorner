@@ -195,6 +195,7 @@ fun SellScreen(
     tillOpen: Boolean,
     catalogLoading: Boolean,
     online: Boolean,
+    reconnecting: Boolean = false,
     vatRate: Double,
     /** Whether the shop is VAT registered — hides all VAT wording when off. */
     vatEnabled: Boolean,
@@ -203,6 +204,7 @@ fun SellScreen(
     heldCount: Int,
     queuedCount: Int,
     onSwitchCashier: () -> Unit,
+    onReconnect: () -> Unit = {},
     onAdd: (CatalogVariant) -> Unit,
     /** The same, for a line that arrived from a barcode — see TillViewModel.addScanned. */
     onAddScanned: (CatalogVariant) -> Unit,
@@ -318,6 +320,8 @@ fun SellScreen(
             online = online,
             queuedCount = queuedCount,
             tillOpen = tillOpen,
+            reconnecting = reconnecting,
+            onReconnect = onReconnect,
             onSwitchCashier = onSwitchCashier,
             onLock = onLock,
             onCloseTill = onCloseTill,

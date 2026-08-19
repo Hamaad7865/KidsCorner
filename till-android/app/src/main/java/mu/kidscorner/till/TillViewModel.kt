@@ -487,11 +487,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.reconnecting) return@launch
         _state.update { it.copy(reconnecting = true, error = null) }
         refreshRoster()
-        _state.update { it.copy(reconnecting = false) }
         // Whatever came back, the catalogue is worth having too — a till that
         // has just found the shop should not still be selling this morning's
-        // prices off a cache.
+        // prices, or pointing at last week's shelf, off a cache. The reconnecting
+        // flag stays up across both so the pill reads "Syncing…" for the whole
+        // pull, not just the roster half.
         if (_state.value.online) refreshCatalog()
+        _state.update { it.copy(reconnecting = false) }
     }
 
     /**

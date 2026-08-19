@@ -3,6 +3,7 @@ package mu.kidscorner.till.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +59,8 @@ fun TillChrome(
     onLock: () -> Unit,
     modifier: Modifier = Modifier,
     tillOpen: Boolean = true,
+    reconnecting: Boolean = false,
+    onReconnect: () -> Unit = {},
     onCloseTill: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -137,7 +142,12 @@ fun TillChrome(
 
             Spacer(Modifier.weight(1f))
 
-            ConnectionPill(online = online, queuedCount = queuedCount)
+            ConnectionPill(
+                online = online,
+                queuedCount = queuedCount,
+                reconnecting = reconnecting,
+                onReconnect = onReconnect,
+            )
 
             // ── End of day: `height:40px; padding:0 13px; radius:10px` ───────
             if (onCloseTill != null && tillOpen) {
@@ -217,38 +227,63 @@ fun TillChrome(
  * queue is still draining.
  */
 @Composable
-private fun ConnectionPill(online: Boolean, queuedCount: Int) {
+private fun ConnectionPill(
+    online: Boolean,
+    queuedCount: Int,
+    reconnecting: Boolean,
+    onReconnect: () -> Unit,
+) {
     val waiting = queuedCount > 0
 
-    if (online && !waiting) {
-        // `background:transparent;border:none` — the good state is quiet.
-        //
-        // And now actually quiet. It carried a red dot, so the till read
-        // "● Online" in the colour every status light on earth uses for down.
-        // The word is the whole message; a light is only worth lighting when
-        // something is wrong, which is the branch below.
+    // One control, always tappable: sync everything now — roster, catalogue
+    // (prices and shelf), and the VAT policy — and, when the line is down, the
+    // same tap is how a cashier tells the till to go and find the shop again.
+    // Disabled only while a sync is already in flight, so a double tap cannot
+    // stack two.
+    val tappable = Modifier
+        .height(32.dp)
+        .clip(RoundedCornerShape(8.dp))
+        .clickable(enabled = !reconnecting, onClick = onReconnect)
+
+    if (online && !waiting && !reconnecting) {
+        // The good state stays quiet — no alarm-red dot — but now carries a
+        // small refresh mark so the word reads as the button it is.
         Row(
-            Modifier.height(32.dp).padding(horizontal = 9.dp),
+            tappable.padding(horizontal = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = "Sync now",
+                tint = Handoff.Muted3,
+                modifier = Modifier.size(13.dp),
+            )
             Text("Online", fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = Handoff.Muted3)
         }
     } else {
         // `#FFF6EC / #F5D9B4 / #E8A33D / #9A5B12` — already warm in the
         // handoff, so these are its own values.
         Row(
-            Modifier
-                .height(32.dp)
-                .clip(RoundedCornerShape(8.dp))
+            tappable
                 .background(Handoff.WarnTint)
                 .border(1.dp, Handoff.WarnLine, RoundedCornerShape(8.dp))
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(Handoff.WarnDot))
+            if (reconnecting) {
+                CircularProgressIndicator(
+                    Modifier.size(12.dp),
+                    strokeWidth = 1.5.dp,
+                    color = Handoff.WarnText,
+                )
+            } else {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(Handoff.WarnDot))
+            }
             Text(
                 when {
+                    reconnecting -> "Syncing…"
                     waiting && queuedCount == 1 -> "1 sale queued"
                     waiting && online -> "$queuedCount sales sending"
                     waiting -> "Offline · $queuedCount sales queued"
