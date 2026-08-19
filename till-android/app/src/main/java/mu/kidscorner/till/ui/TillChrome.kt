@@ -61,6 +61,12 @@ fun TillChrome(
     tillOpen: Boolean = true,
     reconnecting: Boolean = false,
     onReconnect: () -> Unit = {},
+    /** A downloaded update's version name, or null while none is ready. */
+    updateVersionName: String? = null,
+    /** Whether the basket is empty right now — installing only offers then. */
+    basketEmpty: Boolean = true,
+    /** Opens the "Update to vX?" confirmation. Only called when ready AND empty. */
+    onOfferUpdate: () -> Unit = {},
     onCloseTill: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -147,6 +153,9 @@ fun TillChrome(
                 queuedCount = queuedCount,
                 reconnecting = reconnecting,
                 onReconnect = onReconnect,
+                updateVersionName = updateVersionName,
+                basketEmpty = basketEmpty,
+                onOfferUpdate = onOfferUpdate,
             )
 
             // ── End of day: `height:40px; padding:0 13px; radius:10px` ───────
@@ -232,20 +241,59 @@ private fun ConnectionPill(
     queuedCount: Int,
     reconnecting: Boolean,
     onReconnect: () -> Unit,
+    updateVersionName: String?,
+    basketEmpty: Boolean,
+    onOfferUpdate: () -> Unit,
 ) {
     val waiting = queuedCount > 0
+    // Offered only once there is nothing to interrupt: a problem (offline,
+    // queued, mid-sync) always outranks it, and so does a basket with
+    // anything in it — installing is exactly the kind of thing that must
+    // never land on a cashier mid-sale with a customer at the counter.
+    val updateReady = updateVersionName != null && online && !waiting && !reconnecting
 
     // One control, always tappable: sync everything now — roster, catalogue
     // (prices and shelf), and the VAT policy — and, when the line is down, the
     // same tap is how a cashier tells the till to go and find the shop again.
+    // When an update is ready and the basket is empty, the same tap instead
+    // offers to install it — the pill still has exactly one job at a time.
     // Disabled only while a sync is already in flight, so a double tap cannot
     // stack two.
     val tappable = Modifier
         .height(32.dp)
         .clip(RoundedCornerShape(8.dp))
-        .clickable(enabled = !reconnecting, onClick = onReconnect)
+        .clickable(
+            enabled = !reconnecting,
+            onClick = if (updateReady && basketEmpty) onOfferUpdate else onReconnect,
+        )
 
-    if (online && !waiting && !reconnecting) {
+    if (updateReady) {
+        // `AccentTint/AccentText/AccentSolid` — the brand's own coral, not the
+        // amber reserved for something wrong. An update is good news.
+        Row(
+            tappable
+                .background(Handoff.AccentTint)
+                .border(1.dp, Handoff.AccentSolid, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                Icons.Default.Refresh,
+                contentDescription = null,
+                tint = Handoff.AccentText,
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                // Mid-sale, this only hints — the basket has to clear before
+                // the pill will actually offer to install anything.
+                if (basketEmpty) "Update ready" else "Update waiting",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Handoff.AccentText,
+            )
+        }
+    } else if (online && !waiting && !reconnecting) {
         // The good state stays quiet — no alarm-red dot — but now carries a
         // small refresh mark so the word reads as the button it is.
         Row(

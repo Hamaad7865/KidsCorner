@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+
 /**
  * Supabase connection details, read from the web app's own `.env.local`.
  *
@@ -43,6 +45,24 @@ fun apiOrigin(fallback: String): String =
     (project.findProperty("apiOrigin") as String?)?.trim()?.takeIf { it.isNotEmpty() }
         ?: fallback
 
+/**
+ * The release signing key, read from `app/keystore.properties` — gitignored,
+ * because the keystore's passwords are exactly as sensitive as the keystore
+ * file itself. The `.jks` it points at lives outside this repo entirely.
+ *
+ * Every release build must be signed with the same key from here on, or
+ * Android refuses to install it over whatever the previous release put there
+ * — the whole point of AppUpdater existing is that this stops being true.
+ * A missing file fails `assembleRelease` outright rather than silently
+ * falling back to an unsigned or differently-signed build, which is exactly
+ * the ambiguity that made every release this project shipped before this one
+ * need a manual uninstall first.
+ */
+val keystoreProperties = Properties().apply {
+    val file = project.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
 android {
     namespace = "mu.kidscorner.till"
     compileSdk = 36
@@ -72,6 +92,16 @@ android {
     // money and must never be dropped to satisfy a version bump.
     ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
+    signingConfigs {
+        create("release") {
+            if (keystoreProperties.isEmpty) return@create
+            storeFile = file(keystoreProperties.getProperty("storeFile"))
+            storePassword = keystoreProperties.getProperty("storePassword")
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         debug {
             // Default: 10.0.2.2 is the emulator's route to the host machine and
@@ -90,6 +120,16 @@ android {
                 "API_ORIGIN",
                 "\"${apiOrigin("https://kidscorner.boodoo-sheik786.workers.dev")}\"",
             )
+            if (keystoreProperties.isEmpty) {
+                throw GradleException(
+                    "app/keystore.properties is missing, so this release build cannot be " +
+                        "signed with the till's real release key. Every release must share one " +
+                        "key or updates cannot install over each other. This is deliberate: a " +
+                        "silent fallback here is how the till ended up needing a manual " +
+                        "uninstall before every previous release.",
+                )
+            }
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

@@ -5,6 +5,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
+      Installing the till's own updates. A per-app, user-granted toggle since
+      API 26 (Settings > "Install unknown apps"), checked at runtime before
+      the install intent fires — AppUpdater.canInstall() — rather than assumed
+      granted. Declaring it is what lets the till ask at all.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!--
       Receipt printing over Bluetooth.
 
       BLUETOOTH_CONNECT is runtime-granted from API 31; the two legacy
@@ -60,6 +68,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Hands the downloaded update APK to Android's installer as a
+          content:// URI. Required since Nougat: a file:// URI crossing the
+          boundary into the system installer throws FileUriExposedException.
+          Scoped to the app's own downloads directory only — see
+          res/xml/file_paths.xml — so nothing else this app writes is exposed.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

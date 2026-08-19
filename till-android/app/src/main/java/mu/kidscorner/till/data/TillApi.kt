@@ -109,7 +109,22 @@ data class Bootstrap(
     val paymentMethods: List<String>,
     val shift: OpenShift? = null,
     val cashiers: List<Cashier> = emptyList(),
+    /**
+     * The newest published till release, or null when there is nothing to
+     * offer — no matching GitHub release, or the server's own check failed
+     * this round. All three travel together; a decoded [updateAvailable]
+     * check only needs `latestVersionCode`, but `apkUrl` is what is actually
+     * downloaded and `latestVersionName` is what the prompt names.
+     */
+    val latestVersionCode: Long? = null,
+    val latestVersionName: String? = null,
+    val apkUrl: String? = null,
 ) {
+    /** Newer than the build actually running, per [BuildConfig.VERSION_CODE]. */
+    val updateAvailable: Boolean
+        get() = latestVersionCode != null && apkUrl != null &&
+            latestVersionCode > BuildConfig.VERSION_CODE
+
     /**
      * The rate the basket should apply.
      *

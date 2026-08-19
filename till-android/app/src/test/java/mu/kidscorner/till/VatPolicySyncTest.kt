@@ -30,6 +30,9 @@ class VatPolicySyncTest {
         policyId: Long,
         withShift: Boolean = true,
         roster: List<Cashier> = listOf(cashier),
+        latestVersionCode: Long? = null,
+        latestVersionName: String? = null,
+        apkUrl: String? = null,
     ) = Bootstrap(
         device = DeviceInfo("d1", "Till 1", "owner"),
         shopName = "Kids Corner",
@@ -40,6 +43,9 @@ class VatPolicySyncTest {
         paymentMethods = listOf("cash"),
         shift = if (withShift) OpenShift(id = 42, openedAt = "2026-08-18T05:00:00Z", openingFloat = 1000.0) else null,
         cashiers = roster,
+        latestVersionCode = latestVersionCode,
+        latestVersionName = latestVersionName,
+        apkUrl = apkUrl,
     )
 
     private val line = CartLine(
@@ -115,5 +121,29 @@ class VatPolicySyncTest {
     fun `a first policy on a shopless state is simply adopted`() {
         val applied = applyBootstrapPolicy(TillState(), shop(enabled = true, rate = 0.15, policyId = 6))
         assertEquals(6L, applied.shop?.vatPolicyId)
+    }
+
+    @Test
+    fun `a round reporting an update names it in state`() {
+        val fresh = shop(
+            enabled = true,
+            rate = 0.15,
+            policyId = 8,
+            latestVersionCode = (BuildConfig.VERSION_CODE + 1).toLong(),
+            latestVersionName = "Till v0.2.0",
+            apkUrl = "https://example.test/till-v2.apk",
+        )
+        val applied = applyBootstrapPolicy(TillState(), fresh)
+        assertEquals("Till v0.2.0", applied.updateVersionName)
+    }
+
+    @Test
+    fun `a round reporting nothing new does not forget an update already found`() {
+        val knowsAboutUpdate = TillState(updateVersionName = "Till v0.2.0")
+        // This round's check found nothing — no latestVersionCode at all —
+        // which must not erase what an earlier round already reported.
+        val fresh = shop(enabled = true, rate = 0.15, policyId = 9)
+        val applied = applyBootstrapPolicy(knowsAboutUpdate, fresh)
+        assertEquals("Till v0.2.0", applied.updateVersionName)
     }
 }

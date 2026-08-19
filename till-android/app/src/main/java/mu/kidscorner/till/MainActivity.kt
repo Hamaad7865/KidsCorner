@@ -58,6 +58,7 @@ import mu.kidscorner.till.ui.StartingScreen
 import mu.kidscorner.till.ui.StockCheckScreen
 import mu.kidscorner.till.ui.ToastPill
 import mu.kidscorner.till.ui.TodaysSalesDialog
+import mu.kidscorner.till.ui.UpdateDialog
 import mu.kidscorner.till.ui.theme.KidsCornerTillTheme
 
 class MainActivity : ComponentActivity() {
@@ -92,7 +93,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** Which overlay is up, if any. One at a time — a till is not a desktop. */
-private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, Printer, Actions, Note, Custom, Txns }
+private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, Printer, Actions, Note, Custom, Txns, Update }
 
 @Composable
 private fun TillRoot(vm: TillViewModel = viewModel()) {
@@ -201,10 +202,12 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         catalogLoading = state.catalogLoading,
                         online = state.online,
                         reconnecting = state.reconnecting,
+                        updateVersionName = state.updateVersionName,
                         vatRate = shop.resolvedVatRate,
                         vatEnabled = shop.vatEnabled,
                         onSwitchCashier = vm::switchCashier,
                         onReconnect = vm::reconnect,
+                        onOfferUpdate = { overlay = Overlay.Update },
                         customer = state.customer,
                         discount = state.discount,
                         heldCount = state.held.size,
@@ -430,6 +433,17 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 vm.clearPrinterTest()
             },
         )
+
+        Overlay.Update -> state.updateVersionName?.let { versionName ->
+            UpdateDialog(
+                versionName = versionName,
+                onInstall = {
+                    vm.installUpdate()
+                    overlay = Overlay.None
+                },
+                onDismiss = { overlay = Overlay.None },
+            )
+        }
 
         Overlay.Movement -> MovementDialog(
             busy = state.busy,

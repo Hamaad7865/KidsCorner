@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireTillSession } from "@/lib/api/till-session"
+import { getLatestAndroidRelease } from "@/lib/pos/app-update"
 import { listCashiersForDevice } from "@/lib/pos/sale-core"
 import {
   getOpenShift,
@@ -44,18 +45,22 @@ export async function GET(request: Request) {
     deviceId = typeof data === "number" ? data : null
   }
 
-  const [shopName, vatPolicy, paymentMethods, shift, cashiers, identity] = await Promise.all([
-    getShopName(supabase),
-    // The current VAT policy the till caches and stamps on each sale. The rate
-    // it applies is the effective rate — zero while the shop is not registered.
-    getCurrentVatPolicy(supabase),
-    getPaymentMethods(supabase),
-    getOpenShift(supabase),
-    listCashiersForDevice(supabase),
-    // For the receipt header's address and phone. Absent keys come back null
-    // and the receipt omits the line.
-    getShopIdentity(supabase),
-  ])
+  const [shopName, vatPolicy, paymentMethods, shift, cashiers, identity, latestRelease] =
+    await Promise.all([
+      getShopName(supabase),
+      // The current VAT policy the till caches and stamps on each sale. The rate
+      // it applies is the effective rate — zero while the shop is not registered.
+      getCurrentVatPolicy(supabase),
+      getPaymentMethods(supabase),
+      getOpenShift(supabase),
+      listCashiersForDevice(supabase),
+      // For the receipt header's address and phone. Absent keys come back null
+      // and the receipt omits the line.
+      getShopIdentity(supabase),
+      // Never blocks bootstrap: null when there is nothing newer, GitHub is
+      // unreachable, or the repo carries no matching release yet.
+      getLatestAndroidRelease(),
+    ])
 
   return NextResponse.json({
     ok: true,
@@ -99,5 +104,15 @@ export async function GET(request: Request) {
      * anyway, and one round trip is the whole point of this endpoint.
      */
     cashiers,
+    /**
+     * The newest published till release, or null when there is nothing to
+     * offer — no matching GitHub release, or the check failed this round.
+     * The till compares `latestVersionCode` against its own build and decides
+     * locally whether that counts as an update; this server holds no state
+     * about which devices are on which version.
+     */
+    latestVersionCode: latestRelease?.versionCode ?? null,
+    latestVersionName: latestRelease?.versionName ?? null,
+    apkUrl: latestRelease?.apkUrl ?? null,
   })
 }

@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import mu.kidscorner.till.data.AppUpdater
 import mu.kidscorner.till.data.AppliedDiscountLocal
 import mu.kidscorner.till.data.Approval
 import mu.kidscorner.till.data.AuthClient
@@ -26,6 +27,7 @@ import mu.kidscorner.till.data.CloseShiftRequest
 import mu.kidscorner.till.data.CloseShiftResponse
 import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.DiscountRule
+import mu.kidscorner.till.data.DownloadState
 import mu.kidscorner.till.data.HeldSale
 import mu.kidscorner.till.data.MovementRequest
 import mu.kidscorner.till.data.OfflineGate
@@ -138,6 +140,15 @@ data class TillState(
      * word over an empty keypad.
      */
     val reconnecting: Boolean = false,
+
+    /**
+     * The published version this till would be updating to, once bootstrap
+     * has reported one newer than [mu.kidscorner.till.BuildConfig.VERSION_CODE].
+     * Null the rest of the time — the pill has nothing to say about updates.
+     */
+    val updateVersionName: String? = null,
+    /** Where that update's download currently stands. */
+    val updateDownload: DownloadState = DownloadState.None,
 
     val catalog: List<CatalogVariant> = emptyList(),
     val catalogLoading: Boolean = false,
@@ -271,6 +282,11 @@ internal fun applyBootstrapPolicy(state: TillState, fresh: Bootstrap): TillState
             state.discount?.amount ?: 0.0,
             merged.resolvedVatRate,
         ),
+        // Refreshed whenever this round says something is available, so a
+        // second, newer release supersedes the name shown for the first.
+        // Left as it was on a round that reports nothing — a single missed
+        // GitHub check must not make an already-found update disappear.
+        updateVersionName = if (fresh.updateAvailable) fresh.latestVersionName else state.updateVersionName,
     )
 }
 
@@ -310,6 +326,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     private val printerSettings = PrinterSettings(app)
+    private val appUpdater = AppUpdater(app)
 
     /**
      * Credit notes already sent to the printer, by number.
@@ -381,7 +398,29 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun refreshVatPolicy(): Boolean {
         val fresh = repo.bootstrap().getOrNull() ?: return false
         _state.update { applyBootstrapPolicy(it, fresh).copy(deviceId = fresh.deviceId ?: it.deviceId) }
+        checkForUpdate(fresh)
         return true
+    }
+
+    /**
+     * Starts (or continues) downloading a published update and folds its
+     * progress into state.
+     *
+     * Called from every function that receives a fresh [Bootstrap] —
+     * [refreshVatPolicy] (the heartbeat, every two minutes) and
+     * [refreshRoster] (the heartbeat's slower cadence, and a manual
+     * [reconnect] tap) — rather than one designated caller, so a future third
+     * source of a fresh bootstrap does not silently skip the update check.
+     * [mu.kidscorner.till.data.AppUpdater.start] no-ops on a version already
+     * in flight, so calling this from more than one place costs nothing.
+     */
+    private fun checkForUpdate(fresh: Bootstrap) {
+        val versionCode = fresh.latestVersionCode
+        val apkUrl = fresh.apkUrl
+        if (fresh.updateAvailable && versionCode != null && apkUrl != null) {
+            appUpdater.start(versionCode, apkUrl)
+        }
+        _state.update { it.copy(updateDownload = appUpdater.poll()) }
     }
 
     /** A submitted sale whose fate is unknown, kept so it can be parked. */
@@ -497,6 +536,29 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Fires the system install prompt for a downloaded update, or — the
+     * first time on a given device — the one-time "allow installs from this
+     * app" settings screen instead.
+     *
+     * Callers are expected to have already confirmed with the cashier (the
+     * "Update to vX?" dialog) and checked the basket is empty; this function
+     * does not re-check either, so it can also serve a Settings-screen
+     * "Install now" button where there is no basket to be mid-sale in.
+     * `FLAG_ACTIVITY_NEW_TASK` on both intents (built in [AppUpdater]) is what
+     * makes starting them from an application, not an activity, context safe.
+     */
+    fun installUpdate() {
+        val ready = _state.value.updateDownload as? DownloadState.Ready ?: return
+        val app = getApplication<Application>()
+        val intent = if (appUpdater.canInstall()) {
+            appUpdater.installIntent(ready.apkUri)
+        } else {
+            appUpdater.requestInstallPermissionIntent()
+        }
+        app.startActivity(intent)
+    }
+
+    /**
      * Re-pull the roster, so the offline gate does not go stale on its feet.
      *
      * Without this the roster was fetched exactly once, at app start, and a
@@ -523,6 +585,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     deviceId = fresh.deviceId ?: it.deviceId,
                 )
             }
+            checkForUpdate(fresh)
         }
     }
 

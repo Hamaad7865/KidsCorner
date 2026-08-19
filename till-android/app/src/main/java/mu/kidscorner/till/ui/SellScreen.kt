@@ -196,6 +196,8 @@ fun SellScreen(
     catalogLoading: Boolean,
     online: Boolean,
     reconnecting: Boolean = false,
+    /** A downloaded update's version name, or null while none is ready. */
+    updateVersionName: String? = null,
     vatRate: Double,
     /** Whether the shop is VAT registered — hides all VAT wording when off. */
     vatEnabled: Boolean,
@@ -205,6 +207,7 @@ fun SellScreen(
     queuedCount: Int,
     onSwitchCashier: () -> Unit,
     onReconnect: () -> Unit = {},
+    onOfferUpdate: () -> Unit = {},
     onAdd: (CatalogVariant) -> Unit,
     /** The same, for a line that arrived from a barcode — see TillViewModel.addScanned. */
     onAddScanned: (CatalogVariant) -> Unit,
@@ -322,6 +325,9 @@ fun SellScreen(
             tillOpen = tillOpen,
             reconnecting = reconnecting,
             onReconnect = onReconnect,
+            updateVersionName = updateVersionName,
+            basketEmpty = lines.isEmpty(),
+            onOfferUpdate = onOfferUpdate,
             onSwitchCashier = onSwitchCashier,
             onLock = onLock,
             onCloseTill = onCloseTill,

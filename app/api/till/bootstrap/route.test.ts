@@ -23,6 +23,8 @@ let currentPolicy = {
   createdAt: "2026-08-18T09:00:00Z",
 }
 
+let latestRelease: { versionCode: number; versionName: string; apkUrl: string } | null = null
+
 vi.mock("@/lib/api/till-session", () => ({
   requireTillSession: async () => session,
 }))
@@ -35,6 +37,11 @@ vi.mock("@/lib/pos/queries", () => ({
 }))
 vi.mock("@/lib/vat/policy", () => ({
   getCurrentVatPolicy: async () => currentPolicy,
+}))
+// Real network calls (GitHub) have no business running inside a unit test —
+// lib/pos/app-update.test.ts owns proving that module's own behaviour.
+vi.mock("@/lib/pos/app-update", () => ({
+  getLatestAndroidRelease: async () => latestRelease,
 }))
 
 const { GET } = await import("./route")
@@ -54,6 +61,7 @@ describe("till bootstrap VAT fields", () => {
       vatNumber: null,
       createdAt: "2026-08-18T09:00:00Z",
     }
+    latestRelease = null
   })
 
   it("reports disabled with a zero effective rate but the saved configured rate", async () => {
@@ -86,5 +94,32 @@ describe("till bootstrap VAT fields", () => {
     expect(json.ok).toBe(true)
     expect(json.shopName).toBe("Kids Corner")
     expect(json.paymentMethods).toEqual(["cash", "card"])
+  })
+})
+
+describe("till bootstrap update fields", () => {
+  beforeEach(() => {
+    latestRelease = null
+  })
+
+  it("reports null update fields when there is nothing newer published", async () => {
+    const json = await get()
+    expect(json.latestVersionCode).toBeNull()
+    expect(json.latestVersionName).toBeNull()
+    expect(json.apkUrl).toBeNull()
+  })
+
+  it("passes through a published release exactly as the checker reports it", async () => {
+    latestRelease = {
+      versionCode: 3,
+      versionName: "Till v0.3.0",
+      apkUrl: "https://github.com/Hamaad7865/KidsCorner/releases/download/till-v3/till-v3.apk",
+    }
+    const json = await get()
+    expect(json.latestVersionCode).toBe(3)
+    expect(json.latestVersionName).toBe("Till v0.3.0")
+    expect(json.apkUrl).toBe(
+      "https://github.com/Hamaad7865/KidsCorner/releases/download/till-v3/till-v3.apk",
+    )
   })
 })
