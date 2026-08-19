@@ -32,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import mu.kidscorner.till.data.Approval
 import mu.kidscorner.till.print.hasBluetoothPermission
 import mu.kidscorner.till.print.PrinterSettings
+import mu.kidscorner.till.print.requestUsbPermission
 import mu.kidscorner.till.ui.ActionsDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
 import mu.kidscorner.till.ui.CloseShiftScreen
@@ -411,6 +412,12 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                             Manifest.permission.BLUETOOTH_SCAN,
                         ),
                     )
+                }
+                // USB grants are per-device and can't be asked for in the
+                // manifest, so this triggers the system's device prompt. Fire
+                // and forget: UsbPrinter re-checks before it prints.
+                if (kind == PrinterSettings.Kind.Usb) {
+                    requestUsbPermission(context, address)
                 }
             },
             onTest = vm::testPrinter,

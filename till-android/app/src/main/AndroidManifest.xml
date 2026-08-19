@@ -29,6 +29,10 @@
 
     <!-- Not required: a shop may run a network printer, or none at all. -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <!-- USB host, for a printer wired to the tablet. Not required: a tablet
+         without an OTG port simply cannot offer USB, and the settings screen
+         says so rather than the app refusing to install. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <!--
       A shop tablet, not a phone. Landscape only, because the sell screen puts

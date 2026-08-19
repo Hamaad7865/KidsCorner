@@ -24,11 +24,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.PrinterSettings
+import mu.kidscorner.till.print.UsbCandidate
+import mu.kidscorner.till.print.usbPrinters
 import mu.kidscorner.till.ui.theme.Handoff
 import mu.kidscorner.till.ui.theme.PlexMono
 
@@ -101,10 +104,14 @@ fun PrinterSettingsDialog(
     onTest: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
     var kind by remember { mutableStateOf(settings.kind) }
     var address by remember { mutableStateOf(settings.address) }
     var name by remember { mutableStateOf(settings.name) }
     var paper by remember { mutableStateOf(settings.paper) }
+    // Only what a scan turned up: USB devices come and go with the cable, so an
+    // empty list means "nothing attached", not "none exist".
+    var usbDevices by remember { mutableStateOf(emptyList<UsbCandidate>()) }
 
     val configured = kind != PrinterSettings.Kind.None
 
@@ -127,6 +134,7 @@ fun PrinterSettingsDialog(
                             PrinterSettings.Kind.None -> "None"
                             PrinterSettings.Kind.Bluetooth -> "Bluetooth"
                             PrinterSettings.Kind.Network -> "Network"
+                            PrinterSettings.Kind.Usb -> "USB"
                         },
                         selected = kind == option,
                         modifier = Modifier.weight(1f),
@@ -135,35 +143,79 @@ fun PrinterSettingsDialog(
             }
 
             if (configured) {
-                FieldLabel(
-                    if (kind == PrinterSettings.Kind.Bluetooth) "Bluetooth address"
-                    else "IP address or hostname",
-                )
-                HandoffField(
-                    value = address,
-                    onValueChange = { address = it },
-                    placeholder = if (kind == PrinterSettings.Kind.Bluetooth) {
-                        "00:11:22:33:44:55"
+                if (kind == PrinterSettings.Kind.Usb) {
+                    FieldLabel("USB printer")
+                    HandoffButton(
+                        label = "Scan for USB printers",
+                        primary = false,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { usbDevices = usbPrinters(context) }
+
+                    if (usbDevices.isEmpty()) {
+                        Text(
+                            "Plug the printer into the tablet — an OTG adapter if it has " +
+                                "only a charging port — then scan. Only devices connected " +
+                                "right now appear.",
+                            fontSize = 11.5.sp,
+                            color = Handoff.Muted3,
+                        )
                     } else {
-                        "192.168.1.50"
-                    },
-                    keyboard = if (kind == PrinterSettings.Kind.Network) {
-                        KeyboardType.Uri
-                    } else {
-                        KeyboardType.Text
-                    },
-                    mono = true,
-                )
-                Text(
-                    if (kind == PrinterSettings.Kind.Bluetooth) {
-                        "Pair the printer in Android settings first, then copy its " +
-                            "address here."
-                    } else {
-                        "Port 9100 unless the printer says otherwise."
-                    },
-                    fontSize = 11.5.sp,
-                    color = Handoff.Muted3,
-                )
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            usbDevices.forEach { device ->
+                                val addr = "${device.vendorId}:${device.productId}"
+                                Choice(
+                                    label = device.label,
+                                    selected = address == addr,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    address = addr
+                                    if (name.isBlank()) name = device.label
+                                }
+                            }
+                        }
+                    }
+
+                    if (address.isNotBlank() &&
+                        usbDevices.none { "${it.vendorId}:${it.productId}" == address }
+                    ) {
+                        Text(
+                            "Saved: ${name.ifBlank { address }}. Plug it in and scan to " +
+                                "confirm it is connected.",
+                            fontSize = 11.5.sp,
+                            color = Handoff.Muted3,
+                        )
+                    }
+                } else {
+                    FieldLabel(
+                        if (kind == PrinterSettings.Kind.Bluetooth) "Bluetooth address"
+                        else "IP address or hostname",
+                    )
+                    HandoffField(
+                        value = address,
+                        onValueChange = { address = it },
+                        placeholder = if (kind == PrinterSettings.Kind.Bluetooth) {
+                            "00:11:22:33:44:55"
+                        } else {
+                            "192.168.1.50"
+                        },
+                        keyboard = if (kind == PrinterSettings.Kind.Network) {
+                            KeyboardType.Uri
+                        } else {
+                            KeyboardType.Text
+                        },
+                        mono = true,
+                    )
+                    Text(
+                        if (kind == PrinterSettings.Kind.Bluetooth) {
+                            "Pair the printer in Android settings first, then copy its " +
+                                "address here."
+                        } else {
+                            "Port 9100 unless the printer says otherwise."
+                        },
+                        fontSize = 11.5.sp,
+                        color = Handoff.Muted3,
+                    )
+                }
 
                 FieldLabel("Name (optional)")
                 HandoffField(

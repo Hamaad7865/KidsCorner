@@ -17,14 +17,19 @@ class PrinterSettings(context: Context) {
 
     private val prefs = context.getSharedPreferences("printer", Context.MODE_PRIVATE)
 
-    enum class Kind { None, Bluetooth, Network }
+    enum class Kind { None, Bluetooth, Network, Usb }
 
     var kind: Kind
         get() = runCatching { Kind.valueOf(prefs.getString(KEY_KIND, null) ?: "None") }
             .getOrDefault(Kind.None)
         set(value) = prefs.edit().putString(KEY_KIND, value.name).apply()
 
-    /** A Bluetooth MAC, or a hostname/IP for a network printer. */
+    /**
+     * A Bluetooth MAC, a hostname/IP for a network printer, or `vendorId:productId`
+     * (decimal) for a USB one. USB devices have no stable path across reconnects,
+     * but the vendor/product pair identifies the model, which is enough to find it
+     * again in the attached-device list.
+     */
     var address: String
         get() = prefs.getString(KEY_ADDRESS, "").orEmpty()
         set(value) = prefs.edit().putString(KEY_ADDRESS, value.trim()).apply()
@@ -99,6 +104,10 @@ class PrinterSettings(context: Context) {
             else BluetoothPrinter(context, address, name.ifBlank { "Printer" })
         Kind.Network ->
             if (address.isBlank()) NoPrinter else NetworkPrinter(address, port)
+        Kind.Usb ->
+            parseUsbAddress(address)?.let { (vendorId, productId) ->
+                UsbPrinter(context, vendorId, productId, name.ifBlank { "USB printer" })
+            } ?: NoPrinter
     }
 
     private companion object {
