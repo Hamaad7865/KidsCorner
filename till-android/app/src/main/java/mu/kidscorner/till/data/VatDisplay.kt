@@ -33,6 +33,21 @@ object VatDisplay {
         if (vatEnabled) "Total incl. tax" else "Total"
 
     /**
+     * The VAT line for the payment screen's fee breakdown: a label naming the
+     * rate, and the contained amount already formatted — or null to omit the
+     * row entirely.
+     *
+     * A label/value pair rather than [sellVatNote]'s single string: the
+     * breakdown lays out every row as label-left, figure-right, and splitting
+     * here keeps that column alignment out of the composable. Same rule as
+     * every other VAT surface: null while disabled, never a "VAT 0%" row.
+     */
+    fun paymentVatRow(vatEnabled: Boolean, effectiveRate: Double, vatAmount: Double): Pair<String, String>? {
+        if (!vatEnabled) return null
+        return "VAT (${ratePercent(effectiveRate)}%) incl." to formatAmount(vatAmount)
+    }
+
+    /**
      * Whether a shift report (X-read or Z) should draw its VAT section.
      *
      * Driven by the frozen bands the report actually carries, never the current

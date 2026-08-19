@@ -31,6 +31,18 @@ class VatUiPolicyTest {
     }
 
     @Test
+    fun `the payment breakdown's VAT row names the rate and the contained amount`() {
+        val row = VatDisplay.paymentVatRow(vatEnabled = true, effectiveRate = 0.15, vatAmount = 83.82)
+        assertEquals("VAT (15%) incl." to "83.82", row)
+    }
+
+    @Test
+    fun `a disabled shop's payment breakdown has no VAT row at all`() {
+        // Null, not a "VAT (0%)" row: the breakdown omits the line entirely.
+        assertNull(VatDisplay.paymentVatRow(vatEnabled = false, effectiveRate = 0.0, vatAmount = 0.0))
+    }
+
+    @Test
     fun `the payment total is labelled inclusive of tax only when VAT is on`() {
         assertEquals("Total incl. tax", VatDisplay.paymentTotalLabel(vatEnabled = true))
         // Disabled: a plain "Total" with no tax or exclusive wording anywhere.

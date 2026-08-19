@@ -482,11 +482,21 @@ class GalleryActivity : ComponentActivity() {
                         // gallery entry is the same screen — tap "Split bill"
                         // to see the allocation mode.
                         "payment" -> PaymentScreen(
-                            totals = cartTotals(SAMPLE_LINES, 0.0, 0.15),
+                            // A basket discount too, so the fee breakdown has
+                            // every row to show, not just Total.
+                            totals = cartTotals(SAMPLE_LINES, 269.14, 0.15),
                             lines = SAMPLE_LINES,
                             paymentMethods = listOf("cash", "card", "juice", "bank"),
                             cashierName = "Priya Ramdin",
                             vatEnabled = true,
+                            vatRate = 0.15,
+                            discount = AppliedDiscountLocal(
+                                rule = null,
+                                label = "Staff discount",
+                                kind = "percent",
+                                value = 10.0,
+                                amount = 269.14,
+                            ),
                             busy = false,
                             error = null,
                             frozen = false,
@@ -1039,6 +1049,7 @@ private fun VatPaymentSample(vatEnabled: Boolean) {
         paymentMethods = listOf("cash", "card", "juice", "bank"),
         cashierName = "Priya Ramdin",
         vatEnabled = vatEnabled,
+        vatRate = if (vatEnabled) 0.15 else 0.0,
         busy = false,
         error = null,
         frozen = false,

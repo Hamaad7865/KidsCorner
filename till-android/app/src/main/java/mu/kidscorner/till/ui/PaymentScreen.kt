@@ -50,6 +50,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import mu.kidscorner.till.data.AppliedDiscountLocal
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.CartTotals
 import mu.kidscorner.till.data.VatDisplay
@@ -97,6 +98,10 @@ fun PaymentScreen(
     cashierName: String,
     /** Whether the shop is VAT registered — chooses the total's label. */
     vatEnabled: Boolean,
+    /** The effective rate, for the breakdown's VAT row. Unused while disabled. */
+    vatRate: Double = 0.0,
+    /** The sale-level discount applied on the sell screen, for the breakdown. */
+    discount: AppliedDiscountLocal? = null,
     busy: Boolean,
     error: String?,
     frozen: Boolean,
@@ -349,6 +354,45 @@ fun PaymentScreen(
                 Spacer(Modifier.height(10.dp))
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
                 Spacer(Modifier.height(12.dp))
+
+                // ── the fee breakdown ───────────────────────────────────────
+                //
+                // Subtotal, then every deduction, then VAT — the arithmetic
+                // between what the shelf prices add up to and what the customer
+                // actually pays, laid out so a cashier can read it out rather
+                // than defend it. Each row is conditional on its own account
+                // being non-zero, matching the sell screen's own basket footer:
+                // a sale with nothing taken off shows nothing to explain.
+                if (totals.lineDiscounts > 0 || totals.saleDiscount > 0) {
+                    BreakdownRow("Subtotal", formatAmount(totals.subtotal), Handoff.Muted)
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (totals.lineDiscounts > 0) {
+                    BreakdownRow(
+                        "Line discounts",
+                        "-${formatAmount(totals.lineDiscounts)}",
+                        Handoff.WarnText,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (discount != null && totals.saleDiscount > 0) {
+                    BreakdownRow(
+                        "Basket ${discountLabel(discount)}",
+                        "-${formatAmount(totals.saleDiscount)}",
+                        Handoff.WarnText,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                VatDisplay.paymentVatRow(vatEnabled, vatRate, totals.vat)?.let { (label, amount) ->
+                    BreakdownRow(label, amount, Handoff.Muted)
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (totals.lineDiscounts > 0 || totals.saleDiscount > 0 || vatEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
+                    Spacer(Modifier.height(10.dp))
+                }
+
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         VatDisplay.paymentTotalLabel(vatEnabled),
@@ -815,6 +859,45 @@ private fun trimZeros(value: Double): String {
     val rounded = round2(value)
     return if (rounded == kotlin.math.floor(rounded)) rounded.toLong().toString()
     else formatAmount(rounded).replace(",", "")
+}
+
+/**
+ * One row of the fee breakdown — Subtotal, a deduction, or VAT.
+ *
+ * Scaled well below [MoneyRow]: these are the working figures that explain
+ * the total, not the total itself, so the hierarchy has to read at a glance.
+ */
+@Composable
+private fun BreakdownRow(label: String, value: String, tone: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = Handoff.Muted2,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            value,
+            fontFamily = PlexMono,
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = tone,
+        )
+    }
+}
+
+/**
+ * "Basket 10%" / "Basket Rs 50" — mirrors SellScreen's own `discountFigure`,
+ * which stays private to that file: this is the one other place a cashier
+ * reads a discount's kind and value back as a chip label.
+ */
+private fun discountLabel(d: AppliedDiscountLocal): String {
+    val n = if (d.value % 1.0 == 0.0) d.value.toLong().toString() else formatAmount(d.value)
+    return if (d.kind == "percent") "$n%" else "Rs $n"
 }
 
 /**
