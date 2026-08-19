@@ -17,8 +17,8 @@ import { hashPin } from "./pin"
  * The Supabase client is stubbed rather than mocked wholesale: these tests care
  * about the arithmetic and the gate, not about PostgREST. Every case avoids the
  * approval path except the ones that are specifically about it — a rule with
- * `requires_manager` false, no manual discount, no line discount and no custom
- * line means `verifyApproval` is never reached.
+ * `requires_manager` false, no manual discount and no line discount means
+ * `verifyApproval` is never reached.
  */
 
 type Row = Record<string, unknown>
@@ -150,18 +150,18 @@ describe("settleDiscounts", () => {
     expect(result.approvalReasons).toEqual(["money off a line"])
   })
 
-  it("reports a custom item as needing authorisation too", async () => {
+  it("settles a custom item with no manager needed", async () => {
     const result = await settleDiscounts(
-      stubClient([], await hashPin("1234")),
+      stubClient([]),
       [],
       [line({ variantId: null })],
-      { managerId: MANAGER_ID, pin: "1234" },
+      null,
     )
 
     expect("error" in result).toBe(false)
     if ("error" in result) return
-    expect(result.approvedBy).toBe(MANAGER_ID)
-    expect(result.approvalReasons).toEqual(["a custom item"])
+    expect(result.approvedBy).toBeNull()
+    expect(result.approvalReasons).toEqual([])
   })
 
   it("recomputes from the rule, ignoring what the client claimed", async () => {
@@ -373,15 +373,15 @@ describe("settleDiscounts", () => {
       expect(result.needsApproval).toBe(true)
     })
 
-    it("demands one for a custom line, where the cashier named the price", async () => {
+    it("does not demand one for a custom line on its own", async () => {
       const result = await settleDiscounts(
         stubClient([]),
         [],
         [line({ variantId: null, categoryId: 0 })],
         null,
       )
-      if (!("error" in result)) throw new Error("should have demanded approval")
-      expect(result.needsApproval).toBe(true)
+      if (!("applied" in result)) throw new Error(result.error)
+      expect(result.approvedBy).toBeNull()
     })
 
     it("demands one when the rule itself asks for it", async () => {

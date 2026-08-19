@@ -55,9 +55,8 @@ private val PRESETS = listOf(
  * Four presets, a 56px description field, a 62px price well, a `repeat(3,1fr)`
  * pad on 50px rows, and a 60px Add to cart.
  *
- * Both halves are the cashier's word — what it is and what it costs — so a sale
- * carrying one of these will not commit without a manager's PIN. That is
- * decided server-side in `settleDiscounts`, not here.
+ * Both halves are the cashier's word — what it is and what it costs — but
+ * unlike a discount, a custom line commits on its own, with no manager PIN.
  */
 @Composable
 fun CustomItemDialog(
