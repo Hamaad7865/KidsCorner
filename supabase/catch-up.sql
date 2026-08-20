@@ -23,7 +23,7 @@
 -- It assumes Supabase's own auth and storage schemas already exist, which they
 -- do on any real project.
 --
--- Generated 2026-08-18 from the live schema.
+-- Generated 2026-08-20 from the live schema.
 -- ============================================================================
 
 -- ==========================================================================
@@ -99,13 +99,32 @@ CREATE TABLE IF NOT EXISTS credit_notes (
     vat_number text
 );
 
+CREATE TABLE IF NOT EXISTS customer_credit_entries (
+    id BIGSERIAL,
+    customer_id integer NOT NULL,
+    entry_type text NOT NULL,
+    amount numeric(12,2) NOT NULL,
+    sale_payment_id bigint,
+    sale_id bigint,
+    credit_note_id bigint,
+    method text,
+    shift_id integer,
+    reason text,
+    due_on date,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS customers (
     id SERIAL,
     full_name text NOT NULL,
     phone text,
     email text,
     notes text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    credit_limit numeric(12,2) DEFAULT 0 NOT NULL,
+    credit_terms_days integer DEFAULT 30 NOT NULL,
+    credit_on_hold boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS discounts (
@@ -174,7 +193,8 @@ CREATE TABLE IF NOT EXISTS products (
     image_url text,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    shelf_location text
+    shelf_location text,
+    product_code text
 );
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -188,6 +208,19 @@ CREATE TABLE IF NOT EXISTS profiles (
     pin_locked_until timestamp with time zone,
     pin_last_used_at timestamp with time zone,
     pin_device_verifier text
+);
+
+CREATE TABLE IF NOT EXISTS promotions (
+    id BIGSERIAL,
+    variant_id integer NOT NULL,
+    original_price numeric(10,2) NOT NULL,
+    promo_price numeric(10,2) NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    note text,
+    applied_by uuid,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    lifted_by uuid,
+    lifted_at timestamp with time zone
 );
 
 CREATE TABLE IF NOT EXISTS purchase_items (
@@ -271,6 +304,11 @@ CREATE TABLE IF NOT EXISTS sales (
     vat_enabled boolean NOT NULL,
     vat_rate numeric(7,6) NOT NULL,
     vat_number text
+);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    filename text NOT NULL,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -388,6 +426,9 @@ DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE customers ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -412,6 +453,9 @@ DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -431,6 +475,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE sales ADD CONSTRAINT sales_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE schema_migrations ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (filename);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE settings ADD CONSTRAINT settings_pkey PRIMARY KEY (key);
@@ -472,6 +519,12 @@ DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_credit_no_key UNIQUE (credit_no);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_credit_note_id_key UNIQUE (credit_note_id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_sale_payment_id_key UNIQUE (sale_payment_id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE customers ADD CONSTRAINT customers_phone_key UNIQUE (phone);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -511,13 +564,41 @@ DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_reason_check CHECK ((length(TRIM(BOTH FROM reason)) > 0));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_refund_method_check CHECK ((refund_method = ANY (ARRAY['cash'::text, 'card'::text, 'juice'::text, 'myt_money'::text, 'bank'::text, 'exchange'::text])));
+    ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_refund_method_check CHECK ((refund_method = ANY (ARRAY['cash'::text, 'card'::text, 'juice'::text, 'myt_money'::text, 'bank'::text, 'exchange'::text, 'credit'::text])));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_vat_number_normalized CHECK (((vat_number IS NULL) OR ((vat_number = btrim(vat_number)) AND (length(vat_number) > 0))));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_vat_rate_valid CHECK (((vat_enabled AND (vat_rate > (0)::numeric) AND (vat_rate <= (1)::numeric)) OR ((NOT vat_enabled) AND (vat_rate = (0)::numeric) AND (vat_number IS NULL) AND (vat_amount = (0)::numeric))));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_amount_check CHECK ((amount <> (0)::numeric));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_entry_type_check CHECK ((entry_type = ANY (ARRAY['charge'::text, 'settlement'::text, 'refund'::text, 'adjustment'::text, 'writeoff'::text])));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_method_check CHECK (((method IS NULL) OR (method = ANY (ARRAY['cash'::text, 'card'::text, 'juice'::text, 'myt_money'::text, 'bank'::text]))));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_settlement_method_check CHECK (((entry_type <> 'settlement'::text) OR (method IS NOT NULL)));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_sign_check CHECK (
+CASE entry_type
+    WHEN 'charge'::text THEN (amount > (0)::numeric)
+    WHEN 'settlement'::text THEN (amount < (0)::numeric)
+    WHEN 'refund'::text THEN (amount < (0)::numeric)
+    WHEN 'writeoff'::text THEN (amount < (0)::numeric)
+    ELSE true
+END);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customers ADD CONSTRAINT customers_credit_limit_check CHECK ((credit_limit >= (0)::numeric));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customers ADD CONSTRAINT customers_credit_terms_check CHECK (((credit_terms_days >= 0) AND (credit_terms_days <= 365)));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE discounts ADD CONSTRAINT discounts_kind_check CHECK ((kind = ANY (ARRAY['percent'::text, 'amount'::text])));
@@ -559,6 +640,15 @@ DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'cashier'::text])));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_is_a_reduction CHECK ((promo_price <= original_price));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_not_a_loss CHECK ((promo_price >= (0)::numeric));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'lifted'::text])));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_qty_check CHECK ((qty > 0));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -586,7 +676,7 @@ DO $$ BEGIN
     ALTER TABLE sale_items ADD CONSTRAINT sale_items_qty_check CHECK ((qty > 0));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE sale_payments ADD CONSTRAINT sale_payments_method_check CHECK ((method = ANY (ARRAY['cash'::text, 'card'::text, 'juice'::text, 'myt_money'::text, 'bank'::text])));
+    ALTER TABLE sale_payments ADD CONSTRAINT sale_payments_method_check CHECK ((method = ANY (ARRAY['cash'::text, 'card'::text, 'juice'::text, 'myt_money'::text, 'bank'::text, 'credit'::text])));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE sales ADD CONSTRAINT sales_status_check CHECK ((status = ANY (ARRAY['completed'::text, 'refunded'::text, 'void'::text])));
@@ -655,6 +745,24 @@ DO $$ BEGIN
     ALTER TABLE credit_notes ADD CONSTRAINT credit_notes_vat_policy_id_fkey FOREIGN KEY (vat_policy_id) REFERENCES vat_policies(id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_created_by_fkey FOREIGN KEY (created_by) REFERENCES profiles(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_credit_note_id_fkey FOREIGN KEY (credit_note_id) REFERENCES credit_notes(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES customers(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_sale_id_fkey FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_sale_payment_id_fkey FOREIGN KEY (sale_payment_id) REFERENCES sale_payments(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE customer_credit_entries ADD CONSTRAINT customer_credit_entries_shift_id_fkey FOREIGN KEY (shift_id) REFERENCES shifts(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE discounts ADD CONSTRAINT discounts_category_id_fkey FOREIGN KEY (category_id) REFERENCES categories(id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -674,6 +782,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_applied_by_fkey FOREIGN KEY (applied_by) REFERENCES profiles(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_lifted_by_fkey FOREIGN KEY (lifted_by) REFERENCES profiles(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_purchase_id_fkey FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE;
@@ -772,11 +889,16 @@ CREATE INDEX IF NOT EXISTS idx_credit_note_items_note ON public.credit_note_item
 CREATE INDEX IF NOT EXISTS idx_credit_notes_sale ON public.credit_notes USING btree (sale_id);
 CREATE INDEX IF NOT EXISTS idx_credit_notes_shift ON public.credit_notes USING btree (shift_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_credit_notes_vat_policy_id ON public.credit_notes USING btree (vat_policy_id);
+CREATE INDEX IF NOT EXISTS idx_credit_entries_customer ON public.customer_credit_entries USING btree (customer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_credit_entries_due ON public.customer_credit_entries USING btree (due_on) WHERE (entry_type = 'charge'::text);
 CREATE INDEX IF NOT EXISTS idx_discounts_active ON public.discounts USING btree (is_active, scope);
 CREATE INDEX IF NOT EXISTS idx_pos_devices_active ON public.pos_devices USING btree (is_active, name);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON public.product_variants USING btree (barcode);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants USING btree (product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_without_barcode ON public.product_variants USING btree (product_id) WHERE (barcode IS NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique_idx ON public.products USING btree (lower(product_code)) WHERE (product_code IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_promotions_variant ON public.promotions USING btree (variant_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS promotions_one_active ON public.promotions USING btree (variant_id) WHERE (status = 'active'::text);
 CREATE INDEX IF NOT EXISTS idx_purchases_expected ON public.purchases USING btree (expected_date) WHERE ((status = 'draft'::text) AND (expected_date IS NOT NULL));
 CREATE INDEX IF NOT EXISTS idx_purchases_vat_policy_id ON public.purchases USING btree (vat_policy_id);
 CREATE INDEX IF NOT EXISTS idx_receipt_prints_sale ON public.receipt_prints USING btree (sale_id, printed_at DESC);
@@ -932,6 +1054,83 @@ BEGIN
     END IF;
 
     RETURN v_next;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.apply_promotion(p_variant_id integer, p_promo_price numeric, p_note text DEFAULT NULL::text)
+ RETURNS bigint
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+    v_actor   uuid := auth.uid();
+    v_cost    numeric(10,2);
+    v_current numeric(10,2);
+    v_sku     text;
+    v_promo   numeric(10,2);
+    v_id      bigint;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.profiles
+         WHERE id = v_actor AND is_active AND role IN ('owner', 'manager')
+    ) THEN
+        RAISE insufficient_privilege
+            USING MESSAGE = 'Only an owner or manager can put a product on promotion';
+    END IF;
+
+    -- FOR UPDATE serialises two people promoting the same variant at once; the
+    -- partial unique index is the hard backstop behind it.
+    SELECT cost_price, selling_price, sku
+      INTO v_cost, v_current, v_sku
+      FROM public.product_variants
+     WHERE id = p_variant_id
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE no_data_found USING MESSAGE = 'That item no longer exists';
+    END IF;
+
+    IF p_promo_price IS NULL THEN
+        RAISE not_null_violation USING MESSAGE = 'A promotion price is required';
+    END IF;
+    v_promo := p_promo_price::numeric(10,2);
+
+    IF v_promo < v_cost THEN
+        RAISE check_violation
+            USING MESSAGE = 'A promotion cannot go below cost — that would be a loss';
+    END IF;
+    IF v_promo >= v_current THEN
+        RAISE check_violation
+            USING MESSAGE = 'A promotion price must be lower than the current price';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.promotions
+         WHERE variant_id = p_variant_id AND status = 'active'
+    ) THEN
+        RAISE unique_violation USING MESSAGE = 'This item is already on promotion';
+    END IF;
+
+    INSERT INTO public.promotions (variant_id, original_price, promo_price, note, applied_by)
+    VALUES (p_variant_id, v_current, v_promo,
+            nullif(pg_catalog.btrim(p_note), ''), v_actor)
+    RETURNING id INTO v_id;
+
+    UPDATE public.product_variants
+       SET selling_price = v_promo
+     WHERE id = p_variant_id;
+
+    -- Recorded as a price change (already rendered, already money-toned in the
+    -- activity feed) with the reason spelled into the summary. The promotions
+    -- table is the authoritative record; this is so the trail reads plainly.
+    INSERT INTO public.audit_events (actor_id, event_type, ref_type, ref_id, summary, detail)
+    VALUES (v_actor, 'price.changed', 'variant', p_variant_id::text,
+            coalesce(v_sku, p_variant_id::text) || ' · put on promotion',
+            pg_catalog.jsonb_build_object(
+                'sku', v_sku, 'before', v_current, 'after', v_promo,
+                'promotion_id', v_id, 'reason', 'promotion'));
+
+    RETURN v_id;
 END;
 $function$;
 
@@ -1374,6 +1573,15 @@ AS $function$
     );
 $function$;
 
+CREATE OR REPLACE FUNCTION public.count_slow_movers(p_days integer)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+    SELECT pg_catalog.count(*)::int FROM public.slow_movers(p_days);
+$function$;
+
 CREATE OR REPLACE FUNCTION public.create_credit_note(p_sale_id bigint, p_shift_id integer, p_cashier_id uuid, p_reason text, p_refund_method text, p_items jsonb, p_restock boolean DEFAULT true, p_approved_by uuid DEFAULT NULL::uuid)
  RETURNS bigint
  LANGUAGE plpgsql
@@ -1572,6 +1780,139 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.credit_note_credits_account()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+    v_customer_id integer;
+    v_sale_no     text;
+begin
+    if new.refund_method <> 'credit' then
+        return new;
+    end if;
+
+    select customer_id, sale_no into v_customer_id, v_sale_no
+    from public.sales
+    where id = new.sale_id;
+
+    if v_customer_id is null then
+        raise check_violation using
+            message = 'Only a sale with a customer can be refunded to an account';
+    end if;
+
+    -- Negative, so it reduces what is owed. Allowed to take the balance below
+    -- zero: a customer who has already settled and then returns goods is owed
+    -- money by the shop, and that is a fact the ledger should be able to state
+    -- rather than round away to nothing.
+    insert into public.customer_credit_entries (
+        customer_id, entry_type, amount, credit_note_id, sale_id,
+        created_by, reason
+    ) values (
+        v_customer_id,
+        'refund',
+        -new.total,
+        new.id,
+        new.sale_id,
+        new.cashier_id,
+        'Credit note ' || new.credit_no || ' against ' || v_sale_no
+    )
+    on conflict (credit_note_id) do nothing;
+
+    return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.credit_payment_charges_account()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+    v_sale     public.sales%rowtype;
+    v_customer public.customers%rowtype;
+    v_balance  numeric(12,2);
+begin
+    if new.method <> 'credit' then
+        return new;
+    end if;
+
+    select * into v_sale from public.sales where id = new.sale_id;
+    if not found then
+        raise exception 'Sale % does not exist', new.sale_id;
+    end if;
+
+    -- The rule that makes the whole feature safe. A credit tender is a promise
+    -- by a named person; with no customer on the sale there is nobody to bill
+    -- and the money would simply vanish from the reconciliation.
+    if v_sale.customer_id is null then
+        raise check_violation using
+            message = 'A sale on account needs a customer attached to it';
+    end if;
+
+    -- Serialised per customer. Two tills ringing up the same account at the
+    -- same instant would otherwise both read the pre-sale balance, both find
+    -- room under the limit, and between them exceed it.
+    perform pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtext('customer_credit:' || v_sale.customer_id::text)
+    );
+
+    select * into v_customer from public.customers where id = v_sale.customer_id;
+
+    if v_customer.credit_limit <= 0 then
+        raise check_violation using
+            message = pg_catalog.format(
+                '%s does not have a credit account', v_customer.full_name
+            );
+    end if;
+    if v_customer.credit_on_hold then
+        raise check_violation using
+            message = pg_catalog.format(
+                '%s''s account is on hold', v_customer.full_name
+            );
+    end if;
+
+    v_balance := public.customer_credit_balance(v_sale.customer_id);
+
+    if v_balance + new.amount > v_customer.credit_limit then
+        raise check_violation using
+            message = pg_catalog.format(
+                '%s owes %s of a %s limit — this sale needs %s more',
+                v_customer.full_name,
+                pg_catalog.to_char(v_balance, 'FM999999990.00'),
+                pg_catalog.to_char(v_customer.credit_limit, 'FM999999990.00'),
+                pg_catalog.to_char(new.amount, 'FM999999990.00')
+            );
+    end if;
+
+    insert into public.customer_credit_entries (
+        customer_id, entry_type, amount, sale_payment_id, sale_id,
+        due_on, created_by, reason
+    ) values (
+        v_sale.customer_id,
+        'charge',
+        new.amount,
+        new.id,
+        new.sale_id,
+        -- Frozen from the terms in force today, so changing a customer's terms
+        -- next month does not silently re-age debt already on the books.
+        (v_sale.sale_date AT TIME ZONE 'Indian/Mauritius')::date
+            + v_customer.credit_terms_days,
+        v_sale.cashier_id,
+        'Sale ' || v_sale.sale_no
+    )
+    -- The sale RPC replays a completed sale by idempotency key rather than
+    -- re-inserting its payments, so this should never fire. It is here because
+    -- "should never" and "cannot" are different things when the row means money.
+    on conflict (sale_payment_id) do nothing;
+
+    return new;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.current_role_of_user()
  RETURNS text
  LANGUAGE sql
@@ -1579,6 +1920,17 @@ CREATE OR REPLACE FUNCTION public.current_role_of_user()
  SET search_path TO 'public'
 AS $function$
     SELECT role FROM profiles WHERE id = auth.uid();
+$function$;
+
+CREATE OR REPLACE FUNCTION public.customer_credit_balance(p_customer_id integer)
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+    SELECT coalesce(pg_catalog.sum(amount), 0)::numeric(12,2)
+    FROM public.customer_credit_entries
+    WHERE customer_id = p_customer_id;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.daily_summary(p_from date, p_to date)
@@ -1980,6 +2332,68 @@ BEGIN
         RAISE EXCEPTION 'The till cannot be hidden from a role';
     END IF;
     RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.lift_promotion(p_promotion_id bigint)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+    v_actor    uuid := auth.uid();
+    v_variant  int;
+    v_original numeric(10,2);
+    v_promo    numeric(10,2);
+    v_current  numeric(10,2);
+    v_sku      text;
+    v_restored boolean := false;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.profiles
+         WHERE id = v_actor AND is_active AND role IN ('owner', 'manager')
+    ) THEN
+        RAISE insufficient_privilege
+            USING MESSAGE = 'Only an owner or manager can lift a promotion';
+    END IF;
+
+    SELECT variant_id, original_price, promo_price
+      INTO v_variant, v_original, v_promo
+      FROM public.promotions
+     WHERE id = p_promotion_id AND status = 'active'
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE no_data_found USING MESSAGE = 'That promotion is not active';
+    END IF;
+
+    SELECT selling_price, sku INTO v_current, v_sku
+      FROM public.product_variants
+     WHERE id = v_variant
+       FOR UPDATE;
+
+    UPDATE public.promotions
+       SET status = 'lifted', lifted_by = v_actor, lifted_at = now()
+     WHERE id = p_promotion_id;
+
+    -- Only restore if the price is still the promo price. If it was edited by
+    -- hand during the promotion, that newer figure is the shop's latest word and
+    -- must not be clobbered by a stale original.
+    IF v_current = v_promo THEN
+        UPDATE public.product_variants
+           SET selling_price = v_original
+         WHERE id = v_variant;
+        v_restored := true;
+
+        INSERT INTO public.audit_events (actor_id, event_type, ref_type, ref_id, summary, detail)
+        VALUES (v_actor, 'price.changed', 'variant', v_variant::text,
+                coalesce(v_sku, v_variant::text) || ' · promotion lifted',
+                pg_catalog.jsonb_build_object(
+                    'sku', v_sku, 'before', v_promo, 'after', v_original,
+                    'promotion_id', p_promotion_id, 'reason', 'promotion lifted'));
+    END IF;
+
+    RETURN v_restored;
 END;
 $function$;
 
@@ -2527,6 +2941,98 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.settle_customer_credit(p_customer_id integer, p_amount numeric, p_method text, p_shift_id integer DEFAULT NULL::integer, p_reason text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+    v_customer public.customers%rowtype;
+    v_balance  numeric(12,2);
+    v_amount   numeric(12,2) := pg_catalog.round(coalesce(p_amount, 0), 2);
+    v_entry_id bigint;
+begin
+    if v_amount <= 0 then
+        raise check_violation using
+            message = 'A payment has to be more than nothing';
+    end if;
+    if p_method is null or p_method not in
+        ('cash', 'card', 'juice', 'myt_money', 'bank') then
+        raise check_violation using
+            message = 'A payment on account needs a real payment method';
+    end if;
+
+    perform pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtext('customer_credit:' || p_customer_id::text)
+    );
+
+    select * into v_customer from public.customers where id = p_customer_id;
+    if not found then
+        raise exception 'Customer % does not exist', p_customer_id;
+    end if;
+
+    v_balance := public.customer_credit_balance(p_customer_id);
+
+    if v_balance <= 0 then
+        raise check_violation using
+            message = pg_catalog.format(
+                '%s does not owe anything', v_customer.full_name
+            );
+    end if;
+
+    -- Refused rather than clamped. Over-paying an account is nearly always a
+    -- mistyped figure, and silently accepting it would leave the shop holding
+    -- money it has no record of a reason for. The cashier is told the balance
+    -- and can take exactly it.
+    if v_amount > v_balance then
+        raise check_violation using
+            message = pg_catalog.format(
+                '%s only owes %s',
+                v_customer.full_name,
+                pg_catalog.to_char(v_balance, 'FM999999990.00')
+            );
+    end if;
+
+    insert into public.customer_credit_entries (
+        customer_id, entry_type, amount, method, shift_id, reason, created_by
+    ) values (
+        p_customer_id,
+        'settlement',
+        -v_amount,
+        p_method,
+        p_shift_id,
+        nullif(pg_catalog.btrim(coalesce(p_reason, '')), ''),
+        pg_catalog.current_setting('request.jwt.claim.sub', true)::uuid
+    )
+    returning id into v_entry_id;
+
+    -- Cash handed over at a till is in that drawer, and the drawer has to
+    -- expect it at close. `record_till_movement` is the existing machinery for
+    -- "money arrived that was not a sale", so this reuses it rather than
+    -- inventing a second path into expected cash — and it refuses a closed
+    -- shift for free.
+    --
+    -- A cash payment taken with NO shift (an owner in the back office) writes
+    -- no movement: it never entered a till, and claiming it did would make some
+    -- drawer short by exactly this amount.
+    if p_method = 'cash' and p_shift_id is not null then
+        perform public.record_till_movement(
+            p_shift_id,
+            v_amount,
+            'Account payment — ' || v_customer.full_name
+        );
+    end if;
+
+    return pg_catalog.jsonb_build_object(
+        'entry_id',    v_entry_id,
+        'balance',     public.customer_credit_balance(p_customer_id),
+        'settled',     v_amount,
+        'customer_id', p_customer_id
+    );
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.shift_totals(p_shift_id integer)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -2623,6 +3129,57 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.slow_movers(p_days integer)
+ RETURNS TABLE(product_id integer, product_name text, product_code text, category_name text, qty_on_hand bigint, variant_count bigint, last_sold_at timestamp with time zone, idle_since timestamp with time zone, days_idle integer, min_price numeric, max_price numeric)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+    WITH active_variants AS (
+        SELECT pv.id, pv.product_id, pv.qty_on_hand, pv.selling_price
+          FROM public.product_variants pv
+         WHERE pv.is_active
+    ),
+    last_sale AS (
+        SELECT si.variant_id, pg_catalog.max(s.sale_date) AS sold_at
+          FROM public.sale_items si
+          JOIN public.sales s ON s.id = si.sale_id
+         WHERE s.status = 'completed'
+         GROUP BY si.variant_id
+    )
+    SELECT
+        p.id,
+        p.name,
+        p.product_code,
+        c.name,
+        sum(av.qty_on_hand)::bigint                              AS qty_on_hand,
+        count(av.id)::bigint                                     AS variant_count,
+        max(ls.sold_at)                                          AS last_sold_at,
+        -- GREATEST/EXTRACT are SQL expressions, not schema-qualifiable
+        -- functions, so they stay bare; pg_catalog is always searched anyway.
+        greatest(p.created_at, max(ls.sold_at))                 AS idle_since,
+        extract(
+            day FROM now() - greatest(p.created_at, max(ls.sold_at))
+        )::int                                                   AS days_idle,
+        min(av.selling_price)                                    AS min_price,
+        max(av.selling_price)                                    AS max_price
+      FROM public.products p
+      JOIN active_variants av ON av.product_id = p.id
+      LEFT JOIN last_sale ls ON ls.variant_id = av.id
+      LEFT JOIN public.categories c ON c.id = p.category_id
+     WHERE p.is_active
+       -- not already on promotion (any of its variants)
+       AND NOT EXISTS (
+            SELECT 1 FROM public.promotions pr
+             WHERE pr.variant_id = av.id AND pr.status = 'active'
+       )
+     GROUP BY p.id, p.name, p.product_code, c.name, p.created_at
+    HAVING sum(av.qty_on_hand) > 0
+       AND greatest(p.created_at, max(ls.sold_at))
+           <= now() - (p_days || ' days')::interval
+     ORDER BY greatest(p.created_at, max(ls.sold_at)) ASC;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.transfer_stock(p_variant_id integer, p_qty integer, p_from_location integer, p_to_location integer, p_notes text DEFAULT NULL::text)
  RETURNS void
  LANGUAGE plpgsql
@@ -2670,6 +3227,105 @@ BEGIN
     VALUES (p_variant_id, 'adjustment', p_qty, p_to_location,
             'transfer', coalesce(p_notes, 'Transfer in'), auth.uid());
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.void_sale_reverses_credit()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+    v_charge public.customer_credit_entries%rowtype;
+begin
+    if new.status <> 'void' or old.status = 'void' then
+        return new;
+    end if;
+
+    for v_charge in
+        select * from public.customer_credit_entries
+        where sale_id = new.id and entry_type = 'charge'
+    loop
+        -- Skipped if this charge has already been reversed, so voiding twice
+        -- cannot credit the account twice.
+        if not exists (
+            select 1 from public.customer_credit_entries
+            where sale_id = new.id
+              and entry_type = 'adjustment'
+              and reason = 'Void of sale ' || new.sale_no
+        ) then
+            insert into public.customer_credit_entries (
+                customer_id, entry_type, amount, sale_id, created_by, reason
+            ) values (
+                v_charge.customer_id,
+                'adjustment',
+                -v_charge.amount,
+                new.id,
+                v_charge.created_by,
+                'Void of sale ' || new.sale_no
+            );
+        end if;
+    end loop;
+
+    return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.write_off_customer_credit(p_customer_id integer, p_amount numeric, p_reason text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+    v_balance  numeric(12,2);
+    v_amount   numeric(12,2) := pg_catalog.round(coalesce(p_amount, 0), 2);
+    v_entry_id bigint;
+begin
+    -- Owner only, and checked here rather than left to RLS: this function is
+    -- SECURITY DEFINER, so it runs with privileges that ignore the policies on
+    -- the table it writes.
+    if public.current_role_of_user() <> 'owner' then
+        raise insufficient_privilege using
+            message = 'Only an owner can write off a debt';
+    end if;
+
+    if v_amount <= 0 then
+        raise check_violation using message = 'A write-off needs an amount';
+    end if;
+    if coalesce(pg_catalog.btrim(p_reason), '') = '' then
+        raise check_violation using
+            message = 'A write-off needs a reason on the record';
+    end if;
+
+    perform pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtext('customer_credit:' || p_customer_id::text)
+    );
+
+    v_balance := public.customer_credit_balance(p_customer_id);
+    if v_amount > v_balance then
+        raise check_violation using
+            message = pg_catalog.format(
+                'Only %s is owed', pg_catalog.to_char(v_balance, 'FM999999990.00')
+            );
+    end if;
+
+    insert into public.customer_credit_entries (
+        customer_id, entry_type, amount, reason, created_by
+    ) values (
+        p_customer_id,
+        'writeoff',
+        -v_amount,
+        pg_catalog.btrim(p_reason),
+        pg_catalog.current_setting('request.jwt.claim.sub', true)::uuid
+    )
+    returning id into v_entry_id;
+
+    return pg_catalog.jsonb_build_object(
+        'entry_id', v_entry_id,
+        'balance',  public.customer_credit_balance(p_customer_id)
+    );
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.z_totals(p_shift_id integer, p_as_at timestamp with time zone DEFAULT now())
@@ -2962,6 +3618,27 @@ $function$;
 -- VIEWS
 -- ==========================================================================
 
+CREATE OR REPLACE VIEW customer_credit_accounts WITH (security_invoker=true) AS
+SELECT c.id AS customer_id,
+    c.full_name,
+    c.phone,
+    c.credit_limit,
+    c.credit_terms_days,
+    c.credit_on_hold,
+    COALESCE(l.balance, 0::numeric)::numeric(12,2) AS balance,
+    GREATEST(0::numeric, c.credit_limit - COALESCE(l.balance, 0::numeric))::numeric(12,2) AS available,
+    l.oldest_due_on,
+    l.last_activity_at,
+    COALESCE(l.charge_count, 0::bigint) AS charge_count
+   FROM customers c
+     LEFT JOIN ( SELECT customer_credit_entries.customer_id,
+            sum(customer_credit_entries.amount) AS balance,
+            min(customer_credit_entries.due_on) FILTER (WHERE customer_credit_entries.entry_type = 'charge'::text) AS oldest_due_on,
+            max(customer_credit_entries.created_at) AS last_activity_at,
+            count(*) FILTER (WHERE customer_credit_entries.entry_type = 'charge'::text) AS charge_count
+           FROM customer_credit_entries
+          GROUP BY customer_credit_entries.customer_id) l ON l.customer_id = c.id;
+
 CREATE OR REPLACE VIEW late_sales WITH (security_invoker=on) AS
 SELECT s.id AS sale_id,
     s.sale_no,
@@ -3036,6 +3713,8 @@ SELECT sm.location_id,
 -- TRIGGERS
 -- ==========================================================================
 
+DROP TRIGGER IF EXISTS credit_note_credits_account ON credit_notes;
+CREATE TRIGGER credit_note_credits_account AFTER INSERT ON public.credit_notes FOR EACH ROW EXECUTE FUNCTION credit_note_credits_account();
 DROP TRIGGER IF EXISTS trg_audit_discounts ON discounts;
 CREATE TRIGGER trg_audit_discounts AFTER INSERT OR DELETE OR UPDATE ON public.discounts FOR EACH ROW EXECUTE FUNCTION audit_discounts();
 DROP TRIGGER IF EXISTS trg_module_access_owner ON module_access;
@@ -3052,8 +3731,12 @@ DROP TRIGGER IF EXISTS trg_audit_profile_access ON profiles;
 CREATE TRIGGER trg_audit_profile_access AFTER UPDATE ON public.profiles FOR EACH ROW WHEN (((old.role IS DISTINCT FROM new.role) OR (old.pin_code IS DISTINCT FROM new.pin_code) OR (old.is_active IS DISTINCT FROM new.is_active))) EXECUTE FUNCTION audit_profile_access();
 DROP TRIGGER IF EXISTS trg_purchase_items_draft_only ON purchase_items;
 CREATE TRIGGER trg_purchase_items_draft_only BEFORE INSERT OR DELETE OR UPDATE ON public.purchase_items FOR EACH ROW EXECUTE FUNCTION forbid_received_purchase_lines();
+DROP TRIGGER IF EXISTS credit_payment_charges_account ON sale_payments;
+CREATE TRIGGER credit_payment_charges_account AFTER INSERT ON public.sale_payments FOR EACH ROW EXECUTE FUNCTION credit_payment_charges_account();
 DROP TRIGGER IF EXISTS trg_audit_sale_status ON sales;
 CREATE TRIGGER trg_audit_sale_status AFTER UPDATE ON public.sales FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION audit_sale_status();
+DROP TRIGGER IF EXISTS void_sale_reverses_credit ON sales;
+CREATE TRIGGER void_sale_reverses_credit AFTER UPDATE OF status ON public.sales FOR EACH ROW EXECUTE FUNCTION void_sale_reverses_credit();
 DROP TRIGGER IF EXISTS trg_audit_settings ON settings;
 CREATE TRIGGER trg_audit_settings AFTER UPDATE ON public.settings FOR EACH ROW WHEN ((old.value IS DISTINCT FROM new.value)) EXECUTE FUNCTION audit_settings();
 DROP TRIGGER IF EXISTS trg_stock_movements_location ON stock_movements;
@@ -3073,6 +3756,7 @@ ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE colours ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_note_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE credit_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_credit_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE discounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE doc_counters ENABLE ROW LEVEL SECURITY;
@@ -3081,6 +3765,7 @@ ALTER TABLE pos_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_variants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE receipt_prints ENABLE ROW LEVEL SECURITY;
@@ -3088,6 +3773,7 @@ ALTER TABLE sale_discounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sizes ENABLE ROW LEVEL SECURITY;
@@ -3140,6 +3826,11 @@ CREATE POLICY read_all ON credit_note_items
 
 DROP POLICY IF EXISTS read_all ON credit_notes;
 CREATE POLICY read_all ON credit_notes
+    FOR SELECT TO authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS read_all ON customer_credit_entries;
+CREATE POLICY read_all ON customer_credit_entries
     FOR SELECT TO authenticated
     USING (true);
 
@@ -3218,6 +3909,11 @@ CREATE POLICY manage_profiles ON profiles
 
 DROP POLICY IF EXISTS read_all ON profiles;
 CREATE POLICY read_all ON profiles
+    FOR SELECT TO authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS read_all ON promotions;
+CREATE POLICY read_all ON promotions
     FOR SELECT TO authenticated
     USING (true);
 
@@ -3399,14 +4095,15 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon,
 
 INSERT INTO settings (key, value) VALUES
     ('barcode_auto', 'true'::jsonb),
-    ('barcode_next', '317'::jsonb),
-    ('barcode_prefix', '"6291041"'::jsonb),
+    ('barcode_next', '320'::jsonb),
+    ('barcode_prefix', '"7865"'::jsonb),
     ('currency', '"MUR"'::jsonb),
     ('payment_methods', '["cash","card","juice","bank"]'::jsonb),
     ('refund_requires_manager', 'false'::jsonb),
     ('shop_name', '"Kids Corner"'::jsonb),
+    ('slow_mover_days', '10'::jsonb),
     ('vat_enabled', 'false'::jsonb),
-    ('vat_number', NULL),
+    ('vat_number', '"VAT2020809"'::jsonb),
     ('vat_rate', '0.15'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
@@ -3421,22 +4118,23 @@ INSERT INTO sizes (id, size_type, label, sort_order, is_active) VALUES
     (8, 'age_range', '5-6 yrs', 8, TRUE),
     (9, 'age_range', '7-8 yrs', 9, TRUE),
     (10, 'age_range', '9-10 yrs', 10, TRUE),
-    (11, 'shoe_size', 'EU 19', 20, TRUE),
-    (12, 'shoe_size', 'EU 20', 21, TRUE),
-    (13, 'shoe_size', 'EU 21', 22, TRUE),
-    (14, 'shoe_size', 'EU 22', 23, TRUE),
-    (15, 'shoe_size', 'EU 23', 24, TRUE),
-    (16, 'shoe_size', 'EU 24', 25, TRUE),
-    (17, 'shoe_size', 'EU 25', 26, TRUE),
-    (18, 'shoe_size', 'EU 26', 27, TRUE),
-    (19, 'shoe_size', 'EU 27', 28, TRUE),
-    (20, 'shoe_size', 'EU 28', 29, TRUE),
+    (11, 'shoe_size', '19', 20, TRUE),
+    (12, 'shoe_size', '20', 21, TRUE),
+    (13, 'shoe_size', '21', 22, TRUE),
+    (14, 'shoe_size', '22', 23, TRUE),
+    (15, 'shoe_size', '23', 24, TRUE),
+    (16, 'shoe_size', '24', 25, TRUE),
+    (17, 'shoe_size', '25', 26, TRUE),
+    (18, 'shoe_size', '26', 27, TRUE),
+    (19, 'shoe_size', '27', 28, TRUE),
+    (20, 'shoe_size', '28', 29, TRUE),
     (196, 'letter_size', 'S', 40, TRUE),
     (197, 'letter_size', 'M', 41, TRUE),
     (198, 'letter_size', 'L', 42, TRUE),
     (199, 'letter_size', 'XL', 43, TRUE),
     (200, 'letter_size', 'XXL', 44, TRUE),
-    (201, 'letter_size', 'XXXL', 45, TRUE)
+    (201, 'letter_size', 'XXXL', 45, TRUE),
+    (202, 'shoe_size', 'EU 24', 900, TRUE)
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('sizes', 'id'),
        greatest((SELECT max(id) FROM sizes), 1));
