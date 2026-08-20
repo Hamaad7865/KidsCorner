@@ -31,7 +31,10 @@ export function AppSidebar({ allowed = null }: { allowed?: string[] | null }) {
         </Link>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto py-2" aria-label="Back office">
+      <nav
+        className="no-scrollbar min-h-0 flex-1 overflow-y-auto py-2"
+        aria-label="Back office"
+      >
         {sections.map((section, index) => (
           <div key={section.label ?? `section-${index}`} className="px-3 py-1">
             {section.label ? (
