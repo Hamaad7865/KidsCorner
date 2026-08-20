@@ -13,6 +13,17 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
+      AppUpdater downloads the update quietly (VISIBILITY_HIDDEN) rather than
+      through the system's own download notification. Without this permission
+      DownloadManager.enqueue() doesn't just ignore that setting — it throws
+      SecurityException("Invalid value for visibility: 2") the moment a real
+      update is available to fetch, crashing the app on its very next
+      heartbeat. Found live: the till reached this the first time it actually
+      had something to download.
+    -->
+    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
+
+    <!--
       Receipt printing over Bluetooth.
 
       BLUETOOTH_CONNECT is runtime-granted from API 31; the two legacy

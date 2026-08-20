@@ -30,6 +30,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import mu.kidscorner.till.data.Approval
+import mu.kidscorner.till.data.DownloadState
 import mu.kidscorner.till.print.hasBluetoothPermission
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.requestUsbPermission
@@ -204,6 +205,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         online = state.online,
                         reconnecting = state.reconnecting,
                         updateVersionName = state.updateVersionName,
+                        downloadReady = state.updateDownload is DownloadState.Ready,
                         vatRate = shop.resolvedVatRate,
                         vatEnabled = shop.vatEnabled,
                         onSwitchCashier = vm::switchCashier,

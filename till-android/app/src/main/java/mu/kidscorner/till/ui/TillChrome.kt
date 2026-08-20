@@ -61,8 +61,15 @@ fun TillChrome(
     tillOpen: Boolean = true,
     reconnecting: Boolean = false,
     onReconnect: () -> Unit = {},
-    /** A downloaded update's version name, or null while none is ready. */
+    /** The newer version's name once the server has announced it. */
     updateVersionName: String? = null,
+    /**
+     * Whether that update has actually finished downloading. `updateVersionName`
+     * alone only means the server announced one — offering to install before
+     * the file exists left "Install now" doing nothing, silently, because
+     * installUpdate() itself already refuses to start with no file ready.
+     */
+    downloadReady: Boolean = false,
     /** Whether the basket is empty right now — installing only offers then. */
     basketEmpty: Boolean = true,
     /** Opens the "Update to vX?" confirmation. Only called when ready AND empty. */
@@ -154,6 +161,7 @@ fun TillChrome(
                 reconnecting = reconnecting,
                 onReconnect = onReconnect,
                 updateVersionName = updateVersionName,
+                downloadReady = downloadReady,
                 basketEmpty = basketEmpty,
                 onOfferUpdate = onOfferUpdate,
             )
@@ -242,6 +250,7 @@ private fun ConnectionPill(
     reconnecting: Boolean,
     onReconnect: () -> Unit,
     updateVersionName: String?,
+    downloadReady: Boolean,
     basketEmpty: Boolean,
     onOfferUpdate: () -> Unit,
 ) {
@@ -250,7 +259,11 @@ private fun ConnectionPill(
     // queued, mid-sync) always outranks it, and so does a basket with
     // anything in it — installing is exactly the kind of thing that must
     // never land on a cashier mid-sale with a customer at the counter.
-    val updateReady = updateVersionName != null && online && !waiting && !reconnecting
+    // `downloadReady` too: the server can announce a version before the file
+    // has finished fetching, and offering install before then is a button
+    // that silently does nothing when tapped.
+    val updateReady =
+        updateVersionName != null && downloadReady && online && !waiting && !reconnecting
 
     // One control, always tappable: sync everything now — roster, catalogue
     // (prices and shelf), and the VAT policy — and, when the line is down, the

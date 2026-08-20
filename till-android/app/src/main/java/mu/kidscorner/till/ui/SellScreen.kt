@@ -196,8 +196,10 @@ fun SellScreen(
     catalogLoading: Boolean,
     online: Boolean,
     reconnecting: Boolean = false,
-    /** A downloaded update's version name, or null while none is ready. */
+    /** The newer version's name once the server has announced it. */
     updateVersionName: String? = null,
+    /** Whether that update has actually finished downloading — see TillChrome. */
+    downloadReady: Boolean = false,
     vatRate: Double,
     /** Whether the shop is VAT registered — hides all VAT wording when off. */
     vatEnabled: Boolean,
@@ -341,6 +343,7 @@ fun SellScreen(
             reconnecting = reconnecting,
             onReconnect = onReconnect,
             updateVersionName = updateVersionName,
+            downloadReady = downloadReady,
             basketEmpty = lines.isEmpty(),
             onOfferUpdate = onOfferUpdate,
             onSwitchCashier = onSwitchCashier,
