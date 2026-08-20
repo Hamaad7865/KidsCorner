@@ -24,6 +24,17 @@ export function ThresholdControl({
   const router = useRouter()
   const [state, formAction] = useActionState(setSlowMoverDays, IDLE_STATE)
   const [value, setValue] = useState(String(days))
+  // Tracks the `days` this render is following, so a change is caught during
+  // render itself (React's own pattern for "reset local state when a prop
+  // changes") rather than via an effect, which would show the stale value for
+  // one extra frame. Without this, since the component stays mounted across a
+  // revalidation, a value saved from another tab would never appear here — the
+  // input would keep showing whatever was last typed in THIS one.
+  const [trackedDays, setTrackedDays] = useState(days)
+  if (days !== trackedDays) {
+    setTrackedDays(days)
+    setValue(String(days))
+  }
 
   useEffect(() => {
     if (state.status === "success") {
