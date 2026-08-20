@@ -28,7 +28,7 @@ Back office:
 - Excel import wizard — upload, map/validate, commit, error report
 - Stock — movements, adjustments, low stock, transfers between locations
 - Purchases and suppliers, including `receive_purchase`
-- Customers with purchase history
+- Customers with purchase history, credit accounts and statements
 - Sales history, returns and credit notes
 - Reports, with CSV export per report
 - Settings — shop, master data, discounts, staff PINs, locations, module access,
@@ -72,11 +72,18 @@ what was applied and why. This file is what you run.
 node scripts/generate-catchup.mjs
 ```
 
-It ends with a SELECT that reports what was built. Expect **30 tables, 4 views,
-42 functions, 46 policies** — and, more importantly, `anon_can_execute` **0**,
-`definers_unpinned` **0**, `views_with_invoker` **4**. Any other answer on those
-three means the publishable key reaches further into the database than it
-should.
+It ends with a SELECT that reports what was built. Expect **33 tables, 5 views,
+52 functions, 48 policies** — and, more importantly, `definers_unpinned` **0**,
+`views_with_invoker` **5**, and `anon_can_execute` **2**. Any other answer on the
+security figures means the publishable key reaches further into the database
+than it should.
+
+The two `anon_can_execute` rows are `forget_verifier_with_pin` (migration 038)
+and `guard_owner_access` (041), both trigger functions granted to `PUBLIC` by
+default. They are harmless in practice — triggers fire with the table owner's
+privileges regardless of the grant, and RLS stops `anon` from touching the
+tables they guard — but they are real rows, so the count is what it is rather
+than a rounded zero.
 
 ### 2. Fill in `.env.local`
 
@@ -159,6 +166,41 @@ route segment config such as `export const runtime` is rejected in this file.
 The proxy reads `profiles.role` on every matched request. That is one extra
 query per page load — fine at shop scale. If it ever matters, move `role` into a
 custom JWT claim with a Supabase auth hook and read it off `getClaims()` instead.
+
+## Credit customers
+
+Known customers can take goods now and settle later. Migration
+`20260820100000_customer_credit.sql` adds the account book:
+
+- A credit sale is a **completed sale with a `credit` payment row** for the
+  unpaid amount. That is what keeps the invariant that payments sum exactly to
+  the sale total — a Rs 200 cash deposit plus Rs 300 on account is a balanced
+  Rs 500 sale, with no special case in the pricing path.
+- The balance is `sum(amount)` over the append-only `customer_credit_entries`
+  ledger and is stored nowhere else. Charges are positive, settlements,
+  refunds-to-account and write-offs are negative; the sign rule is a CHECK
+  constraint. Nothing is ever edited — a correction is an `adjustment` row that
+  says so.
+- A trigger on `sale_payments` is the gate, not the apps: it refuses a credit
+  tender with no customer attached, with no account (`credit_limit = 0`), on a
+  held account, or over the limit — under a per-customer advisory lock, so two
+  tills cannot both find room. `lib/pos/sale-core.ts` pre-checks the same rules
+  so the cashier gets a sentence instead of a constraint error.
+- `credit` is deliberately **not** in `settings.payment_methods`. Every other
+  tender is unconditional; credit is only legal for a named customer with room
+  on their account, so the tills draw the affordance themselves, gated, rather
+  than taking it from the settings list.
+- Money reports exclude it. A credit tender is invoiced revenue, not collected
+  money: it never enters the drawer, the bank-deposit logic, or "cash received".
+- Settling: the back office records payments (owner/manager) on the customer
+  page, and the till has a "Payment on account" action for the customer walking
+  in. A **cash** settlement against an open shift writes a matching till
+  movement so the drawer expects the money; cash without a shift is refused on
+  the till and recorded without a drawer by the back office.
+- Returns against an account sale can be refunded `to account` rather than in
+  cash — refunding money the shop never received would be the alternative.
+- Receivables live in Reports → **On account**, aged oldest-first by due date
+  into current / 1–30 / 31–60 / 60+ days, with CSV/XLSX export.
 
 ## Barcodes
 

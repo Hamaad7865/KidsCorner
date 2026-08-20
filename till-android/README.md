@@ -86,9 +86,31 @@ of panel size (`TARGET_WIDTH_DP` in `Theme.kt`). A 15" shop tablet reports
 too small to hit without looking down, which is the one thing a cashier facing a
 customer cannot do. Same idea as the web till's `clamp()` on the root font size.
 
+## Credit customers
+
+The till bills to an account through a dedicated **ON ACCOUNT** tile on the
+payment screen — never through the ordinary method list. That is the gate made
+visible: `settings.payment_methods` deliberately excludes `credit`, because
+every other tile is unconditional and this one is only legal for a named
+customer with an open account. The tile shows the attached customer's available
+credit, refuses a basket larger than it, and says why in words the cashier can
+read out. One tap bills the whole outstanding balance and completes the sale.
+
+Payments *against* an account — the customer walking in to settle — live under
+Till actions → **Payment on account**. Cash needs an open shift, because the
+payment is recorded into that drawer; with no shift open the cash chip is not
+offered.
+
+Neither the tile nor the dialog decides anything about money. The server
+re-reads the account and the database re-checks the limit under a per-customer
+lock, so a stale balance on the device can show an old number but can never
+authorise a charge. Settlements are never queued offline: unlike a sale, a
+payment on account is refused or accepted against a balance only the server
+knows.
+
 ## Not built yet
 
-- The sell screen: catalog search, cart, payment
-- The offline queue (Room), mirroring `lib/pos/queue.ts`
 - Idle re-lock
-- Receipt printing and reprints
+
+The sell screen, offline queue, receipt printing and reprints — listed as
+unbuilt in an earlier revision — all exist and are in daily use.

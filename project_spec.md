@@ -106,7 +106,10 @@ lines (qty + unit cost), save as draft; "Receive" button calls
 `receive_purchase`.
 
 **Customers**: list, quick create (name + phone), detail with purchase
-history.
+history and — since the credit-customers feature — an account section: credit
+limit, terms and hold, an append-only statement with running balance, and
+payments/write-offs recorded from the detail page. Reports carries an
+"On account" receivables view with FIFO aging (current, 1–30, 31–60, 60+).
 
 **Settings**: shop info, VAT display, payment methods, user management
 (create profile, role, set PIN), master data CRUD.
@@ -124,11 +127,13 @@ hold sale, clear.
   cells show price + stock, out-of-stock greyed, one tap adds.
 - Held sales: park/resume carts (local state, list modal).
 
-**Payment**: total in huge type; methods Cash / Card / Juice / my.t money;
-cash keypad with quick amounts (exact, 100, 500, 1000) + CHANGE DUE large;
-split payments (add payment rows until covered). Confirm calls
-`complete_sale` RPC. Success screen: change due, Print receipt, New sale
-(auto-advance ~5s).
+**Payment**: total in huge type; methods Cash / Card / Juice / my.t money /
+bank; cash keypad with quick amounts (exact, 100, 500, 1000) + CHANGE DUE large;
+split payments (add payment rows until covered). A dedicated **On account**
+tender bills the whole basket to the attached credit customer, shown only when
+their account allows it (limit, hold and available room are checked server-side
+under a lock). Confirm calls `complete_sale` RPC. Success screen: change due,
+Print receipt, New sale (auto-advance ~5s).
 
 **Shift**: open (float amount) required before selling; close shows totals
 by payment method, expected vs counted cash, variance; writes to `shifts`.
