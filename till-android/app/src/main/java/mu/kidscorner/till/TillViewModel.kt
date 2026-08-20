@@ -40,6 +40,7 @@ import mu.kidscorner.till.data.SalePayment
 import mu.kidscorner.till.data.SaleRequest
 import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.data.SessionStore
+import mu.kidscorner.till.data.SettleCreditRequest
 import mu.kidscorner.till.data.ShiftTotals
 import mu.kidscorner.till.data.StockCheckLocation
 import mu.kidscorner.till.data.TillApi
@@ -175,6 +176,11 @@ data class TillState(
     val closeSummary: CloseShiftResponse? = null,
     val movementError: String? = null,
     val movementDone: Boolean = false,
+
+    /** A customer's payment on account, mid-flight or refused. */
+    val creditPaymentBusy: Boolean = false,
+    val creditPaymentError: String? = null,
+    val creditPaymentDone: Boolean = false,
 
     val history: List<SaleSummary> = emptyList(),
     val historyLoading: Boolean = false,
@@ -1055,6 +1061,76 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearMovementResult() =
         _state.update { it.copy(movementDone = false, movementError = null) }
+
+    /**
+     * Money received against a customer's account.
+     *
+     * Online only, and never queued. A sale can be parked because the till
+     * already knows everything about it — replaying it later records history.
+     * A payment on account is accepted or refused against a balance only the
+     * server knows, so a queued one could double-charge after the debt was
+     * settled elsewhere, or fail because it already has been. The refusal the
+     * server writes — "they only owe Rs 350" — is shown word for word.
+     */
+    fun settleCredit(customerId: Int, amount: Double, method: String) = viewModelScope.launch {
+        val current = _state.value
+        val shiftId = current.shop?.shift?.id
+        if (method == "cash" && shiftId == null) {
+            _state.update {
+                it.copy(creditPaymentError = "Open the till before taking cash.")
+            }
+            return@launch
+        }
+
+        _state.update { it.copy(creditPaymentBusy = true, creditPaymentError = null) }
+
+        repo.settleCredit(
+            SettleCreditRequest(
+                customerId = customerId,
+                amount = round2(amount),
+                method = method,
+                shiftId = if (method == "cash") shiftId else null,
+                reason = null,
+            ),
+        )
+            .onSuccess { response ->
+                _state.update {
+                    if (response.ok) {
+                        // The balance on any screen that shows one has moved.
+                        it.copy(
+                            creditPaymentBusy = false,
+                            creditPaymentDone = true,
+                            customer = it.customer?.takeIf { c -> c.id == customerId }
+                                ?.copy(creditBalance = response.balance),
+                            customerResults = it.customerResults.map { row ->
+                                if (row.id == customerId) row.copy(creditBalance = response.balance)
+                                else row
+                            },
+                        )
+                    } else {
+                        it.copy(
+                            creditPaymentBusy = false,
+                            creditPaymentError = response.error ?: "Could not record that payment.",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        creditPaymentBusy = false,
+                        creditPaymentError = cause.message ?: "Could not record that payment.",
+                    )
+                }
+            }
+    }
+
+    fun clearCreditPaymentResult() =
+        _state.update { it.copy(creditPaymentDone = false, creditPaymentError = null) }
+
+    /** Clears the shared customer search list, for whoever opened it last. */
+    fun clearCustomerSearch() =
+        _state.update { it.copy(customerResults = emptyList(), customerError = null) }
 
     /**
      * Has the back office closed this till out from under us?
@@ -2155,6 +2231,29 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Bills the whole basket to the attached customer's account.
+     *
+     * The screen's ON ACCOUNT tile asks for this, and the whole balance is the
+     * only amount it ever bills: a deposit plus the rest on account is a split
+     * tender, and the split flow deliberately does not offer credit — every
+     * method in that list is unconditional, which credit is not. The gate stays
+     * in the one place a customer's account is actually known.
+     *
+     * The server re-checks everything that matters — the customer, the account,
+     * the hold and the limit, under a lock. This builds the tender; it does not
+     * decide whether the tender is legal.
+     */
+    fun chargeToAccount() {
+        val current = _state.value
+        val outstanding = round2(maxOf(0.0, current.totals.total))
+        if (outstanding <= 0) return
+        confirmSale(
+            payments = listOf(SalePayment(method = "credit", amount = outstanding, tendered = null)),
+            change = 0.0,
+        )
+    }
+
+    /**
      * Commits the sale.
      *
      * Sends variant ids and quantities only. Every price, every discount and
@@ -2231,7 +2330,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             .joinToString(", ") { m ->
                                 when (m) {
                                     "cash" -> "Cash"; "card" -> "Card"; "juice" -> "Juice"
-                                    "myt_money" -> "my.t money"; "bank" -> "Bank"; else -> m
+                                    "myt_money" -> "my.t money"; "bank" -> "Bank"
+                                    "credit" -> "On account"; else -> m
                                 }
                             },
                     )

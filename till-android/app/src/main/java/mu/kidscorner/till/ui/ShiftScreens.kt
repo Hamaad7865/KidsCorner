@@ -946,5 +946,7 @@ private fun methodColor(method: String): Color = when (method) {
     "card" -> Color(0xFF00A4AC)
     "juice" -> Color(0xFFD48C3A)
     "myt", "myt_money" -> Color(0xFF7974C5)
+    "bank" -> Color(0xFF2E5F8A)
+    "credit" -> Color(0xFF8A5A12)
     else -> Handoff.Muted4
 }

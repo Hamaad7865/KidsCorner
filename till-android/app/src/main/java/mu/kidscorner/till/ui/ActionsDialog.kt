@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inbox
@@ -65,6 +66,8 @@ fun ActionsDialog(
     onCustomItem: () -> Unit,
     onSaleNote: () -> Unit,
     onSettings: () -> Unit,
+    /** A customer settling their account at the counter. */
+    onAccountPayment: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val noRipple = remember { MutableInteractionSource() }
@@ -137,6 +140,14 @@ fun ActionsDialog(
                         Color(0xFFFFF3DF),
                         Color(0xFF8A5A12),
                         onClick = onOpenDrawer,
+                    ),
+                    Action(
+                        "Payment on account",
+                        "A customer paying their tab",
+                        Icons.Default.AccountBalanceWallet,
+                        Color(0xFFE7F0FA),
+                        Color(0xFF2E5F8A),
+                        onClick = onAccountPayment,
                     ),
                     Action(
                         "Custom item",

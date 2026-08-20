@@ -222,6 +222,7 @@ class GalleryActivity : ComponentActivity() {
                             onCustomItem = {},
                             onSaleNote = { showing = "note" },
                             onSettings = {},
+                            onAccountPayment = {},
                             onDismiss = { showing = null },
                         )
 
@@ -501,7 +502,9 @@ class GalleryActivity : ComponentActivity() {
                             error = null,
                             frozen = false,
                             parkable = false,
+                            customer = null,
                             onConfirm = { _, _ -> },
+                            onCreditTender = {},
                             onRetry = {},
                             onPark = {},
                             onCancel = {},
@@ -1054,7 +1057,9 @@ private fun VatPaymentSample(vatEnabled: Boolean) {
         error = null,
         frozen = false,
         parkable = false,
+        customer = null,
         onConfirm = { _, _ -> },
+        onCreditTender = {},
         onRetry = {},
         onPark = {},
         onCancel = {},

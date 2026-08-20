@@ -333,5 +333,6 @@ internal fun methodLabel(method: String): String = when (method) {
     "juice" -> "Juice"
     "myt_money" -> "my.t money"
     "bank" -> "Bank"
+    "credit" -> "On account"
     else -> method
 }

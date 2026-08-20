@@ -217,8 +217,55 @@ data class ZResponse(
 
 // -------------------------------------------------------------- customers
 
+/**
+ * A customer, with whatever credit account they have.
+ *
+ * The four credit fields default to "no account", which is what makes this
+ * safe against a server that has not been updated: an older `/api/till/customers`
+ * omits them, kotlinx fills the defaults, and `canUseCredit` is false — so the
+ * till simply does not offer the tender rather than offering it wrongly.
+ *
+ * These figures are for the SCREEN. They decide whether a button is drawn and
+ * what it says. They never decide what the shop is owed: `sale-core` re-reads
+ * the account and a trigger re-checks the limit under a lock, so a stale
+ * balance here can show an old number but can never authorise a charge.
+ */
 @Serializable
-data class Customer(val id: Int, val fullName: String, val phone: String? = null)
+data class Customer(
+    val id: Int,
+    val fullName: String,
+    val phone: String? = null,
+    /** 0 means no account at all, which is the default for everybody. */
+    val creditLimit: Double = 0.0,
+    /** Positive: they owe the shop. Negative: the shop is holding their money. */
+    val creditBalance: Double = 0.0,
+    /** Room left under the limit, never negative. */
+    val creditAvailable: Double = 0.0,
+    val creditOnHold: Boolean = false,
+) {
+    /** Has an account the till may add to at all. */
+    val hasAccount: Boolean get() = creditLimit > 0
+
+    /** May be billed right now: an account, not on hold, with room on it. */
+    val canUseCredit: Boolean get() = hasAccount && !creditOnHold && creditAvailable > 0
+
+    /** Owes the shop money, so a payment on account is possible. */
+    val owes: Boolean get() = creditBalance > 0
+
+    /**
+     * Why credit is unavailable, or null when it is available.
+     *
+     * Written as the cashier's half of the conversation, because it is read out
+     * to a customer standing at the counter.
+     */
+    val creditBlockedReason: String?
+        get() = when {
+            !hasAccount -> "No credit account"
+            creditOnHold -> "Account on hold"
+            creditAvailable <= 0 -> "No credit left"
+            else -> null
+        }
+}
 
 @Serializable
 data class CustomersResponse(
@@ -234,6 +281,34 @@ data class CreateCustomerRequest(val name: String, val phone: String? = null)
 data class CreateCustomerResponse(
     val ok: Boolean,
     val customer: Customer? = null,
+    val error: String? = null,
+)
+
+// ------------------------------------------------------- payments on account
+
+@Serializable
+data class SettleCreditRequest(
+    val customerId: Int,
+    val amount: Double,
+    val method: String,
+    /**
+     * The open shift, so a cash payment lands in the drawer that took it.
+     *
+     * Null is legitimate and means "no drawer" — the server then records the
+     * ledger entry without a till movement, rather than making some shift
+     * expect cash it never held.
+     */
+    val shiftId: Int? = null,
+    val reason: String? = null,
+)
+
+@Serializable
+data class SettleCreditResponse(
+    val ok: Boolean,
+    val entryId: Int = 0,
+    /** What is still owed after this payment. */
+    val balance: Double = 0.0,
+    val settled: Double = 0.0,
     val error: String? = null,
 )
 

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Payments
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.data.AppliedDiscountLocal
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.CartTotals
+import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.VatDisplay
 import mu.kidscorner.till.data.SalePayment
 import mu.kidscorner.till.data.formatAmount
@@ -107,7 +109,11 @@ fun PaymentScreen(
     frozen: Boolean,
     /** Whether the frozen sale may be parked; see TillState.settleParkable. */
     parkable: Boolean,
+    /** The attached customer's account, driving the ON ACCOUNT tile. Null for a walk-in. */
+    customer: Customer?,
     onConfirm: (List<SalePayment>, Double) -> Unit,
+    /** Bills the whole outstanding balance to the attached account. */
+    onCreditTender: () -> Unit,
     /** Resubmits the frozen sale under its original idempotency key. */
     onRetry: () -> Unit,
     /** Parks the frozen sale and frees the till for the next customer. */
@@ -489,6 +495,23 @@ fun PaymentScreen(
                                 if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
+
+                        // ── ON ACCOUNT ─────────────────────────────────────
+                        //
+                        // A tender, but not one of `paymentMethods`: the server
+                        // deliberately keeps "credit" out of
+                        // settings.payment_methods, because every other tile is
+                        // unconditional and this one is only legal for a named
+                        // person with an open account. So it is drawn here,
+                        // gated on the attached customer, instead of falling
+                        // out of the bootstrap list where it could be pressed
+                        // with nobody to bill.
+                        CreditTile(
+                            customer = customer,
+                            outstanding = outstanding,
+                            enabled = !busy && !frozen,
+                            onCharge = onCreditTender,
+                        )
                     }
 
                     if (payments.isNotEmpty()) {
@@ -812,6 +835,95 @@ private fun MethodTile(
     }
 }
 
+/**
+ * The gated account tender.
+ *
+ * One tap bills the whole outstanding balance and completes the sale — there is
+ * no such thing as "part of it on account" here, because a deposit plus the
+ * rest on account is a split tender and the split flow only offers the methods
+ * the shop configured; adding credit to that list would offer it on walk-ins
+ * too. The whole-balance rule keeps the gate in exactly one place.
+ *
+ * The four states a cashier can meet, in the words they read out:
+ * no customer attached (a prompt to attach one), an account with no room, an
+ * account on hold, and a usable account showing what is left on it.
+ */
+@Composable
+private fun CreditTile(
+    customer: Customer?,
+    outstanding: Double,
+    enabled: Boolean,
+    onCharge: () -> Unit,
+) {
+    val canCharge = customer != null && customer.canUseCredit && customer.creditAvailable >= outstanding
+    val blocked = when {
+        customer == null -> "Attach a customer to sell on account"
+        customer.creditBlockedReason != null -> customer.creditBlockedReason
+        outstanding > customer.creditAvailable ->
+            "Only ${formatRs(customer.creditAvailable)} left on the account"
+        else -> null
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Handoff.Well)
+            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
+            .clickable(enabled = enabled && canCharge, onClick = onCharge)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(Handoff.AccentSolid),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.AccountBalanceWallet,
+                    null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "On account",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (canCharge) Handoff.Ink else Handoff.Muted3,
+                )
+                Text(
+                    blocked
+                        ?: "Bill ${formatRs(outstanding)} to ${customer?.fullName ?: "their account"}",
+                    fontSize = 12.sp,
+                    color = Handoff.Muted2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (customer?.hasAccount == true && customer.creditAvailable > 0) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        formatRs(customer.creditAvailable),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = PlexMono,
+                        color = Handoff.InkStrong,
+                    )
+                    Text(
+                        "AVAILABLE",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        color = Handoff.Muted3,
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun methodIcon(method: String): ImageVector = when (method) {
     "cash" -> Icons.Default.Payments
     "card" -> Icons.Default.CreditCard
@@ -846,6 +958,9 @@ fun methodLabel(method: String): String = when (method) {
     "juice" -> "Juice"
     "myt_money" -> "my.t money"
     "bank" -> "Bank"
+    // Rendered on receipts and the Z by this one label, since credit is never
+    // drawn as a normal method tile — it has its own gated affordance.
+    "credit" -> "On account"
     else -> method
 }
 

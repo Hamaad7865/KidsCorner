@@ -34,6 +34,7 @@ import mu.kidscorner.till.print.hasBluetoothPermission
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.requestUsbPermission
 import mu.kidscorner.till.ui.ActionsDialog
+import mu.kidscorner.till.ui.AccountPaymentDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
 import mu.kidscorner.till.ui.CloseShiftScreen
 import mu.kidscorner.till.ui.CustomItemDialog
@@ -93,7 +94,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** Which overlay is up, if any. One at a time — a till is not a desktop. */
-private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, Printer, Actions, Note, Custom, Txns, Update }
+private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, Printer, Actions, Note, Custom, Txns, Update }
 
 @Composable
 private fun TillRoot(vm: TillViewModel = viewModel()) {
@@ -261,9 +262,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 error = state.error,
                 frozen = state.settleFrozen,
                 parkable = state.settleParkable,
+                customer = state.customer,
                 // The ViewModel remembers the tender itself, so a retry or an
                 // approval resubmit survives this screen being recreated.
                 onConfirm = { payments, change -> vm.confirmSale(payments, change) },
+                // One tap: bill the whole outstanding balance to the attached
+                // account. The ViewModel builds the credit payment so the
+                // screen does not carry a second place that decides money.
+                onCreditTender = { vm.chargeToAccount() },
                 // The same payments as the attempt that froze, so the retry
                 // carries the same idempotency key and replays rather than
                 // ringing up a second sale.
@@ -456,6 +462,23 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             },
         )
 
+        Overlay.AccountPayment -> AccountPaymentDialog(
+            results = state.customerResults,
+            searching = state.customerSearching,
+            searchError = state.customerError,
+            busy = state.creditPaymentBusy,
+            error = state.creditPaymentError,
+            done = state.creditPaymentDone,
+            shiftOpen = state.shop?.shift != null,
+            onSearch = vm::searchCustomers,
+            onSettle = { customerId, amount, method -> vm.settleCredit(customerId, amount, method) },
+            onDismiss = {
+                overlay = Overlay.None
+                vm.clearCreditPaymentResult()
+                vm.clearCustomerSearch()
+            },
+        )
+
         Overlay.Actions -> ActionsDialog(
             lastReceiptNo = state.history.firstOrNull()?.saleNo,
             onReprintLast = {
@@ -467,6 +490,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },
+            onAccountPayment = { overlay = Overlay.AccountPayment },
             onDismiss = { overlay = Overlay.None },
         )
 

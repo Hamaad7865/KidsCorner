@@ -417,6 +417,22 @@ class TillApi(private val http: HttpClient) {
             setBody(CreateCustomerRequest(name, phone))
         }.decode()
 
+    /**
+     * Money handed over against an account.
+     *
+     * Never queued offline, unlike a sale. A sale has already happened when the
+     * goods leave the counter, so replaying it later is recording history; a
+     * payment on account is refused or accepted against a balance that only the
+     * server knows, and a queued one could be accepted twice or accepted after
+     * the debt was already settled elsewhere.
+     */
+    suspend fun settleCredit(token: String, body: SettleCreditRequest): SettleCreditResponse =
+        http.post("$origin/api/till/credit") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
     suspend fun discounts(token: String): DiscountsResponse =
         http.get("$origin/api/till/discounts") { bearer(token) }.decode()
 
