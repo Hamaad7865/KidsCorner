@@ -44,10 +44,14 @@ import pg from "pg"
 const MIGRATIONS_DIR = resolve(process.cwd(), "supabase/Migrations")
 
 function connectionString() {
+  // Either spelling of the CI secret. The local .env.local key is literally
+  // `SUPABASE_DB_UR` (no trailing L), so the GitHub secret may be named to
+  // match it or given the fuller `SUPABASE_DB_URL` — accept both so a name
+  // mismatch can never quietly leave migrations un-run.
   if (process.env.SUPABASE_DB_URL) return process.env.SUPABASE_DB_URL
-  // Local fallback: the app keeps it in .env.local under a key the other
-  // scripts also read with this loose pattern (the key is literally
-  // SUPABASE_DB_UR in that file).
+  if (process.env.SUPABASE_DB_UR) return process.env.SUPABASE_DB_UR
+  // Local fallback: the same loose pattern the other scripts use to read it
+  // out of .env.local.
   for (const base of ["", "C:/Projects/KidsCorner/"]) {
     const path = resolve(base || process.cwd(), ".env.local")
     if (!existsSync(path)) continue

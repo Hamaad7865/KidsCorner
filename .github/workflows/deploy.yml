@@ -63,7 +63,11 @@ jobs:
       # breaking the deploy. See scripts/migrate.mjs.
       - name: Apply database migrations
         env:
+          # Accept either spelling of the secret — the local .env key is
+          # SUPABASE_DB_UR (no trailing L), so the secret may be named to match
+          # it. migrate.mjs reads whichever is set.
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_UR: ${{ secrets.SUPABASE_DB_UR }}
         run: node scripts/migrate.mjs
 
       - name: Deploy
