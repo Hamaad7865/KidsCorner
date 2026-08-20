@@ -620,6 +620,67 @@ export type Database = {
         }
         Relationships: []
       }
+      promotions: {
+        Row: {
+          applied_at: string
+          applied_by: string | null
+          id: number
+          lifted_at: string | null
+          lifted_by: string | null
+          note: string | null
+          original_price: number
+          promo_price: number
+          status: string
+          variant_id: number
+        }
+        Insert: {
+          applied_at?: string
+          applied_by?: string | null
+          id?: number
+          lifted_at?: string | null
+          lifted_by?: string | null
+          note?: string | null
+          original_price: number
+          promo_price: number
+          status?: string
+          variant_id: number
+        }
+        Update: {
+          applied_at?: string
+          applied_by?: string | null
+          id?: number
+          lifted_at?: string | null
+          lifted_by?: string | null
+          note?: string | null
+          original_price?: number
+          promo_price?: number
+          status?: string
+          variant_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotions_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_applied_by_fkey"
+            columns: ["applied_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_lifted_by_fkey"
+            columns: ["lifted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       purchase_items: {
         Row: {
           id: number

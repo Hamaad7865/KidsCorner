@@ -191,6 +191,19 @@ CREATE TABLE IF NOT EXISTS profiles (
     pin_device_verifier text
 );
 
+CREATE TABLE IF NOT EXISTS promotions (
+    id BIGSERIAL,
+    variant_id integer NOT NULL,
+    original_price numeric(10,2) NOT NULL,
+    promo_price numeric(10,2) NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    note text,
+    applied_by uuid,
+    applied_at timestamp with time zone DEFAULT now() NOT NULL,
+    lifted_by uuid,
+    lifted_at timestamp with time zone
+);
+
 CREATE TABLE IF NOT EXISTS purchase_items (
     id SERIAL,
     purchase_id integer NOT NULL,
@@ -413,6 +426,9 @@ DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -560,6 +576,15 @@ DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_role_check CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'cashier'::text])));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_is_a_reduction CHECK ((promo_price <= original_price));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_not_a_loss CHECK ((promo_price >= (0)::numeric));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'lifted'::text])));
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_qty_check CHECK ((qty > 0));
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -677,6 +702,15 @@ DO $$ BEGIN
     ALTER TABLE profiles ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_applied_by_fkey FOREIGN KEY (applied_by) REFERENCES profiles(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_lifted_by_fkey FOREIGN KEY (lifted_by) REFERENCES profiles(id);
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE promotions ADD CONSTRAINT promotions_variant_id_fkey FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE purchase_items ADD CONSTRAINT purchase_items_purchase_id_fkey FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 DO $$ BEGIN
@@ -779,6 +813,8 @@ CREATE INDEX IF NOT EXISTS idx_variants_barcode ON public.product_variants USING
 CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants USING btree (product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_without_barcode ON public.product_variants USING btree (product_id) WHERE (barcode IS NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique_idx ON public.products USING btree (lower(product_code)) WHERE (product_code IS NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_promotions_variant ON public.promotions USING btree (variant_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS promotions_one_active ON public.promotions USING btree (variant_id) WHERE (status = 'active'::text);
 CREATE INDEX IF NOT EXISTS idx_purchases_expected ON public.purchases USING btree (expected_date) WHERE ((status = 'draft'::text) AND (expected_date IS NOT NULL));
 CREATE INDEX IF NOT EXISTS idx_purchases_vat_policy_id ON public.purchases USING btree (vat_policy_id);
 CREATE INDEX IF NOT EXISTS idx_receipt_prints_sale ON public.receipt_prints USING btree (sale_id, printed_at DESC);
@@ -934,6 +970,83 @@ BEGIN
     END IF;
 
     RETURN v_next;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.apply_promotion(p_variant_id integer, p_promo_price numeric, p_note text DEFAULT NULL::text)
+ RETURNS bigint
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+    v_actor   uuid := auth.uid();
+    v_cost    numeric(10,2);
+    v_current numeric(10,2);
+    v_sku     text;
+    v_promo   numeric(10,2);
+    v_id      bigint;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.profiles
+         WHERE id = v_actor AND is_active AND role IN ('owner', 'manager')
+    ) THEN
+        RAISE insufficient_privilege
+            USING MESSAGE = 'Only an owner or manager can put a product on promotion';
+    END IF;
+
+    -- FOR UPDATE serialises two people promoting the same variant at once; the
+    -- partial unique index is the hard backstop behind it.
+    SELECT cost_price, selling_price, sku
+      INTO v_cost, v_current, v_sku
+      FROM public.product_variants
+     WHERE id = p_variant_id
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE no_data_found USING MESSAGE = 'That item no longer exists';
+    END IF;
+
+    IF p_promo_price IS NULL THEN
+        RAISE not_null_violation USING MESSAGE = 'A promotion price is required';
+    END IF;
+    v_promo := p_promo_price::numeric(10,2);
+
+    IF v_promo < v_cost THEN
+        RAISE check_violation
+            USING MESSAGE = 'A promotion cannot go below cost — that would be a loss';
+    END IF;
+    IF v_promo >= v_current THEN
+        RAISE check_violation
+            USING MESSAGE = 'A promotion price must be lower than the current price';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM public.promotions
+         WHERE variant_id = p_variant_id AND status = 'active'
+    ) THEN
+        RAISE unique_violation USING MESSAGE = 'This item is already on promotion';
+    END IF;
+
+    INSERT INTO public.promotions (variant_id, original_price, promo_price, note, applied_by)
+    VALUES (p_variant_id, v_current, v_promo,
+            nullif(pg_catalog.btrim(p_note), ''), v_actor)
+    RETURNING id INTO v_id;
+
+    UPDATE public.product_variants
+       SET selling_price = v_promo
+     WHERE id = p_variant_id;
+
+    -- Recorded as a price change (already rendered, already money-toned in the
+    -- activity feed) with the reason spelled into the summary. The promotions
+    -- table is the authoritative record; this is so the trail reads plainly.
+    INSERT INTO public.audit_events (actor_id, event_type, ref_type, ref_id, summary, detail)
+    VALUES (v_actor, 'price.changed', 'variant', p_variant_id::text,
+            coalesce(v_sku, p_variant_id::text) || ' · put on promotion',
+            pg_catalog.jsonb_build_object(
+                'sku', v_sku, 'before', v_current, 'after', v_promo,
+                'promotion_id', v_id, 'reason', 'promotion'));
+
+    RETURN v_id;
 END;
 $function$;
 
@@ -1374,6 +1487,15 @@ AS $function$
         null, p_shift_id, p_customer_id, p_cashier_id, p_discount,
         p_items, p_payments, p_discounts, null, null
     );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.count_slow_movers(p_days integer)
+ RETURNS integer
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+    SELECT pg_catalog.count(*)::int FROM public.slow_movers(p_days);
 $function$;
 
 CREATE OR REPLACE FUNCTION public.create_credit_note(p_sale_id bigint, p_shift_id integer, p_cashier_id uuid, p_reason text, p_refund_method text, p_items jsonb, p_restock boolean DEFAULT true, p_approved_by uuid DEFAULT NULL::uuid)
@@ -1982,6 +2104,68 @@ BEGIN
         RAISE EXCEPTION 'The till cannot be hidden from a role';
     END IF;
     RETURN NEW;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.lift_promotion(p_promotion_id bigint)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+    v_actor    uuid := auth.uid();
+    v_variant  int;
+    v_original numeric(10,2);
+    v_promo    numeric(10,2);
+    v_current  numeric(10,2);
+    v_sku      text;
+    v_restored boolean := false;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.profiles
+         WHERE id = v_actor AND is_active AND role IN ('owner', 'manager')
+    ) THEN
+        RAISE insufficient_privilege
+            USING MESSAGE = 'Only an owner or manager can lift a promotion';
+    END IF;
+
+    SELECT variant_id, original_price, promo_price
+      INTO v_variant, v_original, v_promo
+      FROM public.promotions
+     WHERE id = p_promotion_id AND status = 'active'
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE no_data_found USING MESSAGE = 'That promotion is not active';
+    END IF;
+
+    SELECT selling_price, sku INTO v_current, v_sku
+      FROM public.product_variants
+     WHERE id = v_variant
+       FOR UPDATE;
+
+    UPDATE public.promotions
+       SET status = 'lifted', lifted_by = v_actor, lifted_at = now()
+     WHERE id = p_promotion_id;
+
+    -- Only restore if the price is still the promo price. If it was edited by
+    -- hand during the promotion, that newer figure is the shop's latest word and
+    -- must not be clobbered by a stale original.
+    IF v_current = v_promo THEN
+        UPDATE public.product_variants
+           SET selling_price = v_original
+         WHERE id = v_variant;
+        v_restored := true;
+
+        INSERT INTO public.audit_events (actor_id, event_type, ref_type, ref_id, summary, detail)
+        VALUES (v_actor, 'price.changed', 'variant', v_variant::text,
+                coalesce(v_sku, v_variant::text) || ' · promotion lifted',
+                pg_catalog.jsonb_build_object(
+                    'sku', v_sku, 'before', v_promo, 'after', v_original,
+                    'promotion_id', p_promotion_id, 'reason', 'promotion lifted'));
+    END IF;
+
+    RETURN v_restored;
 END;
 $function$;
 
@@ -2625,6 +2809,57 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.slow_movers(p_days integer)
+ RETURNS TABLE(product_id integer, product_name text, product_code text, category_name text, qty_on_hand bigint, variant_count bigint, last_sold_at timestamp with time zone, idle_since timestamp with time zone, days_idle integer, min_price numeric, max_price numeric)
+ LANGUAGE sql
+ STABLE
+ SET search_path TO ''
+AS $function$
+    WITH active_variants AS (
+        SELECT pv.id, pv.product_id, pv.qty_on_hand, pv.selling_price
+          FROM public.product_variants pv
+         WHERE pv.is_active
+    ),
+    last_sale AS (
+        SELECT si.variant_id, pg_catalog.max(s.sale_date) AS sold_at
+          FROM public.sale_items si
+          JOIN public.sales s ON s.id = si.sale_id
+         WHERE s.status = 'completed'
+         GROUP BY si.variant_id
+    )
+    SELECT
+        p.id,
+        p.name,
+        p.product_code,
+        c.name,
+        sum(av.qty_on_hand)::bigint                              AS qty_on_hand,
+        count(av.id)::bigint                                     AS variant_count,
+        max(ls.sold_at)                                          AS last_sold_at,
+        -- GREATEST/EXTRACT are SQL expressions, not schema-qualifiable
+        -- functions, so they stay bare; pg_catalog is always searched anyway.
+        greatest(p.created_at, max(ls.sold_at))                 AS idle_since,
+        extract(
+            day FROM now() - greatest(p.created_at, max(ls.sold_at))
+        )::int                                                   AS days_idle,
+        min(av.selling_price)                                    AS min_price,
+        max(av.selling_price)                                    AS max_price
+      FROM public.products p
+      JOIN active_variants av ON av.product_id = p.id
+      LEFT JOIN last_sale ls ON ls.variant_id = av.id
+      LEFT JOIN public.categories c ON c.id = p.category_id
+     WHERE p.is_active
+       -- not already on promotion (any of its variants)
+       AND NOT EXISTS (
+            SELECT 1 FROM public.promotions pr
+             WHERE pr.variant_id = av.id AND pr.status = 'active'
+       )
+     GROUP BY p.id, p.name, p.product_code, c.name, p.created_at
+    HAVING sum(av.qty_on_hand) > 0
+       AND greatest(p.created_at, max(ls.sold_at))
+           <= now() - (p_days || ' days')::interval
+     ORDER BY greatest(p.created_at, max(ls.sold_at)) ASC;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.transfer_stock(p_variant_id integer, p_qty integer, p_from_location integer, p_to_location integer, p_notes text DEFAULT NULL::text)
  RETURNS void
  LANGUAGE plpgsql
@@ -3083,6 +3318,7 @@ ALTER TABLE pos_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_variants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchase_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE purchases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE receipt_prints ENABLE ROW LEVEL SECURITY;
@@ -3220,6 +3456,11 @@ CREATE POLICY manage_profiles ON profiles
 
 DROP POLICY IF EXISTS read_all ON profiles;
 CREATE POLICY read_all ON profiles
+    FOR SELECT TO authenticated
+    USING (true);
+
+DROP POLICY IF EXISTS read_all ON promotions;
+CREATE POLICY read_all ON promotions
     FOR SELECT TO authenticated
     USING (true);
 
@@ -3407,7 +3648,8 @@ INSERT INTO settings (key, value) VALUES
     ('payment_methods', '["cash","card","juice","bank"]'::jsonb),
     ('refund_requires_manager', 'false'::jsonb),
     ('shop_name', '"Kids Corner"'::jsonb),
-    ('vat_enabled', 'true'::jsonb),
+    ('slow_mover_days', '30'::jsonb),
+    ('vat_enabled', 'false'::jsonb),
     ('vat_number', '"VAT2020809"'::jsonb),
     ('vat_rate', '0.15'::jsonb)
 ON CONFLICT (key) DO NOTHING;

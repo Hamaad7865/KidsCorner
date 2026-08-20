@@ -9,6 +9,7 @@ import { ProductForm } from "@/components/products/product-form"
 import { ProductThumb } from "@/components/products/product-thumb"
 import { VariantMatrix } from "@/components/products/variant-matrix"
 import { ActiveBadge } from "@/components/settings/master-data-panel"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { requireAdminProfile } from "@/lib/auth/session"
@@ -19,6 +20,7 @@ import {
 import { formatPriceRange, formatQty } from "@/lib/format"
 import { getMasterData } from "@/lib/master-data/queries"
 import { getProduct } from "@/lib/products/queries"
+import { productsOnPromotion } from "@/lib/promotions/queries"
 
 export async function generateMetadata({
   params,
@@ -51,14 +53,18 @@ export default async function ProductDetailPage({
     { categories, brands, sizes, colours },
     barcodeless,
     barcodeSettings,
+    onPromotion,
   ] = await Promise.all([
     getProduct(productId),
     getMasterData(),
     listVariantsWithoutBarcode(productId),
     readBarcodeSettings(),
+    productsOnPromotion([productId]),
   ])
 
   if (!product) notFound()
+
+  const isOnPromotion = onPromotion.has(productId)
 
   const printable = product.variants.some((variant) => variant.barcode)
 
@@ -107,6 +113,13 @@ export default async function ProductDetailPage({
                   </span>
                 ) : null}
                 <ActiveBadge isActive={product.isActive} />
+                {isOnPromotion ? (
+                  <Link href="/promotions">
+                    <Badge className="bg-brand-50 text-brand-700 border-brand-200 border">
+                      On promotion
+                    </Badge>
+                  </Link>
+                ) : null}
               </div>
               <p className="text-muted-foreground text-sm">
                 {[product.categoryName, product.brandName].filter(Boolean).join(" · ") ||
