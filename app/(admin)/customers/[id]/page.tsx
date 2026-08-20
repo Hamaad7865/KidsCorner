@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, Receipt } from "lucide-react"
 
+import { CreditPanel } from "@/components/customers/credit-panel"
 import { CustomerDialog } from "@/components/customers/customer-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,6 +18,11 @@ import {
 } from "@/components/ui/table"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { requireAdminProfile } from "@/lib/auth/session"
+import {
+  getCreditAccount,
+  getCreditAging,
+  getCreditStatement,
+} from "@/lib/credit/queries"
 import { getCustomer } from "@/lib/customers/queries"
 import { formatDate, formatDateTime, formatRs } from "@/lib/format"
 
@@ -47,6 +53,13 @@ export default async function CustomerDetailPage({
 
   const customer = await getCustomer(customerId)
   if (!customer) notFound()
+
+  // Three reads, all bounded to this one customer, run together.
+  const [account, aging, statement] = await Promise.all([
+    getCreditAccount(customerId),
+    getCreditAging(customerId),
+    getCreditStatement(customerId),
+  ])
 
   // Matches the RLS policy from migration 037 exactly. Anyone else sees the
   // record and no button, rather than a button that saves nothing.
@@ -113,6 +126,16 @@ export default async function CustomerDetailPage({
         </div>
       ) : null}
 
+      {canEdit ? (
+        <CreditPanel
+          customer={{ id: customer.id, fullName: customer.fullName }}
+          account={account}
+          aging={aging}
+          statement={statement}
+          canWriteOff={profile.role === "owner"}
+        />
+      ) : null}
+
       <section className="space-y-3">
         <h2 className="font-heading text-base font-medium">Purchase history</h2>
 
@@ -172,10 +195,10 @@ export default async function CustomerDetailPage({
       </section>
 
       <p className="text-muted-foreground border-t pt-4 text-xs">
-        Customer records can be added but not edited or deleted: migration 001
-        grants <code>customers</code> only SELECT and INSERT policies, so an edit
-        form would be refused by row-level security. Changing that needs an
-        UPDATE policy in a new migration.
+        A customer can be corrected but never deleted: migration 037 added an
+        UPDATE policy for owners and managers, and there is still no DELETE — a
+        customer attached to sales must not be able to vanish out from under
+        them, and an account ledger even less so.
       </p>
     </div>
   )

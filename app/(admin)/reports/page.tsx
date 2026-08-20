@@ -18,10 +18,13 @@ import { requireAdminProfile } from "@/lib/auth/session"
 import {
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABELS,
+  isCollectedMethod,
   isPaymentMethod,
 } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
 import { getCollectedReport } from "@/lib/reports/collected"
+import { getReceivables } from "@/lib/credit/queries"
+import { ReceivablesTable } from "@/components/reports/receivables-table"
 import {
   formatDate,
   formatDateTime,
@@ -56,6 +59,7 @@ const REPORTS = [
   { key: "summary", label: "Summary" },
   { key: "daily", label: "Daily summary" },
   { key: "methods", label: "Collected by method" },
+  { key: "receivables", label: "On account" },
   { key: "vat", label: "VAT return" },
   { key: "pnl", label: "Simple P&L" },
   { key: "cashiers", label: "By cashier" },
@@ -110,8 +114,17 @@ export default async function ReportsPage({
       ? await getDailySummary(from, to)
       : { from, to, rows: [], methods: [], taxes: [], sellers: [], categories: [] }
 
-  const [bestSellers, margin, discounts, shifts, journal, collected, vat, pnl] =
-    await Promise.all([
+  const [
+    bestSellers,
+    margin,
+    discounts,
+    shifts,
+    journal,
+    collected,
+    vat,
+    pnl,
+    receivables,
+  ] = await Promise.all([
       active === "bestsellers" ? getBestSellers(from, to) : Promise.resolve([]),
       active === "margin" ? getMarginReport(from, to) : Promise.resolve([]),
       active === "discounts"
@@ -126,6 +139,11 @@ export default async function ReportsPage({
         : Promise.resolve(null),
       active === "vat" ? getVatReport(from, to) : Promise.resolve(null),
       active === "pnl" ? getPnlReport(from, to) : Promise.resolve(null),
+      // Deliberately ignores `from`/`to`. What a customer owes is a position as
+      // at now, not a flow over a period: a debt raised in March is still owed
+      // in August, and filtering it out of an August report would say the
+      // opposite. The panel labels itself with the date instead.
+      active === "receivables" ? getReceivables() : Promise.resolve(null),
     ])
 
   const link = (key: string) =>
@@ -276,7 +294,11 @@ export default async function ReportsPage({
             <span className="text-muted-foreground mr-1 text-xs font-semibold tracking-wide uppercase">
               Method
             </span>
-            {[undefined, ...PAYMENT_METHODS].map((m) => {
+            {/* Credit is left out on purpose: it is a tender, but not a rail
+                money arrives by, so a chip for it would narrow this report to a
+                guaranteed Rs 0. Account sales get their own figure below, and
+                are chased in the receivables report. */}
+            {[undefined, ...PAYMENT_METHODS.filter(isCollectedMethod)].map((m) => {
               const on = method === m
               return (
                 <Link
@@ -296,8 +318,8 @@ export default async function ReportsPage({
             })}
           </div>
 
-          {/* The three figures the report keeps apart. */}
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* The four figures the report keeps apart. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Card className="border-brand-200 from-brand-50 bg-gradient-to-br to-white">
               <CardContent className="py-4">
                 <div className="text-brand-800 text-sm font-medium">
@@ -319,22 +341,44 @@ export default async function ReportsPage({
               hint="Basis for VAT & P&L"
             />
             <Stat
+              label="On account"
+              value={formatRs(collected.onAccount)}
+              hint={
+                collected.onAccount === 0
+                  ? "Nothing billed to an account"
+                  : "Billed to customer accounts, not collected"
+              }
+            />
+            <Stat
               label="Not yet collected"
               value={formatRs(collected.outstanding)}
               hint={
                 collected.outstanding === 0
-                  ? "No account sales — every ticket is paid at the till"
-                  : "Sales and payments disagree — worth investigating"
+                  ? "Every ticket paid in full"
+                  : collected.outstanding === collected.onAccount
+                    ? "All of it sold on account"
+                    : "More than the account sales — worth investigating"
               }
             />
           </div>
 
-          {collected.outstanding !== 0 ? (
+          {/*
+            Only a MISMATCH is a problem now.
+
+            This used to warn whenever "not yet collected" was anything but
+            zero, because it could only have been ledger drift. Account sales
+            make a non-zero figure the normal case, so the warning fires on the
+            part that account lending does not explain.
+          */}
+          {collected.outstanding !== collected.onAccount ? (
             <p className="text-warning text-sm">
-              The period&rsquo;s sales total and its payments differ by{" "}
-              {formatRs(collected.outstanding)}. Kids Corner takes full payment
-              at the till, so this figure should always be zero — check the
-              period&rsquo;s sales against their payments.
+              The period&rsquo;s sales exceed its payments by{" "}
+              {formatRs(collected.outstanding)}, but only{" "}
+              {formatRs(collected.onAccount)} was billed to an account. The
+              difference of{" "}
+              {formatRs(collected.outstanding - collected.onAccount)} is not
+              explained by either — check the period&rsquo;s sales against their
+              payments.
             </p>
           ) : null}
 
@@ -464,6 +508,10 @@ export default async function ReportsPage({
             </Table>
           </div>
         </div>
+      ) : null}
+
+      {active === "receivables" && receivables ? (
+        <ReceivablesTable report={receivables} />
       ) : null}
 
       {active === "vat" && vat ? <VatReturn report={vat} /> : null}

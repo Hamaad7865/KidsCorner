@@ -4,6 +4,7 @@ import { getSessionProfile } from "@/lib/auth/session"
 import { isAdminRole } from "@/lib/auth/roles"
 import { isPaymentMethod } from "@/lib/db-enums"
 import { getDiscountReport } from "@/lib/discounts/queries"
+import { getReceivables } from "@/lib/credit/queries"
 import { formatDateTime, shopDayOf, shopTimeOf, shopToday } from "@/lib/format"
 import { getCollectedReport } from "@/lib/reports/collected"
 import { getDailySummary } from "@/lib/reports/daily-summary"
@@ -289,6 +290,65 @@ export async function GET(
           s.variance?.toFixed(2) ?? "",
           s.notes ?? "",
         ]),
+      )
+      break
+    }
+    // Who owes what, aged. The one export that ignores `from`/`to`: a balance
+    // is a position as at now, not a flow across a period, so the file carries
+    // its own as-at date in the last row rather than pretending to a range.
+    case "receivables": {
+      const r = await getReceivables()
+      csv = render(
+        [
+          "Customer",
+          "Phone",
+          "Limit",
+          "Current",
+          "1-30 days",
+          "31-60 days",
+          "60+ days",
+          "Owed",
+          "Held in credit",
+          "Status",
+        ],
+        [
+          ...r.rows.map((row) => [
+            row.fullName,
+            row.phone ?? "",
+            row.creditLimit.toFixed(2),
+            row.aging.current.toFixed(2),
+            row.aging.days1to30.toFixed(2),
+            row.aging.days31to60.toFixed(2),
+            row.aging.days60plus.toFixed(2),
+            row.aging.total.toFixed(2),
+            row.aging.inCredit.toFixed(2),
+            row.onHold ? "On hold" : row.creditLimit <= 0 ? "Closed" : "Open",
+          ]),
+          [
+            "TOTAL",
+            `${r.rows.length} account(s)`,
+            "",
+            r.totals.current.toFixed(2),
+            r.totals.days1to30.toFixed(2),
+            r.totals.days31to60.toFixed(2),
+            r.totals.days60plus.toFixed(2),
+            r.totals.total.toFixed(2),
+            r.totals.inCredit.toFixed(2),
+            r.truncated ? "TRUNCATED" : "",
+          ],
+          [
+            `As at ${r.asAt} — payments applied oldest first`,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+          ],
+        ],
       )
       break
     }
