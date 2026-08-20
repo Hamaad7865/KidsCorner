@@ -17,12 +17,12 @@ import {
 import { canManageCatalog, canManageSettings } from "@/lib/auth/roles"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { formatDate, formatPriceRange, formatRs } from "@/lib/format"
-import { getVatRate } from "@/lib/pos/queries"
 import {
   getSlowMoverDays,
   listActivePromotions,
   listSlowMovers,
 } from "@/lib/promotions/queries"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 
 export const metadata: Metadata = { title: "Promotions" }
 
@@ -30,11 +30,16 @@ export default async function PromotionsPage() {
   const profile = await requireAdminProfile()
   const days = await getSlowMoverDays()
 
-  const [slowMovers, active, vatRate] = await Promise.all([
+  const [slowMovers, active, vatPolicy] = await Promise.all([
     listSlowMovers(days),
     listActivePromotions(),
-    getVatRate(),
+    // effectiveRate, not configuredRate: VAT stays "prepared" at its last
+    // configured rate even while disabled (so re-enabling doesn't lose it),
+    // but a disabled shop charges no VAT at all — the break-even warning below
+    // must reflect what a sale actually does right now, not what is on file.
+    getCurrentVatPolicy(),
   ])
+  const vatRate = vatPolicy.effectiveRate
 
   const canManage = canManageCatalog(profile.role)
   const canEditThreshold = canManageSettings(profile.role)
