@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -264,6 +265,18 @@ fun OpenShiftScreen(
 }
 
 /**
+ * `1250.5` -> `"1250.5"`, `1250.0` -> `"1250"` — plain digits with no grouping,
+ * as if the cashier had typed it on the pad themselves, so backspacing or
+ * retyping over it behaves exactly like any other pad entry.
+ */
+private fun Double.toPadEntry(): String {
+    val cents = Math.round(round2(this) * 100)
+    val rupees = cents / 100
+    val remainder = cents % 100
+    return if (remainder == 0L) rupees.toString() else "$rupees.${remainder.toString().padStart(2, '0')}"
+}
+
+/**
  * `atCloseShift` — the reading on the left, the count on the right.
  *
  * `flex:1` scroller at `padding:18px 20px 24px` beside a `width:460px` pane
@@ -287,6 +300,10 @@ fun CloseShiftScreen(
     openedAt: String? = null,
 ) {
     var counted by remember { mutableStateOf("") }
+    // Seeded once, the moment the expected figure first arrives, so a cashier
+    // who agrees with the drawer never has to retype it — but only once, so a
+    // later refresh of `totals` can never clobber a count already in progress.
+    var seeded by remember { mutableStateOf(false) }
 
     if (summary != null) {
         CloseSummary(summary, onFinish, modifier)
@@ -294,6 +311,14 @@ fun CloseShiftScreen(
     }
 
     val expected = totals?.expectedCash ?: 0.0
+
+    LaunchedEffect(totals) {
+        if (!seeded && totals != null) {
+            counted = expected.toPadEntry()
+            seeded = true
+        }
+    }
+
     val countedValue = round2(counted.toDoubleOrNull() ?: 0.0)
     val variance = round2(countedValue - expected)
     val opened = clockOf(openedAt)

@@ -137,6 +137,7 @@ describe("importChunk stock locations", () => {
   it("reuses one variant and records Shop and Warehouse stock separately", async () => {
     const common = {
       productName: "Chemise cotton",
+      productCode: "PC-1023",
       categoryId: 3,
       brandId: null,
       gender: "unisex",
@@ -159,7 +160,10 @@ describe("importChunk stock locations", () => {
       variantsCreated: 1,
       stockAdded: 110,
     })
-    expect(mocks.productInsert).toMatchObject({ shelf_location: "A12" })
+    expect(mocks.productInsert).toMatchObject({
+      shelf_location: "A12",
+      product_code: "PC-1023",
+    })
     expect(mocks.rpcCalls).toEqual([
       [
         "record_stock_movement_at",
@@ -180,6 +184,7 @@ describe("importChunk stock locations", () => {
       {
         rowNumber: 2,
         productName: "Chemise cotton",
+        productCode: "PC-1023",
         categoryId: 3,
         brandId: null,
         gender: "unisex",
@@ -196,5 +201,33 @@ describe("importChunk stock locations", () => {
 
     expect(result.ok).toBe(true)
     expect(mocks.productUpdates).toContainEqual({ shelf_location: "A12" })
+    expect(mocks.productUpdates).toContainEqual({ product_code: "PC-1023" })
+  })
+
+  it("leaves an existing product's code untouched when the file has none", async () => {
+    mocks.existingProduct = true
+    mocks.variantExists = true
+
+    const result = await importChunk([
+      {
+        rowNumber: 2,
+        productName: "Chemise cotton",
+        productCode: null,
+        categoryId: 3,
+        brandId: null,
+        gender: "unisex",
+        sizeId: 1,
+        colourId: 2,
+        costPrice: 100,
+        sellPrice: 250,
+        quantity: 0,
+        barcode: "6291041500213",
+        shelfLocation: null,
+        location: "Shop",
+      },
+    ])
+
+    expect(result.ok).toBe(true)
+    expect(mocks.productUpdates).toEqual([])
   })
 })

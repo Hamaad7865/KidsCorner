@@ -547,10 +547,7 @@ export async function settleDiscounts(
   // rather than in a second call that would double-count the PIN attempt.
   const hasLineDiscount = lines.some((l) => l.discount > 0)
 
-  // A custom line is a cashier naming both the goods and the price. Same bar.
-  const hasCustomLine = lines.some((l) => l.variantId === null)
-
-  if (posted.length === 0 && !hasLineDiscount && !hasCustomLine) {
+  if (posted.length === 0 && !hasLineDiscount) {
     return { applied: [], total: 0, approvedBy: null, approvalReasons: [] }
   }
 
@@ -596,7 +593,6 @@ export async function settleDiscounts(
   // same act on a smaller scale, so it is held to the same bar.
   const requiresApproval =
     hasLineDiscount ||
-    hasCustomLine ||
     posted.some((d) => d.discountId === null) ||
     posted.some((d) => d.discountId !== null && rules.get(d.discountId)?.requiresManager)
 
@@ -700,14 +696,13 @@ export async function settleDiscounts(
   return {
     applied,
     total: round2(Math.min(running, basket)),
-    // Carried out so the sale can record WHO authorised it. A line discount or
-    // a custom line demands a manager's PIN but produces no `sale_discounts`
-    // row to hang the approver on, so without this the shop made a manager
-    // authorise money off and then kept no record that they had.
+    // Carried out so the sale can record WHO authorised it. A line discount
+    // demands a manager's PIN but produces no `sale_discounts` row to hang
+    // the approver on, so without this the shop made a manager authorise
+    // money off and then kept no record that they had.
     approvedBy,
     approvalReasons: [
       hasLineDiscount ? "money off a line" : null,
-      hasCustomLine ? "a custom item" : null,
       posted.some((d) => d.discountId === null) ? "a manual discount" : null,
       posted.some((d) => d.discountId !== null && rules.get(d.discountId)?.requiresManager)
         ? "a rule needing approval"
@@ -1160,9 +1155,9 @@ export async function commitSale(
    * Who authorised, against the sale that resulted.
    *
    * A named discount carries its approver in `sale_discounts.approved_by`, but
-   * money off a LINE and a CUSTOM ITEM produce no such row — and both demand a
-   * manager's PIN. So the shop was making a manager authorise a price and then
-   * keeping no record anywhere that they had. This is that record.
+   * money off a LINE produces no such row, and it still demands a manager's
+   * PIN. So the shop was making a manager authorise a price and then keeping
+   * no record anywhere that they had. This is that record.
    *
    * After the commit and never allowed to fail it: the sale is already the
    * customer's, and an audit write that hiccupped must not turn a completed

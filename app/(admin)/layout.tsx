@@ -4,10 +4,12 @@ import Link from "next/link"
 import { AppSidebar, MobileNav } from "@/components/admin/app-sidebar"
 import { GlobalSearch } from "@/components/admin/global-search"
 import { LowStockPill } from "@/components/admin/low-stock-pill"
+import { SlowMoverPill } from "@/components/admin/slow-mover-pill"
 import { UserMenu } from "@/components/admin/user-menu"
 import { BrandLock } from "@/components/brand/logo"
 import { getAccessMap } from "@/lib/access/queries"
 import { requireAdminProfile } from "@/lib/auth/session"
+import { countSlowMovers, getSlowMoverDays } from "@/lib/promotions/queries"
 import { countLowStock } from "@/lib/stock/queries"
 
 /**
@@ -33,17 +35,26 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     .filter(([, visible]) => visible)
     .map(([module]) => module)
 
-  // Read in the layout so the count is right on every screen, not just the
-  // dashboard. It is one indexed view read against a small table.
-  const lowStockCount = await countLowStock()
+  // Read in the layout so the counts are right on every screen, not just the
+  // dashboard. Low stock is one indexed view; slow movers is the same live rule
+  // the Promotions page uses, read once here for the pill.
+  const [lowStockCount, slowMoverCount] = await Promise.all([
+    countLowStock(),
+    getSlowMoverDays().then((days) => countSlowMovers(days)),
+  ])
 
   return (
-    /* A fixed-height app shell rather than a page that grows: the sidebar and
-       header have to stay put while the main column scrolls, and `min-h-dvh`
-       let the whole thing scroll as one document instead. `print:` unwinds it
-       — a clipped scroll container prints one screenful, which would quietly
-       ruin the barcode label sheet. */
-    <div className="flex h-dvh overflow-hidden print:h-auto print:overflow-visible">
+    /* Pinned to the viewport with `fixed inset-0`, not just `h-dvh`. In normal
+       flow a `100dvh` shell sits inside the shared root `body` (min-h-full,
+       never height-locked because the auth screen must still grow and scroll),
+       and dvh-vs-% rounding let the body outgrow the html by a hair — so the
+       DOCUMENT gained its own scrollbar on top of the one `main` already has.
+       Two scrollbars, and the phantom one stole enough width to push the shell
+       into horizontal overflow, clipping the sidebar. Taking the shell out of
+       flow removes the document scroll entirely, leaving `main` as the only
+       scroller. `print:static` drops it back into normal flow so a barcode
+       label sheet still prints every page instead of one fixed screenful. */
+    <div className="fixed inset-0 flex overflow-hidden print:static print:h-auto print:overflow-visible">
       <AppSidebar allowed={allowed} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
@@ -65,6 +76,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <GlobalSearch />
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
+            <SlowMoverPill count={slowMoverCount} />
             <LowStockPill count={lowStockCount} />
             <UserMenu profile={profile} />
           </div>

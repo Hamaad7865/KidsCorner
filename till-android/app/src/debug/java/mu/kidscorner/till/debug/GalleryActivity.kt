@@ -447,9 +447,9 @@ class GalleryActivity : ComponentActivity() {
                         "stockCheck" -> StockCheckScreen(
                             catalog = SAMPLE_CATALOG.map {
                                 when (it.id) {
-                                    101 -> it.copy(shelfLocation = "A12", qtyOnHand = 110)
-                                    102 -> it.copy(shelfLocation = "A12", qtyOnHand = 4)
-                                    103 -> it.copy(shelfLocation = "A12", qtyOnHand = 2)
+                                    101 -> it.copy(shelfLocation = "A12", productCode = "PC-1023", qtyOnHand = 110)
+                                    102 -> it.copy(shelfLocation = "A12", productCode = "PC-1023", qtyOnHand = 4)
+                                    103 -> it.copy(shelfLocation = "A12", productCode = "PC-1023", qtyOnHand = 2)
                                     else -> it
                                 }
                             },

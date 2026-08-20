@@ -287,4 +287,14 @@ html:has([data-density="pos"]) {
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+  /* Scrolling stays functional (wheel, trackpad, keyboard) — this only hides
+     the bar itself, for a column that scrolls occasionally rather than one a
+     person is meant to drag, like the sidebar's module list. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

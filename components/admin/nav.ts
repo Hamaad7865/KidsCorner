@@ -9,6 +9,7 @@ import {
   Settings,
   Store,
   Shirt,
+  TicketPercent,
   Truck,
   Users,
   type LucideIcon,
@@ -43,6 +44,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Inventory",
     items: [
       { href: "/stock", label: "Stock", icon: Boxes },
+      { href: "/promotions", label: "Promotions", icon: TicketPercent },
       { href: "/purchases", label: "Purchases", icon: Truck },
       { href: "/suppliers", label: "Suppliers", icon: Factory },
     ],

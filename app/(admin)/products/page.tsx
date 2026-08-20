@@ -20,6 +20,7 @@ import { ColourSwatch } from "@/components/settings/colour-swatch"
 import { formatPriceRange, formatQty } from "@/lib/format"
 import { getMasterData } from "@/lib/master-data/queries"
 import { listProducts } from "@/lib/products/queries"
+import { productsOnPromotion } from "@/lib/promotions/queries"
 
 export const metadata: Metadata = { title: "Products" }
 
@@ -57,6 +58,9 @@ export default async function ProductsPage({
     getMasterData(),
     listProducts({ search, categoryId, brandId, activeOnly: !showInactive }),
   ])
+
+  // Which of the shown products have a live promotion, for the badge.
+  const onPromotion = await productsOnPromotion(products.map((p) => p.id))
 
   const isFiltered = Boolean(search || categoryId || brandId || showInactive)
 
@@ -142,6 +146,16 @@ export default async function ProductsPage({
                       >
                         {product.name}
                       </Link>
+                      {product.productCode ? (
+                        <span className="text-muted-foreground ml-2 font-mono text-xs">
+                          {product.productCode}
+                        </span>
+                      ) : null}
+                      {onPromotion.has(product.id) ? (
+                        <Badge className="bg-brand-50 text-brand-700 border-brand-200 ml-2 border align-middle text-[10px]">
+                          Promo
+                        </Badge>
+                      ) : null}
                       {product.shelfLocation ? (
                         <p className="text-muted-foreground text-xs">
                           Shelf {product.shelfLocation}

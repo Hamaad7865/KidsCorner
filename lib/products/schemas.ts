@@ -27,6 +27,14 @@ export const productSchema = z.object({
     .trim()
     .min(1, "Product name is required.")
     .max(120, "Keep the name under 120 characters."),
+  // Required going forward — how staff identify the product — but the column
+  // itself stays nullable for products that predate this field; a legacy
+  // product only needs one the next time someone saves it through this form.
+  productCode: z
+    .string()
+    .trim()
+    .min(1, "Product code is required.")
+    .max(40, "Keep the product code under 40 characters."),
   // NOT NULL in 001 — a product cannot exist without a category.
   categoryId: z
     .number({ error: "Pick a category." })

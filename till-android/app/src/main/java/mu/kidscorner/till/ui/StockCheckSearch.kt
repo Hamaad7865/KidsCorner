@@ -6,6 +6,7 @@ import mu.kidscorner.till.data.StockCheckLocation
 data class StockCheckProduct(
     val productId: Int,
     val productName: String,
+    val productCode: String?,
     val shelfLocation: String?,
     val variants: List<CatalogVariant>,
     val barcodeMatch: Boolean,
@@ -27,7 +28,8 @@ fun stockCheckMatches(
             val matches = exactBarcode || variants.any { variant ->
                 variant.productName.contains(needle, ignoreCase = true) ||
                     variant.sku.contains(needle, ignoreCase = true) ||
-                    variant.barcode?.contains(needle, ignoreCase = true) == true
+                    variant.barcode?.contains(needle, ignoreCase = true) == true ||
+                    variant.productCode?.contains(needle, ignoreCase = true) == true
             }
             if (!matches) return@mapNotNull null
 
@@ -35,6 +37,7 @@ fun stockCheckMatches(
             StockCheckProduct(
                 productId = first.productId,
                 productName = first.productName,
+                productCode = variants.firstNotNullOfOrNull { it.productCode },
                 shelfLocation = variants.firstNotNullOfOrNull { it.shelfLocation },
                 variants = variants.sortedWith(
                     compareBy<CatalogVariant> { it.sizeSort }

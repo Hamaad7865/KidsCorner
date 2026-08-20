@@ -54,6 +54,22 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
         run: npm run cf:build
 
+      # Apply any migration not yet run against the live database, BEFORE the
+      # code that expects it goes out — so the schema can never lag the deploy
+      # (the failure that showed every page "migration 001 not applied"). Runs
+      # after the build so a broken build never migrates; if it fails, the
+      # Deploy step below does not run. Inactive until the SUPABASE_DB_URL
+      # secret is set: without it the script warns and exits 0 rather than
+      # breaking the deploy. See scripts/migrate.mjs.
+      - name: Apply database migrations
+        env:
+          # Accept either spelling of the secret — the local .env key is
+          # SUPABASE_DB_UR (no trailing L), so the secret may be named to match
+          # it. migrate.mjs reads whichever is set.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_UR: ${{ secrets.SUPABASE_DB_UR }}
+        run: node scripts/migrate.mjs
+
       - name: Deploy
         uses: cloudflare/wrangler-action@v3
         with:

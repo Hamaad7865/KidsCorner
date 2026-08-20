@@ -45,7 +45,9 @@ export function CloseTillRemotely({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Blank means "the drawer matched" — the same shorthand the tablet uses.
+  // Blank still falls back to "the drawer matched" — a defensive floor for the
+  // rare case someone clears the field — but the normal path now seeds this
+  // with the expected figure the moment the dialog opens, below.
   const counted = entry.trim() === "" ? till.expected : Number(entry)
   const valid = Number.isFinite(counted) && counted >= 0
   const variance = valid ? round2(counted - till.expected) : null
@@ -74,7 +76,16 @@ export function CloseTillRemotely({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        // Pre-fill with what the server already expects, visibly rather than
+        // just as a placeholder, so closing without touching the field is an
+        // explicit "the drawer matched" rather than an accidental blank.
+        if (next) setEntry(String(round2(till.expected)))
+      }}
+    >
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
         <PowerOff aria-hidden />
         Close the day

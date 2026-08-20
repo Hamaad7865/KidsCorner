@@ -39,6 +39,7 @@ export type CreatedMaster = {
 export type CommitRow = {
   rowNumber: number
   productName: string
+  productCode: string | null
   categoryId: number
   brandId: number | null
   gender: string
@@ -109,6 +110,41 @@ export async function findExistingBarcodes(
       return { ok: false, error: "Existing barcodes could not be checked. Try again." }
     }
     for (const row of data ?? []) if (row.barcode) found.push(row.barcode)
+  }
+  return { ok: true, taken: found }
+}
+
+/**
+ * Which of these product codes are already taken by another product.
+ * Lowercased on the way out — matching product codes is case-insensitive, so
+ * every caller can compare without having to fold case itself.
+ *
+ * The query itself stays an exact-case `IN`, same as `findExistingBarcodes` —
+ * PostgREST cannot filter on `lower(product_code)` without a view, so a code
+ * that is taken but differs only in case slips past this pre-check. The
+ * database's unique index still catches it at commit time; this is a
+ * best-effort early warning, not the actual guarantee.
+ */
+export async function findExistingProductCodes(
+  codes: string[],
+): Promise<{ ok: true; taken: string[] } | { ok: false; error: string }> {
+  if (codes.length === 0) return { ok: true, taken: [] }
+  const denied = await guard()
+  if (denied) return { ok: false, error: "You do not have access to the catalogue." }
+
+  const supabase = await createClient()
+  const found: string[] = []
+
+  for (let i = 0; i < codes.length; i += 200) {
+    const slice = codes.slice(i, i + 200)
+    const { data, error } = await supabase
+      .from("products")
+      .select("product_code")
+      .in("product_code", slice)
+    if (error) {
+      return { ok: false, error: "Existing product codes could not be checked. Try again." }
+    }
+    for (const row of data ?? []) if (row.product_code) found.push(row.product_code.toLowerCase())
   }
   return { ok: true, taken: found }
 }
@@ -257,9 +293,13 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
     `${r.categoryId}:${r.productName.trim().toLowerCase()}`
   const productIds = new Map<string, number>()
   const productShelves = new Map<string, string>()
+  const productCodes = new Map<string, string>()
   for (const row of rows) {
     if (row.shelfLocation) {
       productShelves.set(productKey(row), row.shelfLocation.trim())
+    }
+    if (row.productCode) {
+      productCodes.set(productKey(row), row.productCode.trim())
     }
   }
 
@@ -267,6 +307,7 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
     const key = productKey(row)
     if (productIds.has(key)) continue
     const shelfLocation = productShelves.get(key) ?? null
+    const productCode = productCodes.get(key) ?? null
 
     const { data: existing, error: findError } = await supabase
       .from("products")
@@ -291,6 +332,15 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
           return { ...result, ok: false, error: shelfError.message }
         }
       }
+      if (productCode !== null) {
+        const { error: codeError } = await supabase
+          .from("products")
+          .update({ product_code: productCode })
+          .eq("id", existing[0].id)
+        if (codeError) {
+          return { ...result, ok: false, error: codeError.message }
+        }
+      }
       continue
     }
 
@@ -302,6 +352,7 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
         brand_id: row.brandId,
         gender: row.gender,
         shelf_location: shelfLocation,
+        product_code: productCode,
       })
       .select("id")
       .maybeSingle()
