@@ -238,6 +238,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onCloseTill = vm::startClosingShift,
                         onOpenMovement = { overlay = Overlay.Movement },
                         onOpenHistory = { overlay = Overlay.Txns; vm.searchHistory("") },
+                        saleOutcomeShowing = state.outcome != null,
                     )
                 }
             }

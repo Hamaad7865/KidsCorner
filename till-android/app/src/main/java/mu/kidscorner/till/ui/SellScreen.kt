@@ -234,6 +234,13 @@ fun SellScreen(
     onCloseTill: () -> Unit,
     onOpenMovement: () -> Unit,
     onOpenHistory: () -> Unit,
+    /**
+     * The Sale complete screen is drawn on top of this one, not instead of it
+     * (see MainActivity) — completing a sale clears [lines] in the very same
+     * state update that shows it, so without this the effect below would fire
+     * underneath the overlay every time.
+     */
+    saleOutcomeShowing: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -269,9 +276,17 @@ fun SellScreen(
     // thing the cashier is checking, and there is nothing to type on it. It
     // still opens on a deliberate tap, which is when somebody actually wants
     // to search by name.
+    //
+    // Skipped while Sale complete covers the screen: completing a sale clears
+    // `lines` to empty in the same instant it shows that overlay, which used
+    // to refire this — requesting focus here triggers Android's own automatic
+    // show-on-focus, and hide() right after it does not reliably win that race
+    // on real hardware, so the keyboard could flash up over a screen with
+    // nothing to type into. Keyed on saleOutcomeShowing too, so dismissing the
+    // overlay still refocuses for the next sale.
     val keyboard = LocalSoftwareKeyboardController.current
-    LaunchedEffect(picker, lines.size) {
-        if (picker == null) {
+    LaunchedEffect(picker, lines.size, saleOutcomeShowing) {
+        if (picker == null && !saleOutcomeShowing) {
             runCatching { search.requestFocus() }
             keyboard?.hide()
         }
