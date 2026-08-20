@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
+import { round2 } from "@/lib/format"
 
 /**
  * Customer lookup for the "attach customer" step.
@@ -10,6 +11,16 @@ import { apiError, requireTillSession } from "@/lib/api/till-session"
  * shop's customer list is personal data — names and phone numbers — and there
  * is no reason for all of it to sit on a tablet that lives on a counter. The
  * catalog is public information about what is for sale; this is not.
+ *
+ * Read from `customer_credit_accounts` rather than `customers`, because the till
+ * needs the account state in the same breath as the name: whether "On account"
+ * may be offered at all, and how much room is left on it. Sending the balance
+ * lets the tablet grey the tender out and say why, instead of letting a cashier
+ * choose it and be refused after the customer has been told a total.
+ *
+ * The figures are for the screen only. `sale-core` re-reads the account and the
+ * database re-checks the limit under a lock, so a stale balance here can show an
+ * old number but can never authorise a charge.
  */
 export async function GET(request: Request) {
   const session = await requireTillSession(request)
@@ -26,8 +37,10 @@ export async function GET(request: Request) {
   if (safe.length < 2) return NextResponse.json({ ok: true, customers: [] })
 
   const { data, error } = await session.supabase
-    .from("customers")
-    .select("id, full_name, phone")
+    .from("customer_credit_accounts")
+    .select(
+      "customer_id, full_name, phone, credit_limit, credit_on_hold, balance, available",
+    )
     .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
     .order("full_name")
     .limit(20)
@@ -37,9 +50,15 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     customers: (data ?? []).map((row) => ({
-      id: row.id,
+      id: row.customer_id,
       fullName: row.full_name,
       phone: row.phone,
+      // Named so an older APK that does not know about credit simply ignores
+      // them. `creditLimit` of 0 is the "no account" case the till keys off.
+      creditLimit: round2(Number(row.credit_limit ?? 0)),
+      creditBalance: round2(Number(row.balance ?? 0)),
+      creditAvailable: round2(Number(row.available ?? 0)),
+      creditOnHold: row.credit_on_hold ?? false,
     })),
   })
 }
@@ -83,6 +102,16 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    customer: { id: data.id, fullName: data.full_name, phone: data.phone },
+    // A brand-new customer has no account: the owner opens one in the back
+    // office. Sent explicitly so the till does not have to guess.
+    customer: {
+      id: data.id,
+      fullName: data.full_name,
+      phone: data.phone,
+      creditLimit: 0,
+      creditBalance: 0,
+      creditAvailable: 0,
+      creditOnHold: false,
+    },
   })
 }
