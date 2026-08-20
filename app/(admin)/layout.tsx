@@ -38,12 +38,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const lowStockCount = await countLowStock()
 
   return (
-    /* A fixed-height app shell rather than a page that grows: the sidebar and
-       header have to stay put while the main column scrolls, and `min-h-dvh`
-       let the whole thing scroll as one document instead. `print:` unwinds it
-       — a clipped scroll container prints one screenful, which would quietly
-       ruin the barcode label sheet. */
-    <div className="flex h-dvh overflow-hidden print:h-auto print:overflow-visible">
+    /* Pinned to the viewport with `fixed inset-0`, not just `h-dvh`. In normal
+       flow a `100dvh` shell sits inside the shared root `body` (min-h-full,
+       never height-locked because the auth screen must still grow and scroll),
+       and dvh-vs-% rounding let the body outgrow the html by a hair — so the
+       DOCUMENT gained its own scrollbar on top of the one `main` already has.
+       Two scrollbars, and the phantom one stole enough width to push the shell
+       into horizontal overflow, clipping the sidebar. Taking the shell out of
+       flow removes the document scroll entirely, leaving `main` as the only
+       scroller. `print:static` drops it back into normal flow so a barcode
+       label sheet still prints every page instead of one fixed screenful. */
+    <div className="fixed inset-0 flex overflow-hidden print:static print:h-auto print:overflow-visible">
       <AppSidebar allowed={allowed} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
