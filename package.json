@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "check:consistency": "node scripts/check-consistency.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
     "preflight": "node scripts/preflight.mjs",
     "cf:build": "npm run preflight && opennextjs-cloudflare build",
     "cf:deploy": "npm run cf:build && wrangler deploy",
