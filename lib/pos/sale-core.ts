@@ -8,7 +8,7 @@ import {
   discountBaseFor,
   type DiscountRule,
 } from "@/lib/discounts/rules"
-import { round2, shopToday } from "@/lib/format"
+import { round2, formatRs, shopToday } from "@/lib/format"
 import { deviceVerifierMatches, mintDeviceVerifier } from "@/lib/pos/device-verifier"
 import { PIN_PATTERN, verifyPin } from "@/lib/pos/pin"
 import type { Database, Json } from "@/lib/supabase/database.types"
@@ -30,8 +30,19 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 export type TillClient = SupabaseClient<Database>
 
-/** "Rs 200.00" for an audit summary. Local so this module stays UI-free. */
-const formatMoney = (value: number) => `Rs ${round2(value).toFixed(2)}`
+/**
+ * "Rs 1,075.50" for an audit summary, and for the sentence a cashier reads when
+ * an account is over its limit.
+ *
+ * Delegates to `formatRs` rather than doing its own `toFixed(2)`, which is what
+ * it used to do. That produced "Rs 1000.00" while every screen in the shop
+ * writes "Rs 1,000.00" — tolerable in an audit line, but this now also renders
+ * a refusal at the counter, and a figure punctuated differently from the one on
+ * the till beside it invites a cashier to wonder whether it is the same number.
+ * `lib/format` is pure formatting, not UI, so nothing about the boundary this
+ * module keeps is given up by using it.
+ */
+const formatMoney = (value: number) => formatRs(value)
 
 /** The signed-in device/user a sale is committed on behalf of. */
 export type TillUser = { id: string; name: string }
@@ -705,6 +716,84 @@ export async function settleDiscounts(
   }
 }
 
+// ----------------------------------------------------------------- credit
+
+/**
+ * Checks a sale's credit tender against the customer's account.
+ *
+ * A trigger on `sale_payments` enforces all four of these rules in the
+ * database, so this is not what makes them true. It exists because of what the
+ * cashier sees: without it the refusal arrives as a raw Postgres
+ * `check_violation` through PostgREST, and "new row for relation
+ * sale_payments violates check constraint" is not a sentence anyone can act
+ * on. Here the till gets "Rita Appadoo owes Rs 900 of a Rs 1,000 limit", which
+ * tells them to take a deposit or ring it up as cash.
+ *
+ * Read from `customer_credit_accounts`, the view that already does the
+ * arithmetic, so the balance is `sum(amount)` over the ledger and never a
+ * cached column that could disagree with it.
+ *
+ * The gap between this check and the commit is real — another till could ring
+ * up the same account in between — and it is closed in the database, not here:
+ * the trigger takes an advisory lock per customer before it re-reads the
+ * balance. This is the friendly message; that is the guarantee.
+ */
+export async function settleCreditTender(
+  supabase: TillClient,
+  customerId: number | null,
+  payments: PaymentInput[],
+): Promise<{ credit: number } | { error: string }> {
+  const credit = round2(
+    payments
+      .filter((payment) => payment.method === "credit")
+      .reduce((sum, payment) => sum + payment.amount, 0),
+  )
+
+  // The overwhelmingly common case: an ordinary sale, paid for. Costs nothing.
+  if (credit <= 0) return { credit: 0 }
+
+  if (customerId === null) {
+    return {
+      error: "A sale on account needs a customer. Attach one, or take payment now.",
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("customer_credit_accounts")
+    .select("full_name, credit_limit, credit_on_hold, balance")
+    .eq("customer_id", customerId)
+    .maybeSingle()
+
+  if (error) return { error: error.message }
+  if (!data) return { error: "That customer no longer exists." }
+
+  const name = data.full_name ?? "That customer"
+  const limit = round2(Number(data.credit_limit ?? 0))
+  const balance = round2(Number(data.balance ?? 0))
+
+  // A zero limit is "no account", not "an account with no room". Same refusal
+  // either way, but the sentence differs and the cashier needs the right one.
+  if (limit <= 0) {
+    return {
+      error: `${name} does not have a credit account. An owner sets one up in the back office.`,
+    }
+  }
+  if (data.credit_on_hold) {
+    return { error: `${name}'s account is on hold, so nothing can be added to it.` }
+  }
+
+  if (round2(balance + credit) > limit) {
+    return {
+      error:
+        `${name} owes ${formatMoney(balance)} of a ${formatMoney(limit)} limit, ` +
+        `and this sale would add ${formatMoney(credit)}. ` +
+        `Take a deposit, or raise the limit in the back office.`,
+    }
+  }
+
+  return { credit }
+}
+
 // ------------------------------------------------------------ the envelope
 
 /**
@@ -769,8 +858,22 @@ const saleItemSchema = z
     { message: "A custom line needs a price." },
   )
 
+/**
+ * `credit` is a tender here and money everywhere else is not.
+ *
+ * It means "billed to the customer's account": the sale completes, the goods
+ * leave, the VAT is due, and the shop is owed. Recording it as a payment row is
+ * what keeps the invariant below intact — payments must sum to exactly the
+ * total — and it makes a deposit fall out for free, because cash 200 + credit
+ * 300 is a balanced 500 sale with no special case in the pricing path.
+ *
+ * What it is NOT is unconditional. `settleCreditTender` refuses it without an
+ * attached customer, without an account, on a held account, and over the limit,
+ * and a trigger on `sale_payments` refuses the same four things again for any
+ * client that finds another way in.
+ */
 const paymentSchema = z.object({
-  method: z.enum(["cash", "card", "juice", "myt_money", "bank"]),
+  method: z.enum(["cash", "card", "juice", "myt_money", "bank", "credit"]),
   amount: z.number().min(0),
   tendered: absentAsNull(z.number().min(0)),
 })
@@ -944,6 +1047,16 @@ export async function commitSale(
         `Cash over the price belongs in the tendered figure, not the amount.`,
     }
   }
+
+  /**
+   * The account, when part of this sale is going on one.
+   *
+   * Checked after the totals are settled and before anything is committed, so
+   * the limit is measured against what is actually being billed rather than
+   * whatever the client claimed the sale was worth.
+   */
+  const credit = await settleCreditTender(supabase, input.customerId, input.payments)
+  if ("error" in credit) return { ok: false, error: credit.error }
 
   /**
    * The generated types declare `p_customer_id` and `p_shift_id` as plain

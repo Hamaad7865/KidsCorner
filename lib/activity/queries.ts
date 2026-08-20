@@ -430,6 +430,9 @@ const TITLES: Record<string, string> = {
   "discount.changed": "Discount changed",
   "discount.deleted": "Discount retired",
   "customer.changed": "Customer details changed",
+  "customer.credit_changed": "Credit account changed",
+  "customer.credit_settled": "Payment on account",
+  "customer.credit_written_off": "Debt written off",
   "sale.void": "Sale voided",
   "sale.refunded": "Sale refunded",
 

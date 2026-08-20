@@ -292,9 +292,110 @@ export type Database = {
           },
         ]
       }
+      customer_credit_entries: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          credit_note_id: number | null
+          customer_id: number
+          due_on: string | null
+          entry_type: string
+          id: number
+          method: string | null
+          reason: string | null
+          sale_id: number | null
+          sale_payment_id: number | null
+          shift_id: number | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          credit_note_id?: number | null
+          customer_id: number
+          due_on?: string | null
+          entry_type: string
+          id?: number
+          method?: string | null
+          reason?: string | null
+          sale_id?: number | null
+          sale_payment_id?: number | null
+          shift_id?: number | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          credit_note_id?: number | null
+          customer_id?: number
+          due_on?: string | null
+          entry_type?: string
+          id?: number
+          method?: string | null
+          reason?: string | null
+          sale_id?: number | null
+          sale_payment_id?: number | null
+          shift_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_credit_entries_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_credit_note_id_fkey"
+            columns: ["credit_note_id"]
+            isOneToOne: true
+            referencedRelation: "credit_notes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer_credit_accounts"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_sale_payment_id_fkey"
+            columns: ["sale_payment_id"]
+            isOneToOne: true
+            referencedRelation: "sale_payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       customers: {
         Row: {
           created_at: string
+          credit_limit: number
+          credit_on_hold: boolean
+          credit_terms_days: number
           email: string | null
           full_name: string
           id: number
@@ -303,6 +404,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          credit_limit?: number
+          credit_on_hold?: boolean
+          credit_terms_days?: number
           email?: string | null
           full_name: string
           id?: number
@@ -311,6 +415,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          credit_limit?: number
+          credit_on_hold?: boolean
+          credit_terms_days?: number
           email?: string | null
           full_name?: string
           id?: number
@@ -1398,6 +1505,22 @@ export type Database = {
       }
     }
     Views: {
+      customer_credit_accounts: {
+        Row: {
+          available: number | null
+          balance: number | null
+          charge_count: number | null
+          credit_limit: number | null
+          credit_on_hold: boolean | null
+          credit_terms_days: number | null
+          customer_id: number | null
+          full_name: string | null
+          last_activity_at: string | null
+          oldest_due_on: string | null
+          phone: string | null
+        }
+        Relationships: []
+      }
       late_sales: {
         Row: {
           arrived_after: string | null
@@ -1600,6 +1723,10 @@ export type Database = {
         Returns: number
       }
       current_role_of_user: { Args: never; Returns: string }
+      customer_credit_balance: {
+        Args: { p_customer_id: number }
+        Returns: number
+      }
       daily_summary: { Args: { p_from: string; p_to: string }; Returns: Json }
       discount_amount_for: {
         Args: {
@@ -1683,6 +1810,16 @@ export type Database = {
         }
         Returns: number
       }
+      settle_customer_credit: {
+        Args: {
+          p_amount: number
+          p_customer_id: number
+          p_method: string
+          p_reason?: string
+          p_shift_id?: number
+        }
+        Returns: Json
+      }
       shift_totals: { Args: { p_shift_id: number }; Returns: Json }
       transfer_stock: {
         Args: {
@@ -1693,6 +1830,10 @@ export type Database = {
           p_variant_id: number
         }
         Returns: undefined
+      }
+      write_off_customer_credit: {
+        Args: { p_amount: number; p_customer_id: number; p_reason: string }
+        Returns: Json
       }
       z_totals: {
         Args: { p_as_at?: string; p_shift_id: number }

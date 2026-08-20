@@ -1,3 +1,4 @@
+import { isCollectedMethod } from "@/lib/db-enums"
 import { endOfShopDay, round2, startOfShopDay } from "@/lib/format"
 import { createClient } from "@/lib/supabase/server"
 
@@ -17,11 +18,17 @@ import { createClient } from "@/lib/supabase/server"
  *   for the same range, because two reports disagreeing about revenue is how
  *   owners stop trusting both.
  *
- *   NOT YET COLLECTED — invoiced but unpaid. Kids Corner has no account sales
- *   — every ticket is paid at the till — so this is zero by construction.
- *   Shown anyway, exactly as Carfectionist shows its own Rs 0.00: the card is
- *   the claim, and a figure that ever differs from zero is drift between the
- *   sales ledger and the payments ledger that wants investigating, not hiding.
+ *   NOT YET COLLECTED — invoiced but unpaid. This used to be zero by
+ *   construction, and the card said so: every ticket was paid at the till, so
+ *   any other figure meant drift between the sales ledger and the payments
+ *   ledger. Credit customers changed that. A sale billed to an account is
+ *   invoiced in full and collects nothing, so this figure is now the period's
+ *   real account lending — and `onAccount` below is the same money counted
+ *   forwards, from the credit tenders themselves, so the two can be compared.
+ *
+ * The one rule that keeps all of this honest: a `credit` payment row is NOT
+ * money. It is filtered out of COLLECTED and out of `byMethod` through
+ * `isCollectedMethod`, because "Cash Rs 19,792" must mean what the drawer saw.
  */
 
 export type CollectedRow = {
@@ -46,6 +53,14 @@ export type CollectedReport = {
   collected: number
   invoiced: number
   outstanding: number
+  /**
+   * Sales value billed to customer accounts in this period.
+   *
+   * Counted from the `credit` tenders themselves rather than derived, so it
+   * stands on its own next to `outstanding` — which reaches the same money by
+   * subtraction, and would also absorb any genuine ledger drift.
+   */
+  onAccount: number
   byMethod: { method: string; amount: number }[]
   rows: CollectedRow[]
   counts: { payments: number; refunds: number }
@@ -133,6 +148,7 @@ export async function getCollectedReport(
   const payments: (PaymentFact & CollectedRow)[] = []
   let invoicedSales = 0
   let paidOnSales = 0
+  let onAccount = 0
 
   for (const sale of saleRows) {
     // A voided sale took no money and invoices nothing. Its payment rows stay
@@ -144,6 +160,22 @@ export async function getCollectedReport(
 
     for (const payment of sale.sale_payments ?? []) {
       const amount = round2(Number(payment.amount))
+
+      /**
+       * A credit tender is a debt, not a receipt.
+       *
+       * It is totalled into `onAccount` and then dropped, so it reaches neither
+       * `paidOnSales` — which is what makes `outstanding` the period's real
+       * lending instead of a permanent zero — nor the row list that feeds
+       * `byMethod` and COLLECTED. Left in, a Rs 5,000 sale on account added
+       * Rs 5,000 to "money received" and the reports page told the owner the
+       * shop had taken thousands it was still owed.
+       */
+      if (!isCollectedMethod(payment.method)) {
+        onAccount = round2(onAccount + amount)
+        continue
+      }
+
       paidOnSales = round2(paidOnSales + amount)
       payments.push({
         key: `p${payment.id}`,
@@ -197,9 +229,11 @@ export async function getCollectedReport(
     method,
     collected,
     invoiced: round2(invoicedSales - creditTotal),
-    // Sales issued minus payments received against them. Zero while every
-    // ticket is paid at the till; anything else is ledger drift.
+    // Sales issued minus money received against them. With credit customers
+    // this is the period's account lending; it was zero by construction before
+    // they existed, and anything above `onAccount` is ledger drift worth a look.
     outstanding: round2(invoicedSales - paidOnSales),
+    onAccount,
     byMethod,
     rows,
     counts: {

@@ -1,4 +1,4 @@
-import { PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/db-enums"
+import { isCollectedMethod, PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/db-enums"
 import { endOfShopDay, round2, shopToday, startOfShopDay } from "@/lib/format"
 import { forDeviceShifts, type PosDevice } from "@/lib/pos/overview"
 import { createClient } from "@/lib/supabase/server"
@@ -96,8 +96,17 @@ export type Closure = {
   cashOut: number
   counted: number
   variance: number
-  /** Takings that never reached the drawer — card, Juice, my.t money. */
+  /** Takings that never reached the drawer — card, Juice, bank. */
   nonCash: { method: string; amount: number }[]
+  /**
+   * Sales value billed to customer accounts during this shift.
+   *
+   * Kept apart from `nonCash` because it is not takings at all: nothing
+   * arrived, by any rail. It is here so a closure that rang up Rs 12,000 and
+   * counted Rs 4,000 can say where the other Rs 8,000 went, instead of leaving
+   * the owner to conclude the drawer is short.
+   */
+  onAccount: number
   /** Of `cashOut`, the part that was a refund. Negative. */
   refunded: number
   /** Of `cashOut`, the part that was a pay-out. Negative. */
@@ -181,6 +190,14 @@ export function flowTotal(rows: FlowRow[]): number {
  * but is never in the drawer at night, so without a matching outflow the period
  * appears to hold cash it does not have.
  *
+ * A sale on account is excluded, and the distinction is the reason
+ * `isCollectedMethod` exists. Card money is real money that went somewhere
+ * else; account money has not been paid at all, so "deposit" is the wrong verb
+ * twice over. Left in, every credit sale invented an outflow of money the shop
+ * never received — the period showed a payment in and a deposit out for the
+ * same nonexistent cash, which nets to zero and is exactly the kind of
+ * cancelling error nobody notices until the bank statement disagrees.
+ *
  * Only positive net methods produce a row. A method that nets to nothing has
  * nothing to deposit, and "Card Rs 0.00 straight to the bank" is noise.
  */
@@ -191,6 +208,7 @@ export function bankDeposits(
   const net = new Map<string, number>()
   for (const payment of payments) {
     if (payment.method === "cash" || payment.struck) continue
+    if (!isCollectedMethod(payment.method)) continue
     net.set(payment.method, round2((net.get(payment.method) ?? 0) + payment.amount))
   }
 
@@ -347,8 +365,17 @@ export async function getDeviceCashFlow(
 
   // ---------------------------------------------------------------- inflows
 
+  /**
+   * A sale on account is not an inflow.
+   *
+   * It is left out of this list rather than shown struck, which is the
+   * treatment a voided sale gets: `struck` renders a "Void" badge, and labelling
+   * a perfectly good account sale as void would be worse than omitting it. The
+   * money is chased through the receivables report instead, and the closure
+   * below carries the shift's on-account total so a day still explains itself.
+   */
   const inflows: Inflow[] = payments
-    .filter((payment) => inPeriod(payment.at))
+    .filter((payment) => isCollectedMethod(payment.method) && inPeriod(payment.at))
     .map((payment) => ({
       key: payment.key,
       at: payment.at,
@@ -454,9 +481,17 @@ export async function getDeviceCashFlow(
     const credits = (creditRows ?? []).filter((c) => c.shift_id === shift.id)
 
     let cashIn = 0
+    let onAccount = 0
     const nonCash = new Map<string, number>()
     for (const payment of shiftPayments) {
       if (payment.struck) continue
+      // Billed, not taken. Totalled separately so it can be shown as the
+      // explanation for a shift whose sales exceed everything it collected,
+      // and kept out of `nonCash` so it is never read as takings.
+      if (!isCollectedMethod(payment.method)) {
+        onAccount = round2(onAccount + payment.amount)
+        continue
+      }
       if (payment.method === "cash") cashIn = round2(cashIn + payment.amount)
       else nonCash.set(payment.method, round2((nonCash.get(payment.method) ?? 0) + payment.amount))
     }
@@ -489,6 +524,7 @@ export async function getDeviceCashFlow(
       nonCash: [...nonCash.entries()]
         .filter(([, amount]) => amount > 0)
         .map(([method, amount]) => ({ method, amount })),
+      onAccount,
       refunded,
       disbursed,
     }

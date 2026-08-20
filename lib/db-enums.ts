@@ -64,8 +64,26 @@ export type SaleStatus = (typeof SALE_STATUSES)[number]
  * read; retiring a method is a change there and nowhere else.
  *
  * So `myt_money` stays here, and stays out of the settings list.
+ *
+ * `credit` is here for a different reason, and it is the one member of this
+ * union that is not money. It means "billed to the customer's account" — the
+ * sale is complete and the shop is owed. It is deliberately absent from
+ * `settings.payment_methods` too, because both tills draw their tender tiles
+ * from that list and would then offer it unconditionally: credit is the only
+ * tender that is illegal without an attached customer and refusable because of
+ * a limit, so the tills gate it explicitly instead.
+ *
+ * Anything totalling "money we took" must therefore exclude it. See
+ * `isCollectedMethod` below, which is that filter and the reason it exists.
  */
-export const PAYMENT_METHODS = ["cash", "card", "juice", "myt_money", "bank"] as const
+export const PAYMENT_METHODS = [
+  "cash",
+  "card",
+  "juice",
+  "myt_money",
+  "bank",
+  "credit",
+] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -74,6 +92,23 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   juice: "Juice",
   myt_money: "my.t money",
   bank: "Bank",
+  credit: "On account",
+}
+
+/**
+ * Did this tender actually bring money in?
+ *
+ * True for everything except `credit`, which records a debt rather than a
+ * receipt. Every figure that means "collected", "taken", "banked" or "in the
+ * drawer" has to filter on this — a Rs 5,000 sale on account is Rs 5,000 of
+ * turnover and Rs 0 of cash, and code that cannot tell those apart reports a
+ * day's takings as thousands more than the shop is holding.
+ *
+ * Named for what it asks rather than as `!== "credit"` so that the next
+ * non-cash-settling tender added here is caught by every existing caller.
+ */
+export function isCollectedMethod(method: string): boolean {
+  return method !== "credit"
 }
 
 function isMember<T extends readonly string[]>(
