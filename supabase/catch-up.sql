@@ -23,7 +23,7 @@
 -- It assumes Supabase's own auth and storage schemas already exist, which they
 -- do on any real project.
 --
--- Generated 2026-08-18 from the live schema.
+-- Generated 2026-08-20 from the live schema.
 -- ============================================================================
 
 -- ==========================================================================
@@ -775,10 +775,10 @@ CREATE INDEX IF NOT EXISTS idx_credit_notes_shift ON public.credit_notes USING b
 CREATE INDEX IF NOT EXISTS idx_credit_notes_vat_policy_id ON public.credit_notes USING btree (vat_policy_id);
 CREATE INDEX IF NOT EXISTS idx_discounts_active ON public.discounts USING btree (is_active, scope);
 CREATE INDEX IF NOT EXISTS idx_pos_devices_active ON public.pos_devices USING btree (is_active, name);
-CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique_idx ON public.products USING btree (lower(product_code)) WHERE (product_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_variants_barcode ON public.product_variants USING btree (barcode);
 CREATE INDEX IF NOT EXISTS idx_variants_product ON public.product_variants USING btree (product_id);
 CREATE INDEX IF NOT EXISTS idx_variants_without_barcode ON public.product_variants USING btree (product_id) WHERE (barcode IS NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS products_product_code_unique_idx ON public.products USING btree (lower(product_code)) WHERE (product_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_purchases_expected ON public.purchases USING btree (expected_date) WHERE ((status = 'draft'::text) AND (expected_date IS NOT NULL));
 CREATE INDEX IF NOT EXISTS idx_purchases_vat_policy_id ON public.purchases USING btree (vat_policy_id);
 CREATE INDEX IF NOT EXISTS idx_receipt_prints_sale ON public.receipt_prints USING btree (sale_id, printed_at DESC);
@@ -3401,14 +3401,14 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon,
 
 INSERT INTO settings (key, value) VALUES
     ('barcode_auto', 'true'::jsonb),
-    ('barcode_next', '317'::jsonb),
-    ('barcode_prefix', '"6291041"'::jsonb),
+    ('barcode_next', '320'::jsonb),
+    ('barcode_prefix', '"7865"'::jsonb),
     ('currency', '"MUR"'::jsonb),
     ('payment_methods', '["cash","card","juice","bank"]'::jsonb),
     ('refund_requires_manager', 'false'::jsonb),
     ('shop_name', '"Kids Corner"'::jsonb),
-    ('vat_enabled', 'false'::jsonb),
-    ('vat_number', NULL),
+    ('vat_enabled', 'true'::jsonb),
+    ('vat_number', '"VAT2020809"'::jsonb),
     ('vat_rate', '0.15'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
@@ -3423,22 +3423,23 @@ INSERT INTO sizes (id, size_type, label, sort_order, is_active) VALUES
     (8, 'age_range', '5-6 yrs', 8, TRUE),
     (9, 'age_range', '7-8 yrs', 9, TRUE),
     (10, 'age_range', '9-10 yrs', 10, TRUE),
-    (11, 'shoe_size', 'EU 19', 20, TRUE),
-    (12, 'shoe_size', 'EU 20', 21, TRUE),
-    (13, 'shoe_size', 'EU 21', 22, TRUE),
-    (14, 'shoe_size', 'EU 22', 23, TRUE),
-    (15, 'shoe_size', 'EU 23', 24, TRUE),
-    (16, 'shoe_size', 'EU 24', 25, TRUE),
-    (17, 'shoe_size', 'EU 25', 26, TRUE),
-    (18, 'shoe_size', 'EU 26', 27, TRUE),
-    (19, 'shoe_size', 'EU 27', 28, TRUE),
-    (20, 'shoe_size', 'EU 28', 29, TRUE),
+    (11, 'shoe_size', '19', 20, TRUE),
+    (12, 'shoe_size', '20', 21, TRUE),
+    (13, 'shoe_size', '21', 22, TRUE),
+    (14, 'shoe_size', '22', 23, TRUE),
+    (15, 'shoe_size', '23', 24, TRUE),
+    (16, 'shoe_size', '24', 25, TRUE),
+    (17, 'shoe_size', '25', 26, TRUE),
+    (18, 'shoe_size', '26', 27, TRUE),
+    (19, 'shoe_size', '27', 28, TRUE),
+    (20, 'shoe_size', '28', 29, TRUE),
     (196, 'letter_size', 'S', 40, TRUE),
     (197, 'letter_size', 'M', 41, TRUE),
     (198, 'letter_size', 'L', 42, TRUE),
     (199, 'letter_size', 'XL', 43, TRUE),
     (200, 'letter_size', 'XXL', 44, TRUE),
-    (201, 'letter_size', 'XXXL', 45, TRUE)
+    (201, 'letter_size', 'XXXL', 45, TRUE),
+    (202, 'shoe_size', 'EU 24', 900, TRUE)
 ON CONFLICT (id) DO NOTHING;
 SELECT setval(pg_get_serial_sequence('sizes', 'id'),
        greatest((SELECT max(id) FROM sizes), 1));
