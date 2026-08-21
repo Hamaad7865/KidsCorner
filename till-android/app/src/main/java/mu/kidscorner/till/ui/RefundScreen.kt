@@ -321,7 +321,7 @@ fun RefundScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(11.dp),
                     ) {
-                        RefundToggle(restock) { restock = !restock }
+                        HandoffToggle(restock) { restock = !restock }
                         Column {
                             Text(
                                 "Put items back into stock",
@@ -606,7 +606,7 @@ private fun MethodKey(
 
 /** The same 52x30 switch the settings screen uses, in the danger colour. */
 @Composable
-private fun RefundToggle(on: Boolean, onClick: () -> Unit) {
+fun HandoffToggle(on: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(999.dp),

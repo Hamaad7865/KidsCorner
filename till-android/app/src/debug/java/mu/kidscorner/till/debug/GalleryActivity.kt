@@ -573,7 +573,7 @@ class GalleryActivity : ComponentActivity() {
                             attachedCustomerId = null,
                             onSearch = {},
                             onPick = {},
-                            onCreate = { _, _ -> },
+                            onCreate = { _, _, _ -> },
                             onDismiss = { showing = null },
                         )
 

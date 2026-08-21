@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 
+import { logAudit } from "@/lib/activity/audit"
 import { apiError, requireTillSession } from "@/lib/api/till-session"
 import { round2 } from "@/lib/format"
+import { verifyApproval } from "@/lib/pos/sale-core"
 
 /**
  * Customer lookup for the "attach customer" step.
@@ -63,9 +65,24 @@ export async function GET(request: Request) {
 const createSchema = z.object({
   name: z.string().trim().min(2, "Enter the customer's name.").max(120),
   phone: z.string().trim().max(40).nullish(),
+  /** Open a credit account for them in the same breath. Gated below. */
+  openAccount: z.boolean().optional().default(false),
+  /** A manager's PIN, sent only once the till has been told to ask for one. */
+  approval: z.object({ managerId: z.string(), pin: z.string() }).nullish(),
 })
 
-/** Adds a customer from the till, for the walk-in who wants to be on file. */
+/**
+ * Adds a customer from the till, for the walk-in who wants to be on file.
+ *
+ * Staff at a till have no route to the back office, so `openAccount` lets them
+ * open a credit account in the same request rather than send the customer away
+ * to come back later. It is the one part of this endpoint that needs a manager:
+ * plain creation is free, but an open account is unlimited credit — the shop's
+ * ceiling was removed on purpose, so the only thing left guarding it is who is
+ * allowed to say yes. Verified BEFORE the insert, so a declined or wrong PIN
+ * leaves nothing behind — the cashier retries with the same name and phone once
+ * a manager types theirs.
+ */
 export async function POST(request: Request) {
   const session = await requireTillSession(request)
   if ("response" in session) return session.response
@@ -85,13 +102,24 @@ export async function POST(request: Request) {
     })
   }
 
+  const { openAccount } = parsed.data
+  let approvedBy: string | null = null
+  if (openAccount) {
+    const verified = await verifyApproval(session.supabase, parsed.data.approval, "credit")
+    if ("error" in verified) {
+      return NextResponse.json({ ok: false, error: verified.error, needsApproval: true })
+    }
+    approvedBy = verified.managerId
+  }
+
   const { data, error } = await session.supabase
     .from("customers")
     .insert({
       full_name: parsed.data.name,
       phone: parsed.data.phone?.trim() || null,
+      credit_enabled: openAccount,
     })
-    .select("id, full_name, phone")
+    .select("id, full_name, phone, credit_enabled")
     .maybeSingle()
 
   if (error) {
@@ -105,15 +133,23 @@ export async function POST(request: Request) {
   }
   if (!data) return NextResponse.json({ ok: false, error: "The customer was not saved." })
 
+  if (openAccount) {
+    await logAudit(session.supabase, {
+      type: "customer.credit_changed",
+      refType: "customer",
+      refId: data.id,
+      summary: `${data.full_name}: account opened at the till`,
+      detail: { creditEnabled: true, approvedBy },
+    })
+  }
+
   return NextResponse.json({
     ok: true,
-    // A brand-new customer has no account: the owner opens one in the back
-    // office. Sent explicitly so the till does not have to guess.
     customer: {
       id: data.id,
       fullName: data.full_name,
       phone: data.phone,
-      creditEnabled: false,
+      creditEnabled: data.credit_enabled ?? false,
       creditBalance: 0,
       creditOnHold: false,
     },

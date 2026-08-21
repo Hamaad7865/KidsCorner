@@ -81,13 +81,14 @@ fun CustomerDialog(
     attachedCustomerId: Int?,
     onSearch: (String) -> Unit,
     onPick: (Customer) -> Unit,
-    onCreate: (String, String?) -> Unit,
+    onCreate: (String, String?, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var adding by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newPhone by remember { mutableStateOf("") }
+    var openAccount by remember { mutableStateOf(false) }
     var createRequested by remember { mutableStateOf(false) }
 
     // Debounced: a scanner-speed typist would otherwise fire a query per
@@ -214,6 +215,35 @@ fun CustomerDialog(
                     keyboard = KeyboardType.Phone,
                     mono = true,
                 )
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(Handoff.FieldWell)
+                        .border(1.dp, Handoff.LineIdle, RoundedCornerShape(11.dp))
+                        .padding(horizontal = 13.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(11.dp),
+                ) {
+                    HandoffToggle(openAccount) { openAccount = !openAccount }
+                    Column {
+                        Text(
+                            "Open a credit account",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Handoff.Ink,
+                        )
+                        Text(
+                            // No ceiling any more, so this really does mean "any
+                            // amount" — the cashier should read it out as such.
+                            "Lets them buy on account. No limit, so a manager has to approve it.",
+                            fontSize = 11.5.sp,
+                            color = Handoff.Muted3,
+                        )
+                    }
+                }
+
                 error?.let {
                     Text(it, fontSize = 12.5.sp, color = Handoff.Danger)
                 }
@@ -237,7 +267,7 @@ fun CustomerDialog(
                     enabled = newName.trim().length >= 2 && !searching,
                     onClick = {
                         createRequested = true
-                        onCreate(newName.trim(), newPhone.trim().ifBlank { null })
+                        onCreate(newName.trim(), newPhone.trim().ifBlank { null }, openAccount)
                     },
                 )
             }

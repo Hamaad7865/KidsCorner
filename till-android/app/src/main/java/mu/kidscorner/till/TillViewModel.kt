@@ -25,6 +25,7 @@ import mu.kidscorner.till.data.Cashier
 import mu.kidscorner.till.data.CatalogVariant
 import mu.kidscorner.till.data.CloseShiftRequest
 import mu.kidscorner.till.data.CloseShiftResponse
+import mu.kidscorner.till.data.CreateCustomerRequest
 import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.DiscountRule
 import mu.kidscorner.till.data.DownloadState
@@ -210,6 +211,13 @@ data class TillState(
      * refund and retry a frozen sale with it.
      */
     val pendingRefund: RefundRequest? = null,
+    /**
+     * A new customer the server refused to open a credit account for until a
+     * manager approves it. Held for the same reason as [pendingRefund] — to
+     * resubmit once a PIN is typed, and to tell the shared approval prompt
+     * which act it is authorising.
+     */
+    val pendingCustomerCreate: CreateCustomerRequest? = null,
 
     /** What would come out of the printer, as monospaced text. */
     val receiptPreview: String? = null,
@@ -2068,9 +2076,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun createCustomer(name: String, phone: String?) = viewModelScope.launch {
+    fun createCustomer(name: String, phone: String?, openAccount: Boolean = false) =
+        viewModelScope.launch {
+            submitCustomerCreate(CreateCustomerRequest(name, phone, openAccount))
+        }
+
+    private suspend fun submitCustomerCreate(request: CreateCustomerRequest) {
         _state.update { it.copy(customerSearching = true, customerError = null) }
-        repo.createCustomer(name, phone)
+        repo.createCustomer(request)
             .onSuccess { response ->
                 if (response.ok && response.customer != null) {
                     _state.update {
@@ -2079,6 +2092,19 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             customer = response.customer,
                             customerResults = emptyList(),
                             customerError = null,
+                            pendingCustomerCreate = null,
+                        )
+                    }
+                } else if (response.needsApproval) {
+                    // Held, not discarded: the prompt resubmits this exact name
+                    // and phone once a manager has typed their PIN, the same
+                    // way a refused refund is retried.
+                    _state.update {
+                        it.copy(
+                            customerSearching = false,
+                            pendingCustomerCreate = request.copy(approval = null),
+                            needsApproval = true,
+                            customerError = response.error,
                         )
                     }
                 } else {
@@ -2099,6 +2125,22 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
     }
+
+    /**
+     * Resubmits a customer creation that was refused pending a manager's PIN.
+     *
+     * Replayed exactly as it was typed, same as [retryRefund] — rebuilding it
+     * from the screen would let what the manager authorises drift from what the
+     * cashier actually filled in.
+     */
+    fun retryCustomerCreate(approval: Approval) {
+        val pending = _state.value.pendingCustomerCreate ?: return
+        _state.update { it.copy(needsApproval = false) }
+        viewModelScope.launch { submitCustomerCreate(pending.copy(approval = approval)) }
+    }
+
+    fun clearPendingCustomerCreate() =
+        _state.update { it.copy(pendingCustomerCreate = null, needsApproval = false) }
 
     // ------------------------------------------------------------ discount
 

@@ -378,7 +378,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             attachedCustomerId = state.customer?.id,
             onSearch = vm::searchCustomers,
             onPick = { vm.attachCustomer(it); overlay = Overlay.None },
-            onCreate = { name, phone -> vm.createCustomer(name, phone) },
+            onCreate = { name, phone, openAccount -> vm.createCustomer(name, phone, openAccount) },
             onDismiss = { overlay = Overlay.None },
         )
 
@@ -512,33 +512,43 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onDismiss = { overlay = Overlay.None },
         )
 
-        // One prompt, two things it can be authorising. `pendingRefund` is what
-        // says which — without it a manager's PIN typed for a return would be
-        // handed to `retryFrozenSale`, which would either do nothing or replay
-        // a sale nobody asked it to.
+        // One prompt, three things it can be authorising. Which `pending*` field
+        // is set says which — without it a manager's PIN typed for a return
+        // could be handed to `retryFrozenSale`, which would either do nothing or
+        // replay a sale nobody asked it to.
         Overlay.Approval -> {
             val forRefund = state.pendingRefund != null
+            val forCustomerCreate = state.pendingCustomerCreate != null
             ManagerApprovalDialog(
                 managers = managers,
-                reason = state.let { if (forRefund) it.historyError else it.error }
-                    ?: if (forRefund) "This return needs an owner or manager."
-                       else "This discount needs an owner or manager.",
-                busy = state.busy,
+                reason = when {
+                    forRefund -> state.historyError ?: "This return needs an owner or manager."
+                    forCustomerCreate ->
+                        state.customerError ?: "Opening a credit account needs an owner or manager."
+                    else -> state.error ?: "This discount needs an owner or manager."
+                },
+                busy = if (forCustomerCreate) state.customerSearching else state.busy,
                 onApprove = { managerId, pin ->
                     overlay = Overlay.None
-                    if (forRefund) {
-                        vm.retryRefund(Approval(managerId, pin))
-                    } else {
-                        vm.clearApprovalPrompt()
-                        vm.retryFrozenSale(Approval(managerId, pin))
+                    when {
+                        forRefund -> vm.retryRefund(Approval(managerId, pin))
+                        forCustomerCreate -> vm.retryCustomerCreate(Approval(managerId, pin))
+                        else -> {
+                            vm.clearApprovalPrompt()
+                            vm.retryFrozenSale(Approval(managerId, pin))
+                        }
                     }
                 },
                 onDismiss = {
                     overlay = Overlay.None
-                    // Dropping the prompt drops the return with it. A refused
-                    // refund that stayed pending would re-open this dialog the
-                    // next time anything set `needsApproval`.
-                    if (forRefund) vm.clearPendingRefund() else vm.clearApprovalPrompt()
+                    // Dropping the prompt drops the pending action with it. One
+                    // left set would re-open this dialog the next time anything
+                    // else set `needsApproval`.
+                    when {
+                        forRefund -> vm.clearPendingRefund()
+                        forCustomerCreate -> vm.clearPendingCustomerCreate()
+                        else -> vm.clearApprovalPrompt()
+                    }
                 },
             )
         }

@@ -317,7 +317,7 @@ export async function listCashiersForDevice(
 export async function verifyApproval(
   supabase: TillClient,
   approval: { managerId: string; pin: string } | null | undefined,
-  what: "discount" | "return" = "discount",
+  what: "discount" | "return" | "credit" = "discount",
 ): Promise<{ managerId: string } | { error: string }> {
   if (!approval) {
     return { error: `A manager needs to approve this ${what}.` }

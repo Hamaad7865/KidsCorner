@@ -171,8 +171,8 @@ class TillRepository(
     suspend fun searchCustomers(query: String): Result<CustomersResponse> =
         authed { api.searchCustomers(it, query) }
 
-    suspend fun createCustomer(name: String, phone: String?): Result<CreateCustomerResponse> =
-        authed { api.createCustomer(it, name, phone) }
+    suspend fun createCustomer(request: CreateCustomerRequest): Result<CreateCustomerResponse> =
+        authed { api.createCustomer(it, request) }
 
     /** Money received against a customer's account. Online only, like a refund. */
     suspend fun settleCredit(body: SettleCreditRequest): Result<SettleCreditResponse> =

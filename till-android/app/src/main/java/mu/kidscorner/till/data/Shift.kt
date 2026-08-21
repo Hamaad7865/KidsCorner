@@ -275,13 +275,30 @@ data class CustomersResponse(
 )
 
 @Serializable
-data class CreateCustomerRequest(val name: String, val phone: String? = null)
+data class CreateCustomerRequest(
+    val name: String,
+    val phone: String? = null,
+    /**
+     * Open a credit account for them in the same request. Plain creation needs
+     * no manager; this does, because the shop's credit has no ceiling any more
+     * — see [approval].
+     */
+    val openAccount: Boolean = false,
+    /**
+     * A manager's PIN, sent only once the server has asked for one via
+     * [CreateCustomerResponse.needsApproval]. Never held on to, same as every
+     * other approval on the till.
+     */
+    val approval: Approval? = null,
+)
 
 @Serializable
 data class CreateCustomerResponse(
     val ok: Boolean,
     val customer: Customer? = null,
     val error: String? = null,
+    /** Set only when [CreateCustomerRequest.openAccount] needed a manager. */
+    val needsApproval: Boolean = false,
 )
 
 // ------------------------------------------------------- payments on account

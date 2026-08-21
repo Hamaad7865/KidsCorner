@@ -410,11 +410,11 @@ class TillApi(private val http: HttpClient) {
             parameter("q", query)
         }.decode()
 
-    suspend fun createCustomer(token: String, name: String, phone: String?): CreateCustomerResponse =
+    suspend fun createCustomer(token: String, request: CreateCustomerRequest): CreateCustomerResponse =
         http.post("$origin/api/till/customers") {
             bearer(token)
             contentType(ContentType.Application.Json)
-            setBody(CreateCustomerRequest(name, phone))
+            setBody(request)
         }.decode()
 
     /**
