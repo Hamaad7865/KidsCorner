@@ -220,34 +220,35 @@ data class ZResponse(
 /**
  * A customer, with whatever credit account they have.
  *
- * The four credit fields default to "no account", which is what makes this
- * safe against a server that has not been updated: an older `/api/till/customers`
+ * The credit fields default to "no account", which is what makes this safe
+ * against a server that has not been updated: an older `/api/till/customers`
  * omits them, kotlinx fills the defaults, and `canUseCredit` is false — so the
  * till simply does not offer the tender rather than offering it wrongly.
  *
  * These figures are for the SCREEN. They decide whether a button is drawn and
  * what it says. They never decide what the shop is owed: `sale-core` re-reads
- * the account and a trigger re-checks the limit under a lock, so a stale
- * balance here can show an old number but can never authorise a charge.
+ * the account and a trigger re-checks it under a lock, so a stale balance here
+ * can show an old number but can never authorise a charge.
  */
 @Serializable
 data class Customer(
     val id: Int,
     val fullName: String,
     val phone: String? = null,
-    /** 0 means no account at all, which is the default for everybody. */
-    val creditLimit: Double = 0.0,
+    /** Whether the shop has opened a credit account for them at all. */
+    val creditEnabled: Boolean = false,
     /** Positive: they owe the shop. Negative: the shop is holding their money. */
     val creditBalance: Double = 0.0,
-    /** Room left under the limit, never negative. */
-    val creditAvailable: Double = 0.0,
     val creditOnHold: Boolean = false,
 ) {
     /** Has an account the till may add to at all. */
-    val hasAccount: Boolean get() = creditLimit > 0
+    val hasAccount: Boolean get() = creditEnabled
 
-    /** May be billed right now: an account, not on hold, with room on it. */
-    val canUseCredit: Boolean get() = hasAccount && !creditOnHold && creditAvailable > 0
+    /**
+     * May be billed right now: an open account, not on hold. There is no
+     * ceiling — an open account may run a tab of any size.
+     */
+    val canUseCredit: Boolean get() = hasAccount && !creditOnHold
 
     /** Owes the shop money, so a payment on account is possible. */
     val owes: Boolean get() = creditBalance > 0
@@ -262,7 +263,6 @@ data class Customer(
         get() = when {
             !hasAccount -> "No credit account"
             creditOnHold -> "Account on hold"
-            creditAvailable <= 0 -> "No credit left"
             else -> null
         }
 }

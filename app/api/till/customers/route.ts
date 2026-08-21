@@ -38,9 +38,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await session.supabase
     .from("customer_credit_accounts")
-    .select(
-      "customer_id, full_name, phone, credit_limit, credit_on_hold, balance, available",
-    )
+    .select("customer_id, full_name, phone, credit_enabled, credit_on_hold, balance")
     .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
     .order("full_name")
     .limit(20)
@@ -54,10 +52,9 @@ export async function GET(request: Request) {
       fullName: row.full_name,
       phone: row.phone,
       // Named so an older APK that does not know about credit simply ignores
-      // them. `creditLimit` of 0 is the "no account" case the till keys off.
-      creditLimit: round2(Number(row.credit_limit ?? 0)),
+      // them. `creditEnabled` false is the "no account" case the till keys off.
+      creditEnabled: row.credit_enabled ?? false,
       creditBalance: round2(Number(row.balance ?? 0)),
-      creditAvailable: round2(Number(row.available ?? 0)),
       creditOnHold: row.credit_on_hold ?? false,
     })),
   })
@@ -97,7 +94,15 @@ export async function POST(request: Request) {
     .select("id, full_name, phone")
     .maybeSingle()
 
-  if (error) return NextResponse.json({ ok: false, error: error.message })
+  if (error) {
+    if (error.code === "23505") {
+      return NextResponse.json({
+        ok: false,
+        error: "A customer with that phone number already exists.",
+      })
+    }
+    return NextResponse.json({ ok: false, error: error.message })
+  }
   if (!data) return NextResponse.json({ ok: false, error: "The customer was not saved." })
 
   return NextResponse.json({
@@ -108,9 +113,8 @@ export async function POST(request: Request) {
       id: data.id,
       fullName: data.full_name,
       phone: data.phone,
-      creditLimit: 0,
+      creditEnabled: false,
       creditBalance: 0,
-      creditAvailable: 0,
       creditOnHold: false,
     },
   })

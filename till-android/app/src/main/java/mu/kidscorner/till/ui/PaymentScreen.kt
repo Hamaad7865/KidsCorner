@@ -844,9 +844,10 @@ private fun MethodTile(
  * the shop configured; adding credit to that list would offer it on walk-ins
  * too. The whole-balance rule keeps the gate in exactly one place.
  *
- * The four states a cashier can meet, in the words they read out:
- * no customer attached (a prompt to attach one), an account with no room, an
- * account on hold, and a usable account showing what is left on it.
+ * The three states a cashier can meet, in the words they read out:
+ * no customer attached (a prompt to attach one), an account on hold, and a
+ * usable open account. There is no ceiling — an open account takes the charge
+ * whatever its size.
  */
 @Composable
 private fun CreditTile(
@@ -855,12 +856,10 @@ private fun CreditTile(
     enabled: Boolean,
     onCharge: () -> Unit,
 ) {
-    val canCharge = customer != null && customer.canUseCredit && customer.creditAvailable >= outstanding
+    val canCharge = customer != null && customer.canUseCredit
     val blocked = when {
         customer == null -> "Attach a customer to sell on account"
         customer.creditBlockedReason != null -> customer.creditBlockedReason
-        outstanding > customer.creditAvailable ->
-            "Only ${formatRs(customer.creditAvailable)} left on the account"
         else -> null
     }
 
@@ -902,17 +901,19 @@ private fun CreditTile(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (customer?.hasAccount == true && customer.creditAvailable > 0) {
+            // No ceiling to show any more; what helps at the point of adding to
+            // a tab is how much is already on it.
+            if (customer?.owes == true) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        formatRs(customer.creditAvailable),
+                        formatRs(customer.creditBalance),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = PlexMono,
                         color = Handoff.InkStrong,
                     )
                     Text(
-                        "AVAILABLE",
+                        "ON TAB",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.8.sp,

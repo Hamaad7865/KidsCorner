@@ -375,6 +375,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             results = state.customerResults,
             searching = state.customerSearching,
             error = state.customerError,
+            attachedCustomerId = state.customer?.id,
             onSearch = vm::searchCustomers,
             onPick = { vm.attachCustomer(it); overlay = Overlay.None },
             onCreate = { name, phone -> vm.createCustomer(name, phone) },

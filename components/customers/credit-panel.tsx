@@ -50,7 +50,7 @@ export function CreditPanel({
   const terms = {
     id: customer.id,
     fullName: customer.fullName,
-    creditLimit: account?.creditLimit ?? 0,
+    creditEnabled: account?.creditEnabled ?? false,
     creditTermsDays: account?.creditTermsDays ?? 30,
     onHold: account?.onHold ?? false,
   }
@@ -80,11 +80,7 @@ export function CreditPanel({
   const overdue = round2(
     aging.days1to30 + aging.days31to60 + aging.days60plus,
   )
-  const closed = account.creditLimit <= 0
-  const usage =
-    account.creditLimit > 0
-      ? Math.min(100, Math.max(0, (account.balance / account.creditLimit) * 100))
-      : 0
+  const closed = !account.creditEnabled
   const today = shopToday()
 
   return (
@@ -92,7 +88,7 @@ export function CreditPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-heading text-base font-medium">Credit account</h2>
         <div className="flex flex-wrap gap-2">
-          <CreditTermsDialog customer={terms} hasAccount />
+          <CreditTermsDialog customer={terms} hasAccount={account.creditEnabled} />
           {canWriteOff ? (
             <WriteOffDialog
               customerId={customer.id}
@@ -122,13 +118,13 @@ export function CreditPanel({
         <div className="flex items-start gap-2 rounded-lg border p-3">
           <CircleAlert className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
           <p className="text-sm">
-            The limit is Rs 0, so nothing more can be charged — but{" "}
+            The account is closed, so nothing more can be charged — but{" "}
             {formatRs(account.balance)} is still owed and still being chased.
           </p>
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="py-4">
             <div
@@ -140,16 +136,6 @@ export function CreditPanel({
             </div>
             <div className="text-muted-foreground text-sm">
               {inCredit ? "Held in credit" : "Owed"}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <div className="text-2xl font-semibold tabular-nums">
-              {formatRs(account.available)}
-            </div>
-            <div className="text-muted-foreground text-sm">
-              Available of {formatRs(account.creditLimit)}
             </div>
           </CardContent>
         </Card>
@@ -181,24 +167,6 @@ export function CreditPanel({
           </CardContent>
         </Card>
       </div>
-
-      {account.creditLimit > 0 ? (
-        <div className="space-y-1">
-          <div className="bg-muted h-2 overflow-hidden rounded-full">
-            <div
-              className={`h-full rounded-full ${
-                usage >= 100 ? "bg-destructive" : "bg-brand-600"
-              }`}
-              style={{ width: `${usage}%` }}
-            />
-          </div>
-          <p className="text-muted-foreground text-xs">
-            {usage >= 100
-              ? "At the limit — the till will refuse a new charge."
-              : `${Math.round(usage)}% of the limit used.`}
-          </p>
-        </div>
-      ) : null}
 
       {aging.total > 0 ? (
         <div className="overflow-x-auto rounded-lg border">

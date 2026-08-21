@@ -14,6 +14,9 @@ import org.junit.Test
  * (against an older server) and one that offers it wrongly. They are also the
  * only customer-side decision about credit — everything else is re-checked on
  * the server, so a wrong answer here is a wrong label, never a wrong charge.
+ *
+ * There is no ceiling: an open account, not on hold, is usable whatever its
+ * balance.
  */
 class CustomerCreditTest {
 
@@ -27,20 +30,19 @@ class CustomerCreditTest {
     }
 
     @Test
-    fun `a zero limit is no account, even with the other fields set`() {
-        val customer = Customer(id = 1, fullName = "Rita", creditLimit = 0.0, creditAvailable = 0.0)
+    fun `credit disabled is no account`() {
+        val customer = Customer(id = 1, fullName = "Rita", creditEnabled = false)
         assertFalse(customer.hasAccount)
         assertEquals("No credit account", customer.creditBlockedReason)
     }
 
     @Test
-    fun `an open account with room is usable`() {
+    fun `an open account is usable, whatever the balance`() {
         val customer = Customer(
             id = 1,
             fullName = "Rita",
-            creditLimit = 1_000.0,
+            creditEnabled = true,
             creditBalance = 200.0,
-            creditAvailable = 800.0,
         )
         assertTrue(customer.hasAccount)
         assertTrue(customer.owes)
@@ -49,12 +51,24 @@ class CustomerCreditTest {
     }
 
     @Test
-    fun `a held account keeps its limit but cannot be used`() {
+    fun `a large balance on an open account is still usable`() {
+        // The whole point of dropping the limit: no figure blocks the tile.
         val customer = Customer(
             id = 1,
             fullName = "Rita",
-            creditLimit = 1_000.0,
-            creditAvailable = 800.0,
+            creditEnabled = true,
+            creditBalance = 5_000_000.0,
+        )
+        assertTrue(customer.canUseCredit)
+        assertNull(customer.creditBlockedReason)
+    }
+
+    @Test
+    fun `a held account keeps its account but cannot be used`() {
+        val customer = Customer(
+            id = 1,
+            fullName = "Rita",
+            creditEnabled = true,
             creditOnHold = true,
         )
         assertTrue(customer.hasAccount)
@@ -63,26 +77,12 @@ class CustomerCreditTest {
     }
 
     @Test
-    fun `an account at its limit has no room`() {
-        val customer = Customer(
-            id = 1,
-            fullName = "Rita",
-            creditLimit = 1_000.0,
-            creditBalance = 1_000.0,
-            creditAvailable = 0.0,
-        )
-        assertFalse(customer.canUseCredit)
-        assertEquals("No credit left", customer.creditBlockedReason)
-    }
-
-    @Test
     fun `a negative balance is money held for the customer, not debt`() {
         val customer = Customer(
             id = 1,
             fullName = "Rita",
-            creditLimit = 1_000.0,
+            creditEnabled = true,
             creditBalance = -150.0,
-            creditAvailable = 1_000.0,
         )
         assertFalse(customer.owes)
         assertTrue(customer.canUseCredit)

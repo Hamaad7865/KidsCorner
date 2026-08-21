@@ -27,13 +27,12 @@ export type CreditAccount = {
   customerId: number
   fullName: string
   phone: string | null
-  creditLimit: number
+  /** Whether the shop has opened an account for them at all. */
+  creditEnabled: boolean
   creditTermsDays: number
   onHold: boolean
   /** Positive: the customer owes the shop. Negative: the shop owes them. */
   balance: number
-  /** Room left under the limit. Never negative. */
-  available: number
   oldestDueOn: string | null
   lastActivityAt: string | null
   chargeCount: number
@@ -66,11 +65,10 @@ function accountFrom(row: {
   customer_id: number | null
   full_name: string | null
   phone: string | null
-  credit_limit: number | null
+  credit_enabled: boolean | null
   credit_terms_days: number | null
   credit_on_hold: boolean | null
   balance: number | null
-  available: number | null
   oldest_due_on: string | null
   last_activity_at: string | null
   charge_count: number | null
@@ -83,11 +81,10 @@ function accountFrom(row: {
     customerId: row.customer_id ?? 0,
     fullName: row.full_name ?? "Unknown",
     phone: row.phone,
-    creditLimit: round2(Number(row.credit_limit ?? 0)),
+    creditEnabled: row.credit_enabled ?? false,
     creditTermsDays: row.credit_terms_days ?? 30,
     onHold: row.credit_on_hold ?? false,
     balance: round2(Number(row.balance ?? 0)),
-    available: round2(Number(row.available ?? 0)),
     oldestDueOn: row.oldest_due_on,
     lastActivityAt: row.last_activity_at,
     chargeCount: Number(row.charge_count ?? 0),
@@ -95,8 +92,8 @@ function accountFrom(row: {
 }
 
 const ACCOUNT_COLUMNS =
-  `customer_id, full_name, phone, credit_limit, credit_terms_days,
-   credit_on_hold, balance, available, oldest_due_on, last_activity_at,
+  `customer_id, full_name, phone, credit_enabled, credit_terms_days,
+   credit_on_hold, balance, oldest_due_on, last_activity_at,
    charge_count`
 
 /**
@@ -120,8 +117,8 @@ export const getCreditAccount = cache(
     if (!data) return null
 
     const account = accountFrom(data)
-    // No limit and nothing ever charged: not an account, just a customer.
-    if (account.creditLimit <= 0 && account.balance === 0 && account.chargeCount === 0) {
+    // Not enabled and nothing ever charged: not an account, just a customer.
+    if (!account.creditEnabled && account.balance === 0 && account.chargeCount === 0) {
       return null
     }
     return account
@@ -226,11 +223,11 @@ export async function getReceivables(): Promise<Receivables> {
   const { data: accountRows, error: accountError } = await supabase
     .from("customer_credit_accounts")
     .select(ACCOUNT_COLUMNS)
-    // An account is interesting if it has a limit, has been charged, or holds
-    // a balance either way. A balance with no limit and no charges exists: a
-    // closed account with money still owed, or a return credited to an
+    // An account is interesting if it is open, has been charged, or holds a
+    // balance either way. A balance on a closed account exists: an account
+    // switched off with money still owed, or a return credited to an
     // account-holder — and it is exactly the row the report must not miss.
-    .or("credit_limit.gt.0,charge_count.gt.0,balance.neq.0")
+    .or("credit_enabled.eq.true,charge_count.gt.0,balance.neq.0")
     .order("balance", { ascending: false })
     .limit(RECEIVABLES_ACCOUNT_CAP + 1)
 

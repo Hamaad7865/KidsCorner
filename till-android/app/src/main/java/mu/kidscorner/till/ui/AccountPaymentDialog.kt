@@ -254,7 +254,7 @@ fun AccountPaymentDialog(
                             )
                             Text(
                                 if (customer.owes) {
-                                    "${customer.creditLimit.takeIf { it > 0 }?.let { "limit ${formatRs(it)} · " } ?: ""}paying against the tab"
+                                    "paying against the tab"
                                 } else if (customer.creditBalance < 0) {
                                     "The shop is holding money for them"
                                 } else {

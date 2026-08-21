@@ -393,6 +393,7 @@ export type Database = {
       customers: {
         Row: {
           created_at: string
+          credit_enabled: boolean
           credit_limit: number
           credit_on_hold: boolean
           credit_terms_days: number
@@ -404,6 +405,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          credit_enabled?: boolean
           credit_limit?: number
           credit_on_hold?: boolean
           credit_terms_days?: number
@@ -415,6 +417,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          credit_enabled?: boolean
           credit_limit?: number
           credit_on_hold?: boolean
           credit_terms_days?: number
@@ -1574,6 +1577,7 @@ export type Database = {
           available: number | null
           balance: number | null
           charge_count: number | null
+          credit_enabled: boolean | null
           credit_limit: number | null
           credit_on_hold: boolean | null
           credit_terms_days: number | null

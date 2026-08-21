@@ -570,6 +570,7 @@ class GalleryActivity : ComponentActivity() {
                             results = SAMPLE_CUSTOMERS,
                             searching = false,
                             error = null,
+                            attachedCustomerId = null,
                             onSearch = {},
                             onPick = {},
                             onCreate = { _, _ -> },

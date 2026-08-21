@@ -302,7 +302,6 @@ export async function GET(
         [
           "Customer",
           "Phone",
-          "Limit",
           "Current",
           "1-30 days",
           "31-60 days",
@@ -315,19 +314,17 @@ export async function GET(
           ...r.rows.map((row) => [
             row.fullName,
             row.phone ?? "",
-            row.creditLimit.toFixed(2),
             row.aging.current.toFixed(2),
             row.aging.days1to30.toFixed(2),
             row.aging.days31to60.toFixed(2),
             row.aging.days60plus.toFixed(2),
             row.aging.total.toFixed(2),
             row.aging.inCredit.toFixed(2),
-            row.onHold ? "On hold" : row.creditLimit <= 0 ? "Closed" : "Open",
+            row.onHold ? "On hold" : !row.creditEnabled ? "Closed" : "Open",
           ]),
           [
             "TOTAL",
             `${r.rows.length} account(s)`,
-            "",
             r.totals.current.toFixed(2),
             r.totals.days1to30.toFixed(2),
             r.totals.days31to60.toFixed(2),
@@ -338,7 +335,6 @@ export async function GET(
           ],
           [
             `As at ${r.asAt} — payments applied oldest first`,
-            "",
             "",
             "",
             "",

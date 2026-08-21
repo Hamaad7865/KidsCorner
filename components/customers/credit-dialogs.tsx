@@ -90,7 +90,7 @@ function FormError({ message }: { message: string | null }) {
 export type CreditTerms = {
   id: number
   fullName: string
-  creditLimit: number
+  creditEnabled: boolean
   creditTermsDays: number
   onHold: boolean
 }
@@ -118,8 +118,8 @@ export function CreditTermsDialog({
               {hasAccount ? "Credit terms" : `Open an account for ${customer.fullName}`}
             </DialogTitle>
             <DialogDescription>
-              A limit of Rs 0 means no account: the till will refuse to put
-              anything on it.
+              An open account lets the till bill this customer and settle later.
+              There is no limit — an open account may run a tab of any size.
             </DialogDescription>
           </DialogHeader>
           <TermsForm customer={customer} onSaved={() => setOpen(false)} />
@@ -152,25 +152,20 @@ function TermsForm({
       <input type="hidden" name="customerId" value={customer.id} />
       <FormError message={state.error} />
 
-      <div className="space-y-2">
-        <Label htmlFor="credit-limit">Credit limit</Label>
-        <Input
-          id="credit-limit"
-          name="creditLimit"
-          type="number"
-          inputMode="decimal"
-          step="0.01"
-          min="0"
-          defaultValue={String(customer.creditLimit)}
-          autoFocus
-          aria-invalid={Boolean(err.creditLimit)}
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-3">
+        <div className="space-y-1">
+          <Label htmlFor="creditEnabled">Account open</Label>
+          <p className="text-muted-foreground text-xs">
+            Lets the till bill {customer.fullName} and settle later. Switch it
+            off to close the account to new charges — any balance stays owed.
+          </p>
+        </div>
+        <Switch
+          id="creditEnabled"
+          name="creditEnabled"
+          value="true"
+          defaultChecked={customer.creditEnabled}
         />
-        {err.creditLimit ? (
-          <p className="text-destructive text-sm">{err.creditLimit}</p>
-        ) : null}
-        <p className="text-muted-foreground text-xs">
-          The most {customer.fullName} may owe at any one time.
-        </p>
       </div>
 
       <div className="space-y-2">

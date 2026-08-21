@@ -47,10 +47,7 @@ import { createClient } from "@/lib/supabase/server"
 // ------------------------------------------------------------------- terms
 
 const termsSchema = z.object({
-  creditLimit: z
-    .number({ error: "Enter a limit as a number." })
-    .min(0, "A limit cannot be negative.")
-    .max(9_999_999, "That limit is too large."),
+  creditEnabled: z.boolean(),
   creditTermsDays: z
     .number({ error: "Enter the days as a whole number." })
     .int("Enter the days as a whole number.")
@@ -62,9 +59,9 @@ const termsSchema = z.object({
 /**
  * Opens, changes or closes a customer's account.
  *
- * Setting the limit to 0 is how an account is closed, and it is deliberately
- * NOT blocked when money is still owed: the shop's usual response to a customer
- * who has stopped paying is to stop lending immediately, and the outstanding
+ * Switching the account off is how it is closed, and it is deliberately NOT
+ * blocked when money is still owed: the shop's usual response to a customer who
+ * has stopped paying is to stop lending immediately, and the outstanding
  * balance stays on the books and in the aging report regardless. Refusing the
  * change until the debt was cleared would leave the only lever unusable at
  * exactly the moment it is needed.
@@ -85,18 +82,18 @@ export async function setCreditTerms(
   if (customerId === null) return fail("That customer no longer exists.")
 
   const parsed = termsSchema.safeParse({
-    creditLimit: numberOf(formData, "creditLimit", 0),
+    creditEnabled: boolOf(formData, "creditEnabled"),
     creditTermsDays: intOf(formData, "creditTermsDays", 30),
     creditOnHold: boolOf(formData, "creditOnHold"),
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const { creditLimit, creditTermsDays, creditOnHold } = parsed.data
+  const { creditEnabled, creditTermsDays, creditOnHold } = parsed.data
   const supabase = await createClient()
 
   const { data: before } = await supabase
     .from("customers")
-    .select("full_name, credit_limit, credit_terms_days, credit_on_hold")
+    .select("full_name, credit_enabled, credit_terms_days, credit_on_hold")
     .eq("id", customerId)
     .maybeSingle()
   if (!before) return fail("That customer no longer exists.")
@@ -104,7 +101,7 @@ export async function setCreditTerms(
   const { data, error } = await supabase
     .from("customers")
     .update({
-      credit_limit: creditLimit,
+      credit_enabled: creditEnabled,
       credit_terms_days: creditTermsDays,
       credit_on_hold: creditOnHold,
     })
@@ -125,12 +122,12 @@ export async function setCreditTerms(
 
   const changes = changedFields(
     {
-      credit_limit: Number(before.credit_limit),
+      credit_enabled: before.credit_enabled,
       credit_terms_days: before.credit_terms_days,
       credit_on_hold: before.credit_on_hold,
     },
     {
-      credit_limit: creditLimit,
+      credit_enabled: creditEnabled,
       credit_terms_days: creditTermsDays,
       credit_on_hold: creditOnHold,
     },
@@ -142,7 +139,7 @@ export async function setCreditTerms(
       refType: "customer",
       refId: customerId,
       summary:
-        `${before.full_name}: limit ${formatRs(creditLimit)}, ` +
+        `${before.full_name}: account ${creditEnabled ? "open" : "closed"}, ` +
         `${creditTermsDays} days${creditOnHold ? ", on hold" : ""}`,
       detail: { changes },
     })
@@ -154,8 +151,8 @@ export async function setCreditTerms(
 
   if (changes.length === 0) return formOk("Nothing to change.")
   return formOk(
-    creditLimit > 0
-      ? `${before.full_name}'s account set to ${formatRs(creditLimit)}.`
+    creditEnabled
+      ? `${before.full_name}'s account is open.`
       : `${before.full_name}'s account closed to new charges.`,
   )
 }

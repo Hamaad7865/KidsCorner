@@ -64,7 +64,6 @@ export function ReceivablesTable({ report }: { report: Receivables }) {
           <TableHeader>
             <TableRow>
               <TableHead>Customer</TableHead>
-              <TableHead className="w-32 text-right">Limit</TableHead>
               {AGING_COLUMNS.map((column) => (
                 <TableHead key={column.key} className="w-32 text-right">
                   {column.label}
@@ -85,7 +84,7 @@ export function ReceivablesTable({ report }: { report: Receivables }) {
                       {row.fullName}
                     </Link>
                     {row.onHold ? <Badge variant="outline">On hold</Badge> : null}
-                    {row.creditLimit <= 0 ? (
+                    {!row.creditEnabled ? (
                       <Badge variant="outline" className="text-muted-foreground">
                         Closed
                       </Badge>
@@ -94,9 +93,6 @@ export function ReceivablesTable({ report }: { report: Receivables }) {
                   {row.phone ? (
                     <p className="text-muted-foreground mt-0.5 text-xs">{row.phone}</p>
                   ) : null}
-                </TableCell>
-                <TableCell className="text-muted-foreground text-right text-xs tabular-nums">
-                  {row.creditLimit > 0 ? formatRs(row.creditLimit) : "—"}
                 </TableCell>
                 {AGING_COLUMNS.map((column) => {
                   const value = row.aging[column.key]
@@ -129,7 +125,6 @@ export function ReceivablesTable({ report }: { report: Receivables }) {
               <TableCell className="font-medium">
                 {report.rows.length} account{report.rows.length === 1 ? "" : "s"}
               </TableCell>
-              <TableCell />
               {AGING_COLUMNS.map((column) => (
                 <TableCell
                   key={column.key}

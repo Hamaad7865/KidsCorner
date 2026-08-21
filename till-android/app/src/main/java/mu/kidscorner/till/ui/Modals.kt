@@ -78,6 +78,7 @@ fun CustomerDialog(
     results: List<Customer>,
     searching: Boolean,
     error: String?,
+    attachedCustomerId: Int?,
     onSearch: (String) -> Unit,
     onPick: (Customer) -> Unit,
     onCreate: (String, String?) -> Unit,
@@ -87,12 +88,22 @@ fun CustomerDialog(
     var adding by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newPhone by remember { mutableStateOf("") }
+    var createRequested by remember { mutableStateOf(false) }
 
     // Debounced: a scanner-speed typist would otherwise fire a query per
     // keystroke at a server the shop reaches over a shaky line.
     LaunchedEffect(query) {
         delay(300)
         onSearch(query)
+    }
+
+    // A successful "Add and attach" changes which customer is attached, so a
+    // change in that id — but only one this dialog itself asked for — is the
+    // signal to close. Keying on the id rather than closing unconditionally on
+    // any non-null value means reopening this dialog on a sale that already
+    // has a customer attached doesn't instantly close it again.
+    LaunchedEffect(attachedCustomerId) {
+        if (createRequested && attachedCustomerId != null) onDismiss()
     }
 
     HandoffDialog(
@@ -221,10 +232,13 @@ fun CustomerDialog(
             )
             if (adding) {
                 HandoffButton(
-                    label = "Add and attach",
+                    label = if (searching) "Adding…" else "Add and attach",
                     modifier = Modifier.weight(1f),
-                    enabled = newName.trim().length >= 2,
-                    onClick = { onCreate(newName.trim(), newPhone.trim().ifBlank { null }) },
+                    enabled = newName.trim().length >= 2 && !searching,
+                    onClick = {
+                        createRequested = true
+                        onCreate(newName.trim(), newPhone.trim().ifBlank { null })
+                    },
                 )
             }
         }

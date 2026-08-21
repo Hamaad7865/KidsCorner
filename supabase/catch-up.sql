@@ -23,7 +23,7 @@
 -- It assumes Supabase's own auth and storage schemas already exist, which they
 -- do on any real project.
 --
--- Generated 2026-08-20 from the live schema.
+-- Generated 2026-08-21 from the live schema.
 -- ============================================================================
 
 -- ==========================================================================
@@ -124,7 +124,8 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     credit_limit numeric(12,2) DEFAULT 0 NOT NULL,
     credit_terms_days integer DEFAULT 30 NOT NULL,
-    credit_on_hold boolean DEFAULT false NOT NULL
+    credit_on_hold boolean DEFAULT false NOT NULL,
+    credit_enabled boolean DEFAULT false NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS discounts (
@@ -1834,7 +1835,6 @@ AS $function$
 declare
     v_sale     public.sales%rowtype;
     v_customer public.customers%rowtype;
-    v_balance  numeric(12,2);
 begin
     if new.method <> 'credit' then
         return new;
@@ -1853,16 +1853,15 @@ begin
             message = 'A sale on account needs a customer attached to it';
     end if;
 
-    -- Serialised per customer. Two tills ringing up the same account at the
-    -- same instant would otherwise both read the pre-sale balance, both find
-    -- room under the limit, and between them exceed it.
+    -- Serialised per customer, so concurrent charges to one account write their
+    -- ledger rows in a defined order.
     perform pg_catalog.pg_advisory_xact_lock(
         pg_catalog.hashtext('customer_credit:' || v_sale.customer_id::text)
     );
 
     select * into v_customer from public.customers where id = v_sale.customer_id;
 
-    if v_customer.credit_limit <= 0 then
+    if not v_customer.credit_enabled then
         raise check_violation using
             message = pg_catalog.format(
                 '%s does not have a credit account', v_customer.full_name
@@ -1872,19 +1871,6 @@ begin
         raise check_violation using
             message = pg_catalog.format(
                 '%s''s account is on hold', v_customer.full_name
-            );
-    end if;
-
-    v_balance := public.customer_credit_balance(v_sale.customer_id);
-
-    if v_balance + new.amount > v_customer.credit_limit then
-        raise check_violation using
-            message = pg_catalog.format(
-                '%s owes %s of a %s limit — this sale needs %s more',
-                v_customer.full_name,
-                pg_catalog.to_char(v_balance, 'FM999999990.00'),
-                pg_catalog.to_char(v_customer.credit_limit, 'FM999999990.00'),
-                pg_catalog.to_char(new.amount, 'FM999999990.00')
             );
     end if;
 
@@ -1904,9 +1890,6 @@ begin
         v_sale.cashier_id,
         'Sale ' || v_sale.sale_no
     )
-    -- The sale RPC replays a completed sale by idempotency key rather than
-    -- re-inserting its payments, so this should never fire. It is here because
-    -- "should never" and "cannot" are different things when the row means money.
     on conflict (sale_payment_id) do nothing;
 
     return new;
@@ -3622,6 +3605,7 @@ CREATE OR REPLACE VIEW customer_credit_accounts WITH (security_invoker=true) AS
 SELECT c.id AS customer_id,
     c.full_name,
     c.phone,
+    c.credit_enabled,
     c.credit_limit,
     c.credit_terms_days,
     c.credit_on_hold,
@@ -4098,9 +4082,11 @@ INSERT INTO settings (key, value) VALUES
     ('barcode_next', '320'::jsonb),
     ('barcode_prefix', '"7865"'::jsonb),
     ('currency', '"MUR"'::jsonb),
-    ('payment_methods', '["cash","card","juice","bank"]'::jsonb),
+    ('payment_methods', '["cash","card","juice","bank","credit"]'::jsonb),
     ('refund_requires_manager', 'false'::jsonb),
+    ('shop_address', '""'::jsonb),
     ('shop_name', '"Kids Corner"'::jsonb),
+    ('shop_phone', '""'::jsonb),
     ('slow_mover_days', '10'::jsonb),
     ('vat_enabled', 'false'::jsonb),
     ('vat_number', '"VAT2020809"'::jsonb),

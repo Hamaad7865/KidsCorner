@@ -716,22 +716,16 @@ export async function settleDiscounts(
 /**
  * Checks a sale's credit tender against the customer's account.
  *
- * A trigger on `sale_payments` enforces all four of these rules in the
- * database, so this is not what makes them true. It exists because of what the
- * cashier sees: without it the refusal arrives as a raw Postgres
- * `check_violation` through PostgREST, and "new row for relation
- * sale_payments violates check constraint" is not a sentence anyone can act
- * on. Here the till gets "Rita Appadoo owes Rs 900 of a Rs 1,000 limit", which
- * tells them to take a deposit or ring it up as cash.
+ * A trigger on `sale_payments` enforces the same rules in the database, so this
+ * is not what makes them true. It exists because of what the cashier sees:
+ * without it the refusal arrives as a raw Postgres `check_violation` through
+ * PostgREST, and "new row for relation sale_payments violates check constraint"
+ * is not a sentence anyone can act on. Here the till gets "Rita Appadoo does
+ * not have a credit account", which tells them what to do instead.
  *
- * Read from `customer_credit_accounts`, the view that already does the
- * arithmetic, so the balance is `sum(amount)` over the ledger and never a
- * cached column that could disagree with it.
- *
- * The gap between this check and the commit is real — another till could ring
- * up the same account in between — and it is closed in the database, not here:
- * the trigger takes an advisory lock per customer before it re-reads the
- * balance. This is the friendly message; that is the guarantee.
+ * Two things to check now the ceiling is gone: the customer has an OPEN account
+ * and it is not on hold. There is no balance arithmetic — an open account may
+ * run a tab of any size.
  */
 export async function settleCreditTender(
   supabase: TillClient,
@@ -755,7 +749,7 @@ export async function settleCreditTender(
 
   const { data, error } = await supabase
     .from("customer_credit_accounts")
-    .select("full_name, credit_limit, credit_on_hold, balance")
+    .select("full_name, credit_enabled, credit_on_hold")
     .eq("customer_id", customerId)
     .maybeSingle()
 
@@ -763,27 +757,17 @@ export async function settleCreditTender(
   if (!data) return { error: "That customer no longer exists." }
 
   const name = data.full_name ?? "That customer"
-  const limit = round2(Number(data.credit_limit ?? 0))
-  const balance = round2(Number(data.balance ?? 0))
 
-  // A zero limit is "no account", not "an account with no room". Same refusal
-  // either way, but the sentence differs and the cashier needs the right one.
-  if (limit <= 0) {
+  // An account is open or it is not — there is no ceiling to check against any
+  // more, only whether the shop has opened a tab for this person and whether it
+  // is currently on hold.
+  if (!data.credit_enabled) {
     return {
       error: `${name} does not have a credit account. An owner sets one up in the back office.`,
     }
   }
   if (data.credit_on_hold) {
     return { error: `${name}'s account is on hold, so nothing can be added to it.` }
-  }
-
-  if (round2(balance + credit) > limit) {
-    return {
-      error:
-        `${name} owes ${formatMoney(balance)} of a ${formatMoney(limit)} limit, ` +
-        `and this sale would add ${formatMoney(credit)}. ` +
-        `Take a deposit, or raise the limit in the back office.`,
-    }
   }
 
   return { credit }
