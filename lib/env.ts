@@ -19,6 +19,33 @@ const rawKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 
+/**
+ * The service-role key. SERVER-ONLY: it bypasses RLS entirely, which is exactly
+ * why it must never wear a NEXT_PUBLIC_ prefix — a public one would ship in the
+ * browser bundle and hand the whole database to anyone who opened devtools.
+ *
+ * It exists for precisely one job: `auth.admin` calls. Creating a staff login
+ * means creating a row in Supabase Auth itself, and no cookie session can do
+ * that — the admin API answers only to the service role. Everything the shop's
+ * data cares about still goes through RLS-guarded clients; this key never
+ * touches a table read.
+ */
+const rawServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+/** True when admin operations (creating staff logins) are available. */
+export const isServiceRoleConfigured =
+  typeof rawServiceKey === "string" && rawServiceKey.length >= 20
+
+/** The service-role key. Call only behind `isServiceRoleConfigured`. */
+export function serviceRoleKey(): string {
+  if (!isServiceRoleConfigured || typeof rawServiceKey !== "string") {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is not set. Add it to .env.local (or the Worker's secrets) to create staff logins.",
+    )
+  }
+  return rawServiceKey
+}
+
 const supabaseEnvSchema = z.object({
   url: z.url("NEXT_PUBLIC_SUPABASE_URL must be a full URL, e.g. https://abcdefgh.supabase.co"),
   anonKey: z

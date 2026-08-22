@@ -14,6 +14,7 @@ import { MasterDataTabs } from "@/components/settings/master-data-tabs"
 import { ShopSettings } from "@/components/settings/shop-settings"
 import { VatSettings } from "@/components/settings/vat-settings"
 import { StaffPins } from "@/components/settings/staff-pins"
+import { StaffLogins } from "@/components/settings/staff-logins"
 import {
   getPaymentMethods,
   getRefundRequiresManager,
@@ -24,6 +25,7 @@ import { getCurrentVatPolicy } from "@/lib/vat/policy"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { listDiscounts } from "@/lib/discounts/queries"
 import { listStaffPinState } from "@/lib/pos/actions"
+import { listStaffLogins } from "@/lib/staff/actions"
 import { requireAdminProfile } from "@/lib/auth/session"
 import { getMasterData } from "@/lib/master-data/queries"
 
@@ -34,6 +36,7 @@ export default async function SettingsPage() {
   const [
     data,
     staff,
+    logins,
     discounts,
     shopName,
     vatPolicy,
@@ -47,6 +50,7 @@ export default async function SettingsPage() {
   ] = await Promise.all([
     getMasterData(),
     listStaffPinState(),
+    listStaffLogins(),
     listDiscounts(),
     getShopName(),
     getCurrentVatPolicy(),
@@ -105,6 +109,16 @@ export default async function SettingsPage() {
       <div className="border-t pt-6">
         <StaffPins staff={staff} canManage={profile.role === "owner"} />
       </div>
+
+      {profile.role === "owner" ? (
+        <div className="border-t pt-6">
+          <StaffLogins
+            staff={logins.staff}
+            canCreate={logins.canCreate}
+            currentUserId={profile.id}
+          />
+        </div>
+      ) : null}
 
       <div className="border-t pt-6">
         <LocationsPanel
