@@ -97,6 +97,18 @@ const settleSchema = z.object({
    */
   shiftId: z.number().int().positive().nullish(),
   reason: z.string().trim().max(200).nullish(),
+  /**
+   * Which open receipts the customer says this money settles.
+   *
+   * The LEDGER does not care: settlement remains one pooled reduction applied
+   * oldest-first by `settle_customer_credit`, because that is how a tab works.
+   * This names the receipts for the record — the ledger entry's reason and the
+   * printed slip — and it is checked rather than copied: every number must be
+   * an OPEN charge on THIS account, recomputed here from the ledger with the
+   * same FIFO reduction the statement uses, so a stale or crafted list can
+   * never pin a payment to a receipt that was not owed.
+   */
+  saleNos: z.array(z.string().trim().min(1).max(40)).max(20).nullish(),
 })
 
 export async function POST(request: Request) {
@@ -120,12 +132,61 @@ export async function POST(request: Request) {
 
   const { customerId, amount, method, shiftId, reason } = parsed.data
 
+  // Verify the named receipts against the ledger before anything is recorded.
+  // Same read and same oldest-first reduction as the GET above, so what the
+  // till offered as payable and what this accepts as named cannot drift apart.
+  const wanted = [
+    ...new Set((parsed.data.saleNos ?? []).map((no) => no.trim()).filter(Boolean)),
+  ]
+  let namedReceipts: string[] = []
+  if (wanted.length > 0) {
+    const { data, error } = await session.supabase
+      .from("customer_credit_entries")
+      .select("amount, created_at, sale_id, sales ( sale_no )")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(STATEMENT_LIMIT)
+
+    if (error) return apiError(error.message, 500)
+
+    const rows = (data ?? []).map((row) => ({
+      amount: round2(Number(row.amount)),
+      createdAt: row.created_at,
+      saleNo: row.sales?.sale_no ?? null,
+    }))
+    const reductions = round2(
+      rows.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + -entry.amount, 0),
+    )
+    const { charges: unpaid } = outstandingCharges(
+      rows.filter((entry) => entry.amount > 0),
+      reductions,
+    )
+    const owedBySaleNo = new Map(
+      unpaid.filter((charge) => charge.saleNo !== null).map((charge) => [charge.saleNo!, charge.outstanding]),
+    )
+
+    const notOwed = wanted.find((no) => !owedBySaleNo.has(no))
+    if (notOwed) {
+      return NextResponse.json({
+        ok: false,
+        error: `${notOwed} is not an open receipt on this account.`,
+      })
+    }
+    namedReceipts = wanted
+  }
+
+  const reasonForLedger =
+    namedReceipts.length > 0
+      ? `Against ${namedReceipts.join(", ")}`.slice(0, 200)
+      : (reason ?? undefined)
+
   const { data, error } = await session.supabase.rpc("settle_customer_credit", {
     p_customer_id: customerId,
     p_amount: round2(amount),
     p_method: method,
     p_shift_id: shiftId ?? undefined,
-    p_reason: reason ?? undefined,
+    p_reason: reasonForLedger,
   })
 
   if (error) {
@@ -148,7 +209,14 @@ export async function POST(request: Request) {
     refType: "customer",
     refId: customerId,
     summary: `${formatRs(amount)} received on account at the till`,
-    detail: { amount, method, shiftId: shiftId ?? null, reason, balance },
+    detail: {
+      amount,
+      method,
+      shiftId: shiftId ?? null,
+      reason: reasonForLedger ?? null,
+      receipts: namedReceipts.length > 0 ? namedReceipts : null,
+      balance,
+    },
   })
 
   return NextResponse.json({

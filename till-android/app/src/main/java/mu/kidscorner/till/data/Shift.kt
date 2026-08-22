@@ -317,6 +317,12 @@ data class SettleCreditRequest(
      */
     val shiftId: Int? = null,
     val reason: String? = null,
+    /**
+     * The open receipts this payment settles, by number. The server checks
+     * each one against what the account actually owes before recording it, and
+     * composes the ledger entry's reason from the verified list.
+     */
+    val saleNos: List<String> = emptyList(),
 )
 
 @Serializable

@@ -1,5 +1,6 @@
 package mu.kidscorner.till
 
+import mu.kidscorner.till.print.AccountPaymentDueLine
 import mu.kidscorner.till.print.AccountPaymentSlipDoc
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.ShopIdentity
@@ -67,6 +68,33 @@ class AccountPaymentSlipTest {
             assertFalse("leaked 'tax' on ${width.label}", text.lowercase().contains("tax"))
             assertFalse("leaked 'excl' on ${width.label}", text.lowercase().contains("excl"))
         }
+    }
+
+    @Test
+    fun `names the receipts being settled, with what was owed and the total`() {
+        val withDue = doc().copy(
+            amount = 20.0,
+            newBalance = 780.0,
+            dueItems = listOf(
+                AccountPaymentDueLine("S260822-3", 20.0),
+                AccountPaymentDueLine("S260821-1", 45.5),
+            ),
+        )
+        for (width in PaperWidth.entries) {
+            val text = buildAccountPaymentSlip(withDue, shop, width).toPlainText(width)
+            assertTrue("due header missing on ${width.label}", text.contains("Amount due on"))
+            assertTrue("receipt 1 missing on ${width.label}", text.contains("S260822-3"))
+            assertTrue("receipt 2 missing on ${width.label}", text.contains("S260821-1"))
+            assertTrue("line total missing on ${width.label}", text.contains("20.00"))
+            assertTrue("second line total missing on ${width.label}", text.contains("45.50"))
+            assertTrue("due sum wrong on ${width.label}", text.contains("65.50Rs") || text.contains("65.50 Rs"))
+        }
+    }
+
+    @Test
+    fun `a whole-tab payment prints without a due block`() {
+        val text = buildAccountPaymentSlip(doc(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
+        assertFalse(text.contains("Amount due on"))
     }
 
     @Test

@@ -1,5 +1,11 @@
 package mu.kidscorner.till.print
 
+/** One receipt this payment settles, as the slip names it. */
+data class AccountPaymentDueLine(
+    val saleNo: String,
+    val amount: Double,
+)
+
 /**
  * What a printed account-payment slip needs to know.
  *
@@ -17,6 +23,12 @@ data class AccountPaymentSlipDoc(
     val previousBalance: Double,
     /** What is still owed after it — the figure the customer keeps. */
     val newBalance: Double,
+    /**
+     * The open receipts this money settles, when the cashier picked them at
+     * the till. Empty for a whole-tab or unnamed payment, which prints exactly
+     * as it always did.
+     */
+    val dueItems: List<AccountPaymentDueLine> = emptyList(),
     val cashierName: String? = null,
 )
 
@@ -50,6 +62,27 @@ fun buildAccountPaymentSlip(
     }
     add(ReceiptLine.Text(readableDate(doc.dateIso), Align.Centre))
     add(ReceiptLine.Rule)
+
+    // What the money is FOR: the open receipts the customer is settling, with
+    // what was owed on each. Named receipts only — a whole-tab payment prints
+    // without this block, because "the tab" needs no itemising.
+    if (doc.dueItems.isNotEmpty()) {
+        val dueTotal = doc.dueItems.fold(0.0) { sum, line -> sum + line.amount }
+        add(ReceiptLine.Text("Amount due on :", Align.Left, bold = true))
+        for (line in doc.dueItems) {
+            // The number is never truncated; a long receipt reference is
+            // trimmed so the columns still fit the narrow paper.
+            val label = line.saleNo.take((width.columns - 8).coerceAtLeast(4))
+            add(ReceiptLine.Columns("  $label", plainAmount(line.amount)))
+        }
+        add(
+            ReceiptLine.Columns(
+                "  Total due",
+                suffixed(dueTotal, currency),
+            ),
+        )
+        add(ReceiptLine.Rule)
+    }
 
     // The payment itself.
     add(

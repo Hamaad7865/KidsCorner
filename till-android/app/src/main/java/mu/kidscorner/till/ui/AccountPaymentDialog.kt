@@ -2,6 +2,7 @@ package mu.kidscorner.till.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,13 +76,23 @@ fun AccountPaymentDialog(
     onSearch: (String) -> Unit,
     /** Fired when a customer is picked, to fetch the sales behind their tab. */
     onSelectCustomer: (Int) -> Unit,
-    onSettle: (customerId: Int, amount: Double, method: String) -> Unit,
+    onSettle: (customerId: Int, amount: Double, method: String, saleNos: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var picked by remember { mutableStateOf<Customer?>(null) }
     var amount by remember { mutableStateOf("") }
     var method by remember { mutableStateOf("") }
+    /**
+     * The receipts the cashier tapped as what this money settles.
+     *
+     * Empty means "the tab" — the ordinary whole-balance payment, which is how
+     * the server still settles it (one pooled reduction, oldest-first under a
+     * lock). A non-empty set only NAMES receipts: it drives the default amount,
+     * the ledger entry's reason and the printed slip. It never narrows what the
+     * database may clear.
+     */
+    var selectedSaleIds by remember { mutableStateOf(emptySet<Int>()) }
 
     // Closes itself once the server has taken it, exactly like MovementDialog.
     LaunchedEffect(done) { if (done) onDismiss() }
@@ -153,6 +164,7 @@ fun AccountPaymentDialog(
                             Surface(
                                 onClick = {
                                     picked = row
+                                    selectedSaleIds = emptySet()
                                     // Fetch the sales behind the tab, so the
                                     // cashier and customer can see what the
                                     // balance is made of before paying it.
@@ -294,8 +306,9 @@ fun AccountPaymentDialog(
                 }
 
                 // What the balance is made of: each sale on account, oldest
-                // first, with what is still owed on it. Read-only — the payment
-                // still clears the whole tab oldest-first, on the server.
+                // first, with what is still owed on it. Tapping a receipt names
+                // it as one this payment settles — the amount field follows —
+                // while the server still clears the tab oldest-first.
                 if (chargesLoading) {
                     Box(Modifier.fillMaxWidth().height(44.dp), Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(18.dp), Handoff.AccentSolid, 2.dp)
@@ -308,39 +321,94 @@ fun AccountPaymentDialog(
                         letterSpacing = 1.05.sp,
                         color = Handoff.Muted3,
                     )
+                    Text(
+                        "Tap the receipts this payment settles.",
+                        fontSize = 11.5.sp,
+                        color = Handoff.Muted3,
+                    )
                     LazyColumn(Modifier.heightIn(max = 150.dp)) {
-                        items(charges) { charge ->
-                            Row(
-                                Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        items(charges.filter { it.saleId != null }) { charge ->
+                            val saleId = charge.saleId ?: return@items
+                            val selected = saleId in selectedSaleIds
+                            Surface(
+                                onClick = {
+                                    selectedSaleIds = if (selected) {
+                                        selectedSaleIds - saleId
+                                    } else {
+                                        selectedSaleIds + saleId
+                                    }
+                                    // Follow the selection, so the figure in the
+                                    // box is always the sum of what is named —
+                                    // still editable down for a deposit.
+                                    amount = trimZeros(
+                                        round2(
+                                            charges
+                                                .filter { it.saleId != null && it.saleId in selectedSaleIds }
+                                                .sumOf { it.amount },
+                                        ),
+                                    )
+                                },
+                                enabled = !busy,
+                                color = androidx.compose.ui.graphics.Color.Transparent,
+                                modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Column(Modifier.weight(1f)) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    // The tick: a filled disc when this receipt
+                                    // is named, a hollow ring when it is not.
+                                    Box(
+                                        Modifier
+                                            .size(22.dp)
+                                            .background(
+                                                if (selected) Handoff.AccentSolid else androidx.compose.ui.graphics.Color.Transparent,
+                                                RoundedCornerShape(11.dp),
+                                            )
+                                            .border(
+                                                1.5.dp,
+                                                if (selected) Handoff.AccentSolid else Handoff.LineSoft,
+                                                RoundedCornerShape(11.dp),
+                                            ),
+                                        Alignment.Center,
+                                    ) {
+                                        if (selected) {
+                                            Text(
+                                                "✓",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Handoff.Surface,
+                                            )
+                                        }
+                                    }
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            // A positive adjustment has no sale number.
+                                            charge.saleNo ?: "Adjustment",
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Handoff.Ink,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        if (charge.date.length >= 10) {
+                                            Text(
+                                                charge.date.take(10),
+                                                fontFamily = PlexMono,
+                                                fontSize = 11.5.sp,
+                                                color = Handoff.Muted3,
+                                            )
+                                        }
+                                    }
                                     Text(
-                                        // A positive adjustment has no sale number.
-                                        charge.saleNo ?: "Adjustment",
+                                        formatRs(charge.amount),
+                                        fontFamily = PlexMono,
                                         fontSize = 13.5.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Handoff.Ink,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                        color = Handoff.InkStrong,
                                     )
-                                    if (charge.date.length >= 10) {
-                                        Text(
-                                            charge.date.take(10),
-                                            fontFamily = PlexMono,
-                                            fontSize = 11.5.sp,
-                                            color = Handoff.Muted3,
-                                        )
-                                    }
                                 }
-                                Text(
-                                    formatRs(charge.amount),
-                                    fontFamily = PlexMono,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Handoff.InkStrong,
-                                )
                             }
                         }
                     }
@@ -416,7 +484,18 @@ fun AccountPaymentDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !busy && typed > 0 && method.isNotBlank() && !overBalance,
-                ) { onSettle(customer.id, round2(typed), method) }
+                ) {
+                    onSettle(
+                        customer.id,
+                        round2(typed),
+                        method,
+                        // The receipt numbers behind the ticked rows, for the
+                        // ledger's reason and the printed slip.
+                        charges
+                            .filter { it.saleId != null && it.saleId in selectedSaleIds }
+                            .mapNotNull { it.saleNo },
+                    )
+                }
 
                 if (overBalance) {
                     Text(

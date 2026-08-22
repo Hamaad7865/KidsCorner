@@ -56,6 +56,7 @@ import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.isNetworkish
 import mu.kidscorner.till.data.round2
 import mu.kidscorner.till.print.AccountPaymentSlipDoc
+import mu.kidscorner.till.print.AccountPaymentDueLine
 import mu.kidscorner.till.print.Align
 import mu.kidscorner.till.print.EscPos
 import mu.kidscorner.till.print.PaperWidth
@@ -1087,7 +1088,12 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * settled elsewhere, or fail because it already has been. The refusal the
      * server writes — "they only owe Rs 350" — is shown word for word.
      */
-    fun settleCredit(customerId: Int, amount: Double, method: String) = viewModelScope.launch {
+    fun settleCredit(
+        customerId: Int,
+        amount: Double,
+        method: String,
+        saleNos: List<String> = emptyList(),
+    ) = viewModelScope.launch {
         val current = _state.value
         val shiftId = current.shop?.shift?.id
         if (method == "cash" && shiftId == null) {
@@ -1107,6 +1113,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             payingRow?.creditBalance ?: current.customer?.creditBalance ?: 0.0
         val cashierName = cashierOf(current.screen)?.fullName
 
+        // The receipts the cashier named, with what was still owed on each —
+        // frozen now, because the statement list is about to be stale the
+        // moment the payment lands.
+        val dueItems = current.creditCharges
+            .filter { it.saleNo != null && it.saleNo in saleNos }
+            .map { AccountPaymentDueLine(it.saleNo!!, it.amount) }
+
         _state.update { it.copy(creditPaymentBusy = true, creditPaymentError = null) }
 
         repo.settleCredit(
@@ -1116,6 +1129,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 method = method,
                 shiftId = if (method == "cash") shiftId else null,
                 reason = null,
+                saleNos = saleNos,
             ),
         )
             .onSuccess { response ->
@@ -1149,6 +1163,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         amount = round2(amount),
                         previousBalance = previousBalance,
                         newBalance = response.balance,
+                        dueItems = dueItems,
                         cashierName = cashierName,
                     )
                 }
@@ -1203,6 +1218,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         amount: Double,
         previousBalance: Double,
         newBalance: Double,
+        dueItems: List<AccountPaymentDueLine>,
         cashierName: String?,
     ) = viewModelScope.launch {
         val shop = _state.value.shop
@@ -1214,6 +1230,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 amount = amount,
                 previousBalance = previousBalance,
                 newBalance = newBalance,
+                dueItems = dueItems,
                 cashierName = cashierName,
             ),
             shop = ShopIdentity(
