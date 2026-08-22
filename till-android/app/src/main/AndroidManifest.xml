@@ -67,12 +67,20 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.KidsCornerTill">
 
+        <!--
+          stateAlwaysHidden: the till's search box takes focus by itself so a
+          hardware scanner can keep typing into it, and Android answers focus
+          with its own automatic keyboard. The soft hide that races it loses on
+          real hardware, so the window simply never opens with the IME up —
+          tapping the field still brings the keyboard out deliberately.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|fontScale"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="stateAlwaysHidden"
             android:theme="@style/Theme.KidsCornerTill">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
