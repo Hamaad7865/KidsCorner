@@ -1211,6 +1211,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * the customer's record that money was received and what is left to pay.
      * Same best-effort print as the credit note: a failure is a toast, because
      * the payment is already recorded and the figure is on the shop's ledger.
+     *
+     * The slip also shows ON SCREEN, every time, whether or not a printer took
+     * it: the customer is often still standing at the counter, and a till
+     * without a printer at this moment still owes them the document. Same
+     * preview mechanism the sale receipt uses, so the words on screen are the
+     * words that would print — including, for a part payment, how much was due
+     * against what was handed over.
      */
     private fun printAccountPaymentSlip(
         customerName: String,
@@ -1240,6 +1247,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             ),
             width = printerSettings.paper,
         )
+
+        // On screen first, before the printer is even approached — the payment
+        // is already recorded and the customer is standing there; the paper can
+        // follow. Generated from the same lines, so it is the slip itself, not
+        // a summary of it.
+        _state.update {
+            it.copy(receiptPreview = lines.toPlainText(printerSettings.paper))
+        }
 
         val result = printerSettings
             .transport(getApplication())
