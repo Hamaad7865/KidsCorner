@@ -473,8 +473,11 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             busy = state.creditPaymentBusy,
             error = state.creditPaymentError,
             done = state.creditPaymentDone,
+            charges = state.creditCharges,
+            chargesLoading = state.creditChargesLoading,
             shiftOpen = state.shop?.shift != null,
             onSearch = vm::searchCustomers,
+            onSelectCustomer = vm::loadCreditStatement,
             onSettle = { customerId, amount, method -> vm.settleCredit(customerId, amount, method) },
             onDismiss = {
                 overlay = Overlay.None

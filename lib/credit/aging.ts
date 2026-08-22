@@ -86,54 +86,77 @@ export function daysBetween(from: string, to: string): number {
 }
 
 /**
+ * The charges still (partly) unpaid, oldest-first, with how much remains on each.
+ *
+ * The single home for the oldest-first rule: money paid against an account
+ * clears the oldest debt first. `ageLedger` buckets these by age; the till's
+ * account-payment view lists them so a customer can see which sales make up the
+ * tab. Both go through here so the two can never disagree about what is unpaid.
+ *
+ * Generic over the charge shape so a caller can carry a sale number or any other
+ * identity through the reduction untouched — this function only needs `amount`
+ * (positive, as stored) and `createdAt` to order and apply the pool. `surplus`
+ * is whatever the reductions could not be applied to: money held on the
+ * customer's behalf, which survives only when payments exceed every charge.
+ */
+export function outstandingCharges<T extends { amount: number; createdAt: string }>(
+  charges: T[],
+  reductionsTotal: number,
+): { charges: (T & { outstanding: number })[]; surplus: number } {
+  const ordered = [...charges].sort(
+    (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+  )
+
+  let pool = round2(reductionsTotal)
+  const out: (T & { outstanding: number })[] = []
+
+  for (const charge of ordered) {
+    const applied = Math.min(pool, charge.amount)
+    pool = round2(pool - applied)
+    const outstanding = round2(charge.amount - applied)
+    if (outstanding > 0) out.push({ ...charge, outstanding })
+  }
+
+  return { charges: out, surplus: round2(pool) }
+}
+
+/**
  * Ages one account's ledger as at `today`.
  *
  * `today` is passed in rather than read from the clock so the report is
  * reproducible and the tests do not have to travel in time.
  */
 export function ageLedger(entries: LedgerEntry[], today: string): AgingBuckets {
-  // Oldest first: the order the FIFO rule is defined in. Ties broken by
-  // nothing in particular, because two charges on the same instant are
-  // interchangeable for this purpose.
-  const charges = entries
-    .filter((entry) => entry.amount > 0)
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+  const charges = entries.filter((entry) => entry.amount > 0)
 
   // Everything that reduces the debt, as one pool: settlements, returns to
   // account, write-offs and negative corrections are all just money the
   // customer no longer owes, and none of them names a charge.
-  let pool = round2(
+  const reductions = round2(
     entries
       .filter((entry) => entry.amount < 0)
       .reduce((sum, entry) => sum + -entry.amount, 0),
   )
 
+  const { charges: unpaid, surplus } = outstandingCharges(charges, reductions)
   const buckets: AgingBuckets = { ...EMPTY_AGING }
 
-  for (const charge of charges) {
-    const applied = Math.min(pool, charge.amount)
-    pool = round2(pool - applied)
-    const unpaid = round2(charge.amount - applied)
-    if (unpaid <= 0) continue
-
+  for (const charge of unpaid) {
     // A charge with no due date is treated as due the day it was raised. That
     // is the harsher reading, and the right one: a debt whose terms nobody
     // recorded should surface for a decision, not hide in "current".
     const due = charge.dueOn ?? charge.createdAt.slice(0, 10)
     const overdue = daysBetween(due, today)
 
-    if (overdue <= 0) buckets.current = round2(buckets.current + unpaid)
-    else if (overdue <= 30) buckets.days1to30 = round2(buckets.days1to30 + unpaid)
-    else if (overdue <= 60) buckets.days31to60 = round2(buckets.days31to60 + unpaid)
-    else buckets.days60plus = round2(buckets.days60plus + unpaid)
+    if (overdue <= 0) buckets.current = round2(buckets.current + charge.outstanding)
+    else if (overdue <= 30) buckets.days1to30 = round2(buckets.days1to30 + charge.outstanding)
+    else if (overdue <= 60) buckets.days31to60 = round2(buckets.days31to60 + charge.outstanding)
+    else buckets.days60plus = round2(buckets.days60plus + charge.outstanding)
 
-    buckets.total = round2(buckets.total + unpaid)
+    buckets.total = round2(buckets.total + charge.outstanding)
   }
 
-  // Whatever the pool could not be applied to is money held on the customer's
-  // behalf. It only survives here when payments exceed every charge.
-  buckets.inCredit = round2(pool)
-
+  buckets.inCredit = surplus
   return buckets
 }
 

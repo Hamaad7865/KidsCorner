@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import mu.kidscorner.till.data.CreditCharge
 import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatRs
@@ -66,9 +67,14 @@ fun AccountPaymentDialog(
     busy: Boolean,
     error: String?,
     done: Boolean,
+    /** The sales behind the picked customer's tab, and whether they're loading. */
+    charges: List<CreditCharge>,
+    chargesLoading: Boolean,
     /** Whether the drawer is open, which decides whether cash is on offer. */
     shiftOpen: Boolean,
     onSearch: (String) -> Unit,
+    /** Fired when a customer is picked, to fetch the sales behind their tab. */
+    onSelectCustomer: (Int) -> Unit,
     onSettle: (customerId: Int, amount: Double, method: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -147,6 +153,10 @@ fun AccountPaymentDialog(
                             Surface(
                                 onClick = {
                                     picked = row
+                                    // Fetch the sales behind the tab, so the
+                                    // cashier and customer can see what the
+                                    // balance is made of before paying it.
+                                    onSelectCustomer(row.id)
                                     // The whole tab, ready to take. Defaulting to
                                     // the balance is the honest first offer — a
                                     // part payment is a deliberate edit, and a
@@ -281,6 +291,60 @@ fun AccountPaymentDialog(
                             )
                         }
                     }
+                }
+
+                // What the balance is made of: each sale on account, oldest
+                // first, with what is still owed on it. Read-only — the payment
+                // still clears the whole tab oldest-first, on the server.
+                if (chargesLoading) {
+                    Box(Modifier.fillMaxWidth().height(44.dp), Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(18.dp), Handoff.AccentSolid, 2.dp)
+                    }
+                } else if (charges.isNotEmpty()) {
+                    Text(
+                        "SALES ON THIS ACCOUNT",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.05.sp,
+                        color = Handoff.Muted3,
+                    )
+                    LazyColumn(Modifier.heightIn(max = 150.dp)) {
+                        items(charges) { charge ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        // A positive adjustment has no sale number.
+                                        charge.saleNo ?: "Adjustment",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Handoff.Ink,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (charge.date.length >= 10) {
+                                        Text(
+                                            charge.date.take(10),
+                                            fontFamily = PlexMono,
+                                            fontSize = 11.5.sp,
+                                            color = Handoff.Muted3,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    formatRs(charge.amount),
+                                    fontFamily = PlexMono,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Handoff.InkStrong,
+                                )
+                            }
+                        }
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
                 }
 
                 FieldLabel("Amount received")

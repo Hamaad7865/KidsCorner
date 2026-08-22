@@ -26,6 +26,7 @@ import mu.kidscorner.till.data.CatalogVariant
 import mu.kidscorner.till.data.CloseShiftRequest
 import mu.kidscorner.till.data.CloseShiftResponse
 import mu.kidscorner.till.data.CreateCustomerRequest
+import mu.kidscorner.till.data.CreditCharge
 import mu.kidscorner.till.data.Customer
 import mu.kidscorner.till.data.DiscountRule
 import mu.kidscorner.till.data.DownloadState
@@ -54,6 +55,7 @@ import mu.kidscorner.till.data.cartTotals
 import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.isNetworkish
 import mu.kidscorner.till.data.round2
+import mu.kidscorner.till.print.AccountPaymentSlipDoc
 import mu.kidscorner.till.print.Align
 import mu.kidscorner.till.print.EscPos
 import mu.kidscorner.till.print.PaperWidth
@@ -62,6 +64,7 @@ import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.ReceiptLine
 import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.CreditNoteDoc
+import mu.kidscorner.till.print.buildAccountPaymentSlip
 import mu.kidscorner.till.print.buildCreditNote
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
@@ -182,6 +185,9 @@ data class TillState(
     val creditPaymentBusy: Boolean = false,
     val creditPaymentError: String? = null,
     val creditPaymentDone: Boolean = false,
+    /** The sales behind the picked customer's tab, shown while settling. */
+    val creditCharges: List<CreditCharge> = emptyList(),
+    val creditChargesLoading: Boolean = false,
 
     val history: List<SaleSummary> = emptyList(),
     val historyLoading: Boolean = false,
@@ -1091,6 +1097,16 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             return@launch
         }
 
+        // Captured before the payment lands, for the printed slip: who is paying,
+        // what they owed going in, and who took it. The new balance comes back on
+        // the response.
+        val payingRow = current.customerResults.find { it.id == customerId }
+        val customerName =
+            payingRow?.fullName ?: current.customer?.fullName ?: "Customer"
+        val previousBalance =
+            payingRow?.creditBalance ?: current.customer?.creditBalance ?: 0.0
+        val cashierName = cashierOf(current.screen)?.fullName
+
         _state.update { it.copy(creditPaymentBusy = true, creditPaymentError = null) }
 
         repo.settleCredit(
@@ -1123,6 +1139,19 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                 }
+                // The customer's own record of what they handed over — printed
+                // after the money is in, never before. A print failure is a
+                // toast, not an error over a payment that has already landed.
+                if (response.ok) {
+                    printAccountPaymentSlip(
+                        customerName = customerName,
+                        method = method,
+                        amount = round2(amount),
+                        previousBalance = previousBalance,
+                        newBalance = response.balance,
+                        cashierName = cashierName,
+                    )
+                }
             }
             .onFailure { cause ->
                 _state.update {
@@ -1135,7 +1164,74 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearCreditPaymentResult() =
-        _state.update { it.copy(creditPaymentDone = false, creditPaymentError = null) }
+        _state.update {
+            it.copy(
+                creditPaymentDone = false,
+                creditPaymentError = null,
+                creditCharges = emptyList(),
+                creditChargesLoading = false,
+            )
+        }
+
+    /**
+     * Loads the sales behind a customer's tab, for the account-payment view.
+     *
+     * Read-only and best-effort: the payment does not depend on it, so a failure
+     * leaves the list empty and the cashier can still take the money against the
+     * balance the search already showed. The server applies payments oldest-first
+     * under a lock regardless of what this list says.
+     */
+    fun loadCreditStatement(customerId: Int) = viewModelScope.launch {
+        _state.update { it.copy(creditChargesLoading = true, creditCharges = emptyList()) }
+        val charges = repo.creditStatement(customerId).getOrNull()
+            ?.takeIf { it.ok }?.charges
+            ?: emptyList()
+        _state.update { it.copy(creditChargesLoading = false, creditCharges = charges) }
+    }
+
+    /**
+     * Prints the slip that follows a payment on account.
+     *
+     * A payment is not a sale, so this carries no VAT and no sale number — it is
+     * the customer's record that money was received and what is left to pay.
+     * Same best-effort print as the credit note: a failure is a toast, because
+     * the payment is already recorded and the figure is on the shop's ledger.
+     */
+    private fun printAccountPaymentSlip(
+        customerName: String,
+        method: String,
+        amount: Double,
+        previousBalance: Double,
+        newBalance: Double,
+        cashierName: String?,
+    ) = viewModelScope.launch {
+        val shop = _state.value.shop
+        val lines = buildAccountPaymentSlip(
+            doc = AccountPaymentSlipDoc(
+                customerName = customerName,
+                dateIso = nowIso(),
+                method = method,
+                amount = amount,
+                previousBalance = previousBalance,
+                newBalance = newBalance,
+                cashierName = cashierName,
+            ),
+            shop = ShopIdentity(
+                name = shop?.shopName ?: "Kids Corner",
+                address = shop?.shopAddress,
+                phone = shop?.shopPhone,
+            ),
+            width = printerSettings.paper,
+        )
+
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+
+        if (result is PrintResult.Failed) {
+            toast("Payment slip did not print — the payment is still recorded")
+        }
+    }
 
     /** Clears the shared customer search list, for whoever opened it last. */
     fun clearCustomerSearch() =

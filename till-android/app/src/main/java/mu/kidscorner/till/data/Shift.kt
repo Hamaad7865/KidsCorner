@@ -329,6 +329,25 @@ data class SettleCreditResponse(
     val error: String? = null,
 )
 
+/** One sale on account, and how much of it is still owed (FIFO, oldest-first). */
+@Serializable
+data class CreditCharge(
+    val saleId: Int? = null,
+    val saleNo: String? = null,
+    /** ISO instant the charge was raised, for the slip's readable date. */
+    val date: String = "",
+    val amount: Double = 0.0,
+)
+
+/** The sales that make up a customer's tab, for the account-payment view. */
+@Serializable
+data class CreditStatementResponse(
+    val ok: Boolean = true,
+    val balance: Double = 0.0,
+    val charges: List<CreditCharge> = emptyList(),
+    val error: String? = null,
+)
+
 // -------------------------------------------------------------- discounts
 
 @Serializable

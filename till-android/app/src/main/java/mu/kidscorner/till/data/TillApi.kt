@@ -433,6 +433,13 @@ class TillApi(private val http: HttpClient) {
             setBody(body)
         }.decode()
 
+    /** The sales behind a customer's tab, so the till can show what is owed. */
+    suspend fun creditStatement(token: String, customerId: Int): CreditStatementResponse =
+        http.get("$origin/api/till/credit") {
+            bearer(token)
+            parameter("customerId", customerId)
+        }.decode()
+
     suspend fun discounts(token: String): DiscountsResponse =
         http.get("$origin/api/till/discounts") { bearer(token) }.decode()
 

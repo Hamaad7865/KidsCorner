@@ -178,6 +178,10 @@ class TillRepository(
     suspend fun settleCredit(body: SettleCreditRequest): Result<SettleCreditResponse> =
         authed { api.settleCredit(it, body) }
 
+    /** The sales that make up a customer's tab, for the account-payment view. */
+    suspend fun creditStatement(customerId: Int): Result<CreditStatementResponse> =
+        authed { api.creditStatement(it, customerId) }
+
     suspend fun discounts(): Result<DiscountsResponse> = authed { api.discounts(it) }
 
     suspend fun sales(query: String): Result<SalesListResponse> = authed { api.sales(it, query) }

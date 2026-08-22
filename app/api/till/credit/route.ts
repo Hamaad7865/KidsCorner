@@ -3,7 +3,71 @@ import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
 import { logAudit } from "@/lib/activity/audit"
+import { outstandingCharges } from "@/lib/credit/aging"
+import { STATEMENT_LIMIT } from "@/lib/credit/queries"
 import { formatRs, round2 } from "@/lib/format"
+
+/**
+ * The sales that make up a customer's tab, for the till's account-payment view.
+ *
+ * The cashier picking a customer to settle needs to show what the balance is
+ * made of — each sale on account, its receipt number and what is still owed on
+ * it — rather than a bare figure with nothing tied to it. The payment itself
+ * stays whole-balance and oldest-first (see `settle_customer_credit`); this is
+ * read-only transparency.
+ *
+ * The oldest-first reduction that turns raw ledger rows into a per-charge
+ * remaining is the SAME one the aging report uses (`outstandingCharges`), so the
+ * back office and the till can never disagree about what is unpaid.
+ */
+export async function GET(request: Request) {
+  const session = await requireTillSession(request)
+  if ("response" in session) return session.response
+
+  const customerId = Number(new URL(request.url).searchParams.get("customerId"))
+  if (!Number.isInteger(customerId) || customerId <= 0) {
+    return NextResponse.json({ ok: true, balance: 0, charges: [] })
+  }
+
+  const { data, error } = await session.supabase
+    .from("customer_credit_entries")
+    .select("amount, due_on, created_at, sale_id, sales ( sale_no )")
+    .eq("customer_id", customerId)
+    // Oldest first: the order the FIFO rule is defined in, matching
+    // getCreditStatement so the two read the ledger identically.
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(STATEMENT_LIMIT)
+
+  if (error) return apiError(error.message, 500)
+
+  const entries = (data ?? []).map((row) => ({
+    amount: round2(Number(row.amount)),
+    createdAt: row.created_at,
+    saleId: row.sale_id,
+    saleNo: row.sales?.sale_no ?? null,
+  }))
+
+  // Charges are the positive entries; everything negative is money the customer
+  // no longer owes, pooled and applied oldest-first.
+  const charges = entries.filter((entry) => entry.amount > 0)
+  const reductions = round2(
+    entries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + -entry.amount, 0),
+  )
+
+  const { charges: unpaid } = outstandingCharges(charges, reductions)
+
+  return NextResponse.json({
+    ok: true,
+    balance: round2(unpaid.reduce((sum, charge) => sum + charge.outstanding, 0)),
+    charges: unpaid.map((charge) => ({
+      saleId: charge.saleId,
+      saleNo: charge.saleNo,
+      date: charge.createdAt,
+      amount: charge.outstanding,
+    })),
+  })
+}
 
 /**
  * A customer walking in to pay their tab.

@@ -4,6 +4,7 @@ import {
   ageLedger,
   daysBetween,
   EMPTY_AGING,
+  outstandingCharges,
   sumAging,
   type LedgerEntry,
 } from "@/lib/credit/aging"
@@ -165,6 +166,50 @@ describe("ageLedger", () => {
     const summed =
       aging.current + aging.days1to30 + aging.days31to60 + aging.days60plus
     expect(Number(summed.toFixed(2))).toBe(aging.total)
+  })
+})
+
+describe("outstandingCharges", () => {
+  // Identity travels through untouched, so the till can show a sale number.
+  const c = (saleNo: string, amount: number, daysAgo: number) => ({
+    saleNo,
+    amount,
+    createdAt: new Date(
+      Date.parse(`${TODAY}T12:00:00Z`) - daysAgo * 86_400_000,
+    ).toISOString(),
+  })
+
+  it("returns every charge in full when nothing has been paid", () => {
+    const { charges, surplus } = outstandingCharges(
+      [c("S2", 400, 5), c("S1", 200, 90)],
+      0,
+    )
+    // Oldest first, regardless of input order.
+    expect(charges.map((x) => x.saleNo)).toEqual(["S1", "S2"])
+    expect(charges.map((x) => x.outstanding)).toEqual([200, 400])
+    expect(surplus).toBe(0)
+  })
+
+  it("clears the oldest charge first and drops it once fully paid", () => {
+    const { charges } = outstandingCharges([c("S1", 200, 90), c("S2", 400, 5)], 300)
+    // 300 covers all of the old S1 and 100 of S2, so only S2 remains, with 300.
+    expect(charges).toHaveLength(1)
+    expect(charges[0].saleNo).toBe("S2")
+    expect(charges[0].outstanding).toBe(300)
+  })
+
+  it("reports the leftover as surplus when payments exceed every charge", () => {
+    const { charges, surplus } = outstandingCharges([c("S1", 200, 10)], 500)
+    expect(charges).toHaveLength(0)
+    expect(surplus).toBe(300)
+  })
+
+  it("keeps a partly-paid charge with only the remainder", () => {
+    const { charges } = outstandingCharges([c("S1", 500, 120), c("S2", 500, 2)], 200)
+    expect(charges.map((x) => [x.saleNo, x.outstanding])).toEqual([
+      ["S1", 300],
+      ["S2", 500],
+    ])
   })
 })
 
