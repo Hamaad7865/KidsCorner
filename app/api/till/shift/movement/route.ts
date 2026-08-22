@@ -33,10 +33,15 @@ export async function POST(request: Request) {
 
   const parsed = bodySchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid movement.",
-    })
+    // 400 rather than a bare ok:false: a schema failure is a client bug, not
+    // a counter outcome the cashier has to read off the screen.
+    return NextResponse.json(
+      {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid movement.",
+      },
+      { status: 400 },
+    )
   }
 
   const { shiftId, amount, direction, reason } = parsed.data

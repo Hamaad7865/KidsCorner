@@ -124,10 +124,15 @@ export async function POST(request: Request) {
 
   const parsed = settleSchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid payment.",
-    })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid payment.",
+      },
+      // Schema failures are client bugs; business refusals stay 200 so a till
+      // never mistakes "the limit was refused" for "the request failed".
+      { status: 400 },
+    )
   }
 
   const { customerId, amount, method, shiftId, reason } = parsed.data

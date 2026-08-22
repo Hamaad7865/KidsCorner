@@ -96,10 +96,13 @@ export async function POST(request: Request) {
 
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid customer.",
-    })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid customer.",
+      },
+      { status: 400 },
+    )
   }
 
   const { openAccount } = parsed.data
