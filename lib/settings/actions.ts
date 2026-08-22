@@ -163,7 +163,7 @@ export async function saveShopSettings(
 
   // The VAT rate reaches the till and every money figure, so refresh broadly.
   revalidatePath("/settings")
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   revalidatePath("/dashboard")
   revalidatePath("/reports")
 

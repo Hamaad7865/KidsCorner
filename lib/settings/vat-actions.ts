@@ -115,7 +115,7 @@ export async function saveVatPolicy(
   revalidatePath("/dashboard")
   revalidatePath("/reports")
   revalidatePath("/sales")
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
 
   const done =
     intent === "enable"

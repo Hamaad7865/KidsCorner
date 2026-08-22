@@ -25,6 +25,13 @@ const eslintConfig = defineConfig([
     // arrived as a second folder and broke the build until it was added, which
     // will happen again with the next handoff.
     "design-handoff*/**",
+    // Agent worktrees. Each is a full copy of the repo — including its own
+    // .next and design handoffs — so without these, lint reports the same
+    // files three or four times over and drowns real findings in ~31k
+    // problems that belong to nobody's working tree.
+    ".worktrees/**",
+    ".superpowers/**",
+    ".claude/**",
   ]),
 ]);
 

@@ -141,10 +141,12 @@ describe("saveVatPolicy", () => {
     })
   })
 
-  it("revalidates settings, dashboard, reports and pos after a change", async () => {
+  it("revalidates settings, dashboard, reports and the till screen after a change", async () => {
     await saveVatPolicy(IDLE_STATE, form({ intent: "enable", ratePercent: "15", vatNumber: "V1" }))
     const paths = mocks.revalidatePath.mock.calls.map((c) => c[0])
-    expect(paths).toEqual(expect.arrayContaining(["/settings", "/dashboard", "/reports", "/pos"]))
+    expect(paths).toEqual(
+      expect.arrayContaining(["/settings", "/dashboard", "/reports", "/point-of-sale"]),
+    )
   })
 
   it("converts a database privilege error into user-safe text", async () => {

@@ -167,7 +167,7 @@ export async function saveDiscount(
   }
 
   revalidatePath("/settings")
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   return formOk("Discount saved.")
 }
 
@@ -207,6 +207,6 @@ export async function setDiscountActive(
   })
 
   revalidatePath("/settings")
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   return formOk("Discount updated.")
 }
