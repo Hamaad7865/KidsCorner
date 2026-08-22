@@ -15,6 +15,13 @@ const session = {
   user: { id: "cashier-1", name: "Marie", role: "cashier" },
 }
 
+/** The shift row the drawer gate reads; reset per test so it can be bent. */
+let shiftRow: { id: number; device_id: number | null; closed_at: string | null } | null = {
+  id: 15,
+  device_id: null,
+  closed_at: null,
+}
+
 let requiresManager = false
 let approvalResult: { managerId: string } | { error: string } = { managerId: "mgr-1" }
 const completedNote = {
@@ -70,13 +77,26 @@ beforeEach(() => {
   requiresManager = false
   approvalResult = { managerId: "mgr-1" }
   noteReadResult = { data: completedNote, error: null }
+  shiftRow = { id: 15, device_id: null, closed_at: null }
   session.supabase.rpc = vi.fn().mockResolvedValue({ data: 21, error: null })
-  session.supabase.from = vi.fn().mockReturnValue({
-    select: () => ({
-      eq: () => ({
-        maybeSingle: async () => noteReadResult,
+  session.supabase.from = vi.fn().mockImplementation((table: string) => {
+    // The drawer gate reads the named shift before anything else happens.
+    if (table === "shifts") {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({ data: shiftRow, error: null }),
+          }),
+        }),
+      }
+    }
+    return {
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => noteReadResult,
+        }),
       }),
-    }),
+    }
   })
 })
 
@@ -89,6 +109,36 @@ describe("when the shop does not ask for a manager", () => {
       "create_credit_note",
       expect.objectContaining({ p_approved_by: null }),
     )
+  })
+
+  it("refuses a refund aimed at a shift that is already closed", async () => {
+    // `create_credit_note` would insert it happily — the closed-shift refusal
+    // lives here, and this is the contract that keeps another drawer's Z from
+    // being silently rewritten.
+    shiftRow = { id: 15, device_id: null, closed_at: "2026-08-21T18:00:00Z" }
+    const json = await post(body({ deviceId: 3 }))
+
+    expect(json).toEqual({ ok: false, error: "That till has already been closed." })
+    expect(session.supabase.rpc).not.toHaveBeenCalled()
+  })
+
+  it("refuses a cashier refunding into another till's drawer", async () => {
+    shiftRow = { id: 15, device_id: 9, closed_at: null }
+    const json = await post(body({ deviceId: 3 }))
+
+    expect(json).toEqual({
+      ok: false,
+      error: "That drawer belongs to another till. Ask an owner or manager.",
+    })
+  })
+
+  it("skips only the ownership half for a client that cannot name its till", async () => {
+    // A pre-registry build sends no deviceId. It still may not touch a closed
+    // shift, but a drawer-less open shift keeps trading exactly as before.
+    shiftRow = { id: 15, device_id: 9, closed_at: null }
+    const json = await post(body({ deviceId: undefined }))
+
+    expect(json.ok).toBe(true)
   })
 })
 

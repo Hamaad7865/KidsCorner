@@ -276,6 +276,13 @@ data class SaleRequest(
     val vatPolicyId: Long? = null,
     /** The local checkout instant, ISO-8601. Generated once and never regenerated on retry. */
     val checkedOutAt: String? = null,
+    /**
+     * This till's registry id, so the server refuses a sale aimed at another
+     * drawer's shift — or at one already closed and counted. Null from a build
+     * that predates the registry; the server then skips only the ownership
+     * half of that check, never the closed-shift half.
+     */
+    val deviceId: Int? = null,
 )
 
 @Serializable

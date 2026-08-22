@@ -511,6 +511,20 @@ describe("verifyApproval for a return", () => {
 function saleCommitClient(rpc: ReturnType<typeof vi.fn>): TillClient {
   return {
     from(table: string) {
+      // The shift gate reads the drawer before anything is priced; a test
+      // sale lands on shift 1, which exists and is open.
+      if (table === "shifts") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: 1, device_id: null, closed_at: null },
+                error: null,
+              }),
+            }),
+          }),
+        }
+      }
       if (table !== "product_variants") throw new Error(`unexpected table ${table}`)
       return {
         select: () => ({

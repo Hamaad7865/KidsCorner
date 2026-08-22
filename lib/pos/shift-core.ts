@@ -1,3 +1,5 @@
+import { isAdminRole } from "@/lib/auth/roles"
+import { isRole } from "@/lib/db-enums"
 import { round2 } from "@/lib/format"
 import type { TillClient, TillUser } from "@/lib/pos/sale-core"
 
@@ -99,6 +101,53 @@ export async function assertShiftReachable(
   if (data.closed_at !== null) return fail("That till has already been closed.")
 
   if ((data.device_id ?? null) !== deviceId) {
+    return fail("That drawer belongs to another till. Ask an owner or manager.")
+  }
+
+  return { ok: true, value: null }
+}
+
+/**
+ * May THIS sale (or refund) land on this shift?
+ *
+ * A sibling of [assertShiftReachable], not a copy of it. The difference is the
+ * first line of each: movements and closes re-check openness inside the RPC
+ * (`record_till_movement` raises "already closed"), so their gate may let an
+ * owner or manager straight through. Sales and credit notes have no such
+ * backstop — `complete_sale_keyed_at_policy` and `create_credit_note` insert
+ * whatever shift id they are handed, foreign key being their only guard — so
+ * HERE nobody bypasses anything: a closed shift is refused for every role, and
+ * ownership is enforced for whoever is not one.
+ *
+ * `deviceId` null means the caller could not say which till it is on — an APK
+ * from before the registry, which could only ever have opened device-less
+ * shifts, and which this gate deliberately does not break mid-trading day.
+ * Such a caller still cannot reach a closed shift; it merely skips the
+ * ownership half until it updates.
+ */
+export async function assertShiftOpenFor(
+  supabase: TillClient,
+  shiftId: number,
+  caller: { role: string; deviceId: number | null },
+): Promise<ShiftResult<null>> {
+  const { data, error } = await supabase
+    .from("shifts")
+    .select("id, device_id, closed_at")
+    .eq("id", shiftId)
+    .maybeSingle()
+
+  if (error) return fail(error.message)
+  if (!data) return fail("That shift does not exist.")
+  if (data.closed_at !== null) return fail("That till has already been closed.")
+
+  // Fail closed on an unrecognised role — same rule as the till session itself.
+  // An owner or manager may reach any open drawer; a cashier only their own.
+  if (!isRole(caller.role)) return fail("This account has no till access.")
+  if (
+    !isAdminRole(caller.role) &&
+    caller.deviceId !== null &&
+    (data.device_id ?? null) !== caller.deviceId
+  ) {
     return fail("That drawer belongs to another till. Ask an owner or manager.")
   }
 

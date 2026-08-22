@@ -3,6 +3,7 @@ import { z } from "zod"
 
 import { apiError, requireTillSession } from "@/lib/api/till-session"
 import { getRefundRequiresManager } from "@/lib/pos/queries"
+import { assertShiftOpenFor } from "@/lib/pos/shift-core"
 import { verifyApproval } from "@/lib/pos/sale-core"
 
 /**
@@ -26,6 +27,12 @@ const bodySchema = z.object({
   reason: z.string().trim().min(1, "Pick a reason for the return."),
   refundMethod: z.enum(["cash", "card", "juice", "myt_money", "bank", "exchange"]),
   restock: z.boolean().default(true),
+  /**
+   * Which till is asking, so a return can only be booked into its own open
+   * drawer. Optional for the same reason as on the sale path: an older build
+   * that omits it still gets the closed-shift refusal, just not ownership.
+   */
+  deviceId: z.number().int().positive().nullish(),
   /**
    * A manager's PIN, when the shop has asked for one. Ignored otherwise, so a
    * till running an older build against a shop that has not turned the setting
@@ -58,13 +65,34 @@ export async function POST(request: Request) {
 
   const parsed = bodySchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({
-      ok: false,
-      error: parsed.error.issues[0]?.message ?? "Invalid return.",
-    })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid return.",
+      },
+      // A schema failure is a client bug, not a counter outcome — say so on
+      // the status line as well as the body, like the malformed-JSON branch.
+      { status: 400 },
+    )
   }
 
   const { saleId, shiftId, reason, refundMethod, restock, items, approval } = parsed.data
+
+  /**
+   * The drawer, checked before anything is verified or written.
+   *
+   * `create_credit_note` inserts whatever shift id it is handed with no
+   * openness check of its own, so without this a till could book its refunds
+   * into another drawer's shift — or one already counted and closed — and that
+   * drawer's Z would come out wrong for no visible reason.
+   */
+  if (shiftId !== null) {
+    const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
+      role: session.user.role,
+      deviceId: parsed.data.deviceId ?? null,
+    })
+    if (!reachable.ok) return apiError(reachable.error, 403)
+  }
 
   /**
    * The manager, when this shop wants one (migration 036).

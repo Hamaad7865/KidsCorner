@@ -145,6 +145,11 @@ data class RefundRequest(
     val restock: Boolean = true,
     val items: List<RefundItem>,
     /**
+     * This till's registry id, so the server refuses a refund aimed at another
+     * drawer's shift — or at one already counted and closed.
+     */
+    val deviceId: Int? = null,
+    /**
      * A manager's PIN, sent only when the shop has asked for one.
      *
      * Never held on to. It travels with the one request that needs it and is

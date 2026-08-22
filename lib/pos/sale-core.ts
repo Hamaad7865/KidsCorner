@@ -11,6 +11,7 @@ import {
 import { round2, formatRs, shopToday } from "@/lib/format"
 import { deviceVerifierMatches, mintDeviceVerifier } from "@/lib/pos/device-verifier"
 import { PIN_PATTERN, verifyPin } from "@/lib/pos/pin"
+import { assertShiftOpenFor } from "@/lib/pos/shift-core"
 import type { Database, Json } from "@/lib/supabase/database.types"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -910,6 +911,13 @@ export const completeSaleSchema = z.object({
   vatPolicyId: z.number().int().positive().nullable().optional(),
   /** Generated once by the till and retained byte-for-byte on every retry. */
   checkedOutAt: z.string().datetime().nullable().optional(),
+  /**
+   * Which till is posting this sale — the device registry id the app was
+   * given at bootstrap. Optional so an older build still trades: absent, the
+   * gate below skips only the ownership half and keeps enforcing that the
+   * shift exists and is open.
+   */
+  deviceId: z.number().int().positive().nullish(),
 })
 
 export type CompleteSaleInput = z.input<typeof completeSaleSchema>
@@ -933,7 +941,15 @@ export type CommitSaleInput = {
   vatPolicyId?: number | null
   /** Stable checkout instant; callers must not regenerate it on retry. */
   checkedOutAt?: string | null
+  /** The posting till's registry id, when the client knows it. */
+  deviceId?: number | null
 }
+
+/**
+ * Who is asking, for the shift gate. `role` decides whether the drawer's
+ * ownership is enforced; `deviceId` says which drawer is theirs.
+ */
+export type SaleShiftCaller = { role: string; deviceId: number | null }
 
 /**
  * Prices, settles and commits one sale. The single networked step.
@@ -948,7 +964,32 @@ export async function commitSale(
   supabase: TillClient,
   user: TillUser,
   input: CommitSaleInput,
+  /**
+   * The caller's role and till, for the shift gate. Both entry points pass
+   * it; a test that omits it gets the existence and openness halves only,
+   * which is also exactly what a legacy client without a device id gets.
+   */
+  caller?: SaleShiftCaller,
 ): Promise<CompleteSaleResult> {
+  // WHERE the sale lands is the last unguarded claim.
+  //
+  // `complete_sale_keyed_at_policy` inserts whatever shift id it is handed —
+  // the foreign key proves the row exists, and nothing else. Without this gate
+  // any signed-in till could post its takings onto another drawer's shift, or
+  // onto one that was closed and counted hours ago, and that drawer would
+  // reconcile wrong at close with no way to see why.
+  //
+  // Unlike movements and closes there is no database backstop here — those RPCs
+  // raise on a closed shift themselves; this one does not — so the gate runs
+  // for every role, including an owner's.
+  const reachable = await assertShiftOpenFor(supabase, input.shiftId, {
+    // No caller (or no device id): the ownership half is skipped, matching a
+    // pre-registry build. Existence and openness are never skipped.
+    role: caller?.role ?? "owner",
+    deviceId: caller?.deviceId ?? null,
+  })
+  if (!reachable.ok) return { ok: false, error: reachable.error }
+
   // WHO the sale is attributed to is a claim too.
   //
   // The device is authenticated; the cashier is whoever was picked by PIN on

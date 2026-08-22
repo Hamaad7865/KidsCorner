@@ -276,7 +276,7 @@ export async function openShift(
   )
   if (!result.ok) return fail(result.error)
 
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   return formOk("Till open.")
 }
 
@@ -323,7 +323,7 @@ export async function recordTillMovement(
   )
   if (!result.ok) return fail(result.error)
 
-  revalidatePath("/pos/shift")
+  revalidatePath("/point-of-sale")
   return formOk(
     isPayIn
       ? `${round2(magnitude).toFixed(2)} paid into the till.`
@@ -376,7 +376,7 @@ export async function closeShift(
 
   const { variance } = result.value
 
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   revalidatePath("/dashboard")
 
   return formOk(
@@ -410,10 +410,17 @@ export async function completeSale(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid sale." }
   }
 
-  const result = await commitSale(await createClient(), user, parsed.data)
+  // The web has no device registry entry — the back office is not a till — so
+  // the ownership half of the gate is moot here; every role that can reach this
+  // action is admin anyway. Openness is what the gate still catches.
+  const profile = await getSessionProfile()
+  const result = await commitSale(await createClient(), user, parsed.data, {
+    role: profile?.role ?? "owner",
+    deviceId: null,
+  })
 
   if (result.ok) {
-    revalidatePath("/pos")
+    revalidatePath("/point-of-sale")
     revalidatePath("/stock")
     revalidatePath("/sales")
   }
@@ -465,7 +472,7 @@ export async function closeShiftRemotely(input: {
   if (!result.ok) return { ok: false, error: result.error }
 
   revalidatePath("/point-of-sale")
-  revalidatePath("/pos")
+  revalidatePath("/point-of-sale")
   revalidatePath("/reports")
   return { ok: true }
 }

@@ -1504,6 +1504,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 refundMethod = method,
                 restock = restock,
                 items = items,
+                deviceId = _state.value.deviceId,
             ),
         )
     }
@@ -2487,6 +2488,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             idempotencyKey = saleKey,
             vatPolicyId = checkout.policyId,
             checkedOutAt = checkout.checkedOutAt,
+            deviceId = current.deviceId,
         )
 
         repo.completeSale(request)

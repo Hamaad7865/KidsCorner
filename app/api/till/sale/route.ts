@@ -32,7 +32,13 @@ export async function POST(request: Request) {
     return apiError(parsed.error.issues[0]?.message ?? "Invalid sale.", 400)
   }
 
-  const result = await commitSale(session.supabase, session.user, parsed.data)
+  const result = await commitSale(session.supabase, session.user, parsed.data, {
+    role: session.user.role,
+    // The registry id this device was given at bootstrap; null from an older
+    // build, which the gate treats as "cannot say which till" and skips only
+    // the ownership half.
+    deviceId: parsed.data.deviceId ?? null,
+  })
 
   // Always 200. Every failure here is one the cashier has to act on — a manager
   // is needed, an item is out of stock, the payment is short — and the till

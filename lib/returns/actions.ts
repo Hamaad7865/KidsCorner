@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import { isAdminRole } from "@/lib/auth/roles"
 import { getRefundRequiresManager } from "@/lib/pos/queries"
+import { assertShiftOpenFor } from "@/lib/pos/shift-core"
 import { verifyApproval } from "@/lib/pos/sale-core"
 import { getSessionProfile } from "@/lib/auth/session"
 import {
@@ -115,6 +116,23 @@ export async function createCreditNote(
   const supabase = await createClient()
 
   /**
+   * The drawer, when the return names one.
+   *
+   * `create_credit_note` trusts its shift id completely — insert only — so a
+   * crafted or stale id could book this refund into another till's shift, or
+   * one that was closed and counted. The web has no device registry entry, and
+   * every role here is admin anyway, so ownership cannot bite; openness is the
+   * half that matters from this side.
+   */
+  if (shiftId !== null) {
+    const reachable = await assertShiftOpenFor(supabase, shiftId, {
+      role: profile.role,
+      deviceId: null,
+    })
+    if (!reachable.ok) return fail(reachable.error)
+  }
+
+  /**
    * Who authorised this, when the shop wants somebody to.
    *
    * An owner or manager raising a return authorises it by being one — they are
@@ -188,7 +206,7 @@ export async function createCreditNote(
   revalidatePath("/sales")
   revalidatePath(`/sales/${parsed.data.saleId}/return`)
   revalidatePath("/stock")
-  revalidatePath("/pos/shift")
+  revalidatePath("/point-of-sale")
 
   return formOk(
     typeof data === "number"
