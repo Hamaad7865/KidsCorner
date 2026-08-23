@@ -22,6 +22,7 @@ export const MODULES = [
   "purchases",
   "suppliers",
   "sales",
+  "deposits",
   "reports",
   "activity",
   "customers",
@@ -40,6 +41,7 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   purchases: "Purchases",
   suppliers: "Suppliers",
   sales: "Sales",
+  deposits: "Deposits",
   reports: "Reports",
   activity: "Activity log",
   customers: "Customers",
@@ -66,6 +68,10 @@ const PATH_TO_MODULE: { prefix: string; module: ModuleKey }[] = [
   { prefix: "/purchases", module: "purchases" },
   { prefix: "/suppliers", module: "suppliers" },
   { prefix: "/sales", module: "sales" },
+  // A deposit order is a sales document — layaways held for customers — so it
+  // answers to its own module rather than piggybacking on /sales, whose
+  // filters and columns would make no sense for goods still on the shelf.
+  { prefix: "/deposits", module: "deposits" },
   // A receipt is a sale document, reprinted from the Sales list, so it answers
   // to the same permission — a role that cannot see sales cannot reprint one.
   { prefix: "/receipt", module: "sales" },

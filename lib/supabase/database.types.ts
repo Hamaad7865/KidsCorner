@@ -357,15 +357,22 @@ export type Database = {
             foreignKeyName: "customer_credit_entries_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
-            referencedRelation: "customers"
-            referencedColumns: ["id"]
+            referencedRelation: "customer_credit_accounts"
+            referencedColumns: ["customer_id"]
           },
           {
             foreignKeyName: "customer_credit_entries_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
-            referencedRelation: "customer_credit_accounts"
-            referencedColumns: ["customer_id"]
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "customer_credit_entries_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "late_sales"
+            referencedColumns: ["sale_id"]
           },
           {
             foreignKeyName: "customer_credit_entries_sale_id_fkey"
@@ -428,6 +435,252 @@ export type Database = {
           phone?: string | null
         }
         Relationships: []
+      }
+      deposit_order_items: {
+        Row: {
+          collected_qty: number
+          description: string
+          discount: number
+          discount_taken: number
+          id: number
+          line_total: number | null
+          order_id: number
+          qty: number
+          unit_price: number
+          variant_id: number
+        }
+        Insert: {
+          collected_qty?: number
+          description: string
+          discount?: number
+          discount_taken?: number
+          id?: number
+          line_total?: number | null
+          order_id: number
+          qty: number
+          unit_price: number
+          variant_id: number
+        }
+        Update: {
+          collected_qty?: number
+          description?: string
+          discount?: number
+          discount_taken?: number
+          id?: number
+          line_total?: number | null
+          order_id?: number
+          qty?: number
+          unit_price?: number
+          variant_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_order_summaries"
+            referencedColumns: ["order_id"]
+          },
+          {
+            foreignKeyName: "deposit_order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_order_items_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "low_stock_variants"
+            referencedColumns: ["variant_id"]
+          },
+          {
+            foreignKeyName: "deposit_order_items_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deposit_order_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          entry_type: string
+          id: number
+          idempotency_key: string | null
+          method: string
+          order_id: number
+          reason: string | null
+          shift_id: number | null
+          till_movement_id: number | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          entry_type: string
+          id?: number
+          idempotency_key?: string | null
+          method: string
+          order_id: number
+          reason?: string | null
+          shift_id?: number | null
+          till_movement_id?: number | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          entry_type?: string
+          id?: number
+          idempotency_key?: string | null
+          method?: string
+          order_id?: number
+          reason?: string | null
+          shift_id?: number | null
+          till_movement_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_order_payments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_order_payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_order_summaries"
+            referencedColumns: ["order_id"]
+          },
+          {
+            foreignKeyName: "deposit_order_payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_order_payments_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_order_payments_till_movement_id_fkey"
+            columns: ["till_movement_id"]
+            isOneToOne: false
+            referencedRelation: "till_movements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deposit_orders: {
+        Row: {
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancelled_reason: string | null
+          cashier_id: string | null
+          collect_by: string | null
+          collected_at: string | null
+          created_at: string
+          created_shift_id: number | null
+          customer_id: number
+          device_id: number | null
+          id: number
+          idempotency_key: string | null
+          note: string | null
+          order_no: string
+          status: string
+          total: number
+        }
+        Insert: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
+          cashier_id?: string | null
+          collect_by?: string | null
+          collected_at?: string | null
+          created_at?: string
+          created_shift_id?: number | null
+          customer_id: number
+          device_id?: number | null
+          id?: number
+          idempotency_key?: string | null
+          note?: string | null
+          order_no: string
+          status?: string
+          total?: number
+        }
+        Update: {
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
+          cashier_id?: string | null
+          collect_by?: string | null
+          collected_at?: string | null
+          created_at?: string
+          created_shift_id?: number | null
+          customer_id?: number
+          device_id?: number | null
+          id?: number
+          idempotency_key?: string | null
+          note?: string | null
+          order_no?: string
+          status?: string
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_orders_cancelled_by_fkey"
+            columns: ["cancelled_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_cashier_id_fkey"
+            columns: ["cashier_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_created_shift_id_fkey"
+            columns: ["created_shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer_credit_accounts"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "pos_devices"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       discounts: {
         Row: {
@@ -769,13 +1022,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "promotions_variant_id_fkey"
-            columns: ["variant_id"]
-            isOneToOne: false
-            referencedRelation: "product_variants"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "promotions_applied_by_fkey"
             columns: ["applied_by"]
             isOneToOne: false
@@ -787,6 +1033,20 @@ export type Database = {
             columns: ["lifted_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotions_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "low_stock_variants"
+            referencedColumns: ["variant_id"]
+          },
+          {
+            foreignKeyName: "promotions_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "product_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -1126,6 +1386,7 @@ export type Database = {
         Row: {
           cashier_id: string | null
           customer_id: number | null
+          deposit_order_id: number | null
           discount: number
           id: number
           idempotency_key: string | null
@@ -1144,6 +1405,7 @@ export type Database = {
         Insert: {
           cashier_id?: string | null
           customer_id?: number | null
+          deposit_order_id?: number | null
           discount?: number
           id?: number
           idempotency_key?: string | null
@@ -1162,6 +1424,7 @@ export type Database = {
         Update: {
           cashier_id?: string | null
           customer_id?: number | null
+          deposit_order_id?: number | null
           discount?: number
           id?: number
           idempotency_key?: string | null
@@ -1189,7 +1452,28 @@ export type Database = {
             foreignKeyName: "sales_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
+            referencedRelation: "customer_credit_accounts"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_deposit_order_id_fkey"
+            columns: ["deposit_order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_order_summaries"
+            referencedColumns: ["order_id"]
+          },
+          {
+            foreignKeyName: "sales_deposit_order_id_fkey"
+            columns: ["deposit_order_id"]
+            isOneToOne: false
+            referencedRelation: "deposit_orders"
             referencedColumns: ["id"]
           },
           {
@@ -1207,6 +1491,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      schema_migrations: {
+        Row: {
+          applied_at: string
+          filename: string
+        }
+        Insert: {
+          applied_at?: string
+          filename: string
+        }
+        Update: {
+          applied_at?: string
+          filename?: string
+        }
+        Relationships: []
       }
       settings: {
         Row: {
@@ -1589,6 +1888,44 @@ export type Database = {
         }
         Relationships: []
       }
+      deposit_order_summaries: {
+        Row: {
+          balance: number | null
+          cancelled_at: string | null
+          cancelled_reason: string | null
+          collect_by: string | null
+          collected_at: string | null
+          created_at: string | null
+          customer_id: number | null
+          customer_name: string | null
+          customer_phone: string | null
+          note: string | null
+          order_id: number | null
+          order_no: string | null
+          payments_net: number | null
+          qty_collected: number | null
+          qty_total: number | null
+          status: string | null
+          total: number | null
+          unallocated_credit: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customer_credit_accounts"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "deposit_orders_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       late_sales: {
         Row: {
           arrived_after: string | null
@@ -1720,11 +2057,53 @@ export type Database = {
       }
     }
     Functions: {
+      add_deposit_payment: {
+        Args: {
+          p_amount: number
+          p_cashier_id?: string
+          p_device_id?: number
+          p_key: string
+          p_method: string
+          p_order_id: number
+          p_shift_id?: number
+          p_tendered?: number
+        }
+        Returns: Json
+      }
       allocate_barcode_serials: { Args: { p_count: number }; Returns: number }
+      apply_promotion: {
+        Args: { p_note?: string; p_promo_price: number; p_variant_id: number }
+        Returns: number
+      }
+      cancel_deposit_order: {
+        Args: {
+          p_cashier_id?: string
+          p_device_id?: number
+          p_key: string
+          p_order_id: number
+          p_reason: string
+          p_shift_id?: number
+        }
+        Returns: Json
+      }
       clear_pin_lock: { Args: { p_profile_id: string }; Returns: undefined }
       close_shift_z: {
         Args: { p_counted_cash: number; p_notes?: string; p_shift_id: number }
         Returns: Json
+      }
+      collect_deposit_order: {
+        Args: {
+          p_cashier_id: string
+          p_checked_out_at?: string
+          p_device_id?: number
+          p_key?: string
+          p_lines: Json
+          p_new_payments: Json
+          p_order_id: number
+          p_shift_id: number
+          p_vat_policy_id?: number
+        }
+        Returns: number
       }
       complete_sale: {
         Args: {
@@ -1777,6 +2156,7 @@ export type Database = {
         }
         Returns: number
       }
+      count_slow_movers: { Args: { p_days: number }; Returns: number }
       create_credit_note: {
         Args: {
           p_approved_by?: string
@@ -1790,12 +2170,31 @@ export type Database = {
         }
         Returns: number
       }
+      create_deposit_order: {
+        Args: {
+          p_approved_by?: string
+          p_cashier_id?: string
+          p_collect_by?: string
+          p_customer_id: number
+          p_device_id?: number
+          p_items: Json
+          p_key: string
+          p_note?: string
+          p_payment?: Json
+          p_shift_id?: number
+        }
+        Returns: Json
+      }
       current_role_of_user: { Args: never; Returns: string }
       customer_credit_balance: {
         Args: { p_customer_id: number }
         Returns: number
       }
       daily_summary: { Args: { p_from: string; p_to: string }; Returns: Json }
+      deposit_unallocated_credit: {
+        Args: { p_order_id: number }
+        Returns: number
+      }
       discount_amount_for: {
         Args: {
           p_base: number
@@ -1814,6 +2213,7 @@ export type Database = {
           total_given: number
         }[]
       }
+      lift_promotion: { Args: { p_promotion_id: number }; Returns: boolean }
       log_audit: {
         Args: {
           p_detail?: Json
@@ -1889,6 +2289,22 @@ export type Database = {
         Returns: Json
       }
       shift_totals: { Args: { p_shift_id: number }; Returns: Json }
+      slow_movers: {
+        Args: { p_days: number }
+        Returns: {
+          category_name: string
+          days_idle: number
+          idle_since: string
+          last_sold_at: string
+          max_price: number
+          min_price: number
+          product_code: string
+          product_id: number
+          product_name: string
+          qty_on_hand: number
+          variant_count: number
+        }[]
+      }
       transfer_stock: {
         Args: {
           p_from_location: number

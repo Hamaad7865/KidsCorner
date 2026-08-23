@@ -1,6 +1,7 @@
 import {
   Boxes,
   ChartColumn,
+  HandCoins,
   History,
   FileSpreadsheet,
   Factory,
@@ -54,6 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/point-of-sale", label: "Point of sale", icon: Store },
       { href: "/sales", label: "Sales", icon: ReceiptText },
+      { href: "/deposits", label: "Deposits", icon: HandCoins },
       { href: "/reports", label: "Reports", icon: ChartColumn },
       { href: "/activity", label: "Activity", icon: History },
       { href: "/customers", label: "Customers", icon: Users },
