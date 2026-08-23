@@ -2,9 +2,27 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useFormStatus } from "react-dom"
-import { AlertCircle, KeyRound, LoaderCircle, UserPlus } from "lucide-react"
+import {
+  AlertCircle,
+  KeyRound,
+  LoaderCircle,
+  Pencil,
+  Trash2,
+  UserPlus,
+} from "lucide-react"
+import { toast } from "sonner"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -30,7 +48,9 @@ import {
 import { IDLE_STATE } from "@/lib/forms"
 import {
   createStaffLogin,
+  deleteStaffLogin,
   setStaffActive,
+  updateStaffLogin,
   type StaffLogin,
 } from "@/lib/staff/actions"
 
@@ -42,8 +62,9 @@ import {
  * owner-only, for the same reason: a login is a key.
  *
  * When the service key is missing the list still renders — who is on staff is
- * readable from `profiles` alone — but creating is disabled with instructions
- * rather than failing mysteriously at submit time.
+ * readable from `profiles` alone — but anything touching the credential
+ * (create, email, password) is disabled with instructions rather than failing
+ * mysteriously at submit time. Name, role and removal need only RLS.
  */
 export function StaffLogins({
   staff,
@@ -104,6 +125,7 @@ export function StaffLogins({
                 key={person.id}
                 person={person}
                 isSelf={person.id === currentUserId}
+                canUseServiceKey={canCreate}
               />
             ))}
             {staff.length === 0 ? (
@@ -122,10 +144,21 @@ export function StaffLogins({
   )
 }
 
-function StaffRow({ person, isSelf }: { person: StaffLogin; isSelf: boolean }) {
+function StaffRow({
+  person,
+  isSelf,
+  canUseServiceKey,
+}: {
+  person: StaffLogin
+  isSelf: boolean
+  canUseServiceKey: boolean
+}) {
   const [active, setActive] = useState(person.isActive)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [removing, startRemove] = useTransition()
 
   const toggle = (next: boolean) => {
     const previous = active
@@ -136,6 +169,18 @@ function StaffRow({ person, isSelf }: { person: StaffLogin; isSelf: boolean }) {
       if (!result.ok) {
         setActive(previous)
         setError(result.error)
+      }
+    })
+  }
+
+  const remove = () => {
+    setError(null)
+    startRemove(async () => {
+      const result = await deleteStaffLogin(person.id)
+      if (result.ok) {
+        toast.success(`${person.fullName} removed from staff.`)
+      } else if (result.error) {
+        toast.error(result.error)
       }
     })
   }
@@ -159,13 +204,79 @@ function StaffRow({ person, isSelf }: { person: StaffLogin; isSelf: boolean }) {
         <Badge variant="secondary">{person.role}</Badge>
       </TableCell>
       <TableCell className="text-right">
-        <Switch
-          checked={active}
-          disabled={pending || isSelf}
-          onCheckedChange={toggle}
-          aria-label={`Access for ${person.fullName}`}
-        />
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Edit ${person.fullName}`}
+            onClick={() => setEditing(true)}
+          >
+            <Pencil aria-hidden />
+          </Button>
+          {/* Self-delete is refused server-side; hiding the button says so
+              up front rather than at submit time. */}
+          {!isSelf ? (
+            <AlertDialog
+              open={confirmingDelete}
+              onOpenChange={(next) => !removing && setConfirmingDelete(next)}
+            >
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${person.fullName}`}
+                onClick={() => setConfirmingDelete(true)}
+              >
+                {removing ? (
+                  <LoaderCircle className="animate-spin" aria-hidden />
+                ) : (
+                  <Trash2 aria-hidden />
+                )}
+              </Button>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove {person.fullName}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Deletes their sign-in and staff record. If they have rung up
+                    sales, history keeps their name and the removal is refused —
+                    switch them off instead.
+                  </AlertDialogDescription>
+                  {!canUseServiceKey ? (
+                    <AlertDialogDescription>
+                      The service key is not configured, so only the staff
+                      record is deleted here; the sign-in must be removed in the
+                      Supabase dashboard.
+                    </AlertDialogDescription>
+                  ) : null}
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep them</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={removing}
+                    onClick={remove}
+                  >
+                    {removing ? "Removing…" : "Remove"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
+          <Switch
+            checked={active}
+            disabled={pending || isSelf}
+            onCheckedChange={toggle}
+            aria-label={`Access for ${person.fullName}`}
+          />
+        </div>
       </TableCell>
+      {editing ? (
+        <EditLoginDialog
+          person={person}
+          isSelf={isSelf}
+          canUseServiceKey={canUseServiceKey}
+          onDone={() => setEditing(false)}
+        />
+      ) : null}
     </TableRow>
   )
 }
@@ -249,16 +360,27 @@ function CreateLoginForm({ onSaved }: { onSaved: () => void }) {
   )
 }
 
-function RoleField({ error }: { error?: string }) {
+function RoleField({
+  error,
+  id = "staffRole",
+  defaultValue = "cashier",
+  disabled = false,
+}: {
+  error?: string
+  id?: string
+  defaultValue?: string
+  disabled?: boolean
+}) {
   // Uncontrolled by React: the native select posts its value with the form.
   // The shadcn Select keeps its own state, which would need wiring to submit.
   return (
     <div className="space-y-2">
-      <Label htmlFor="staffRole">Role</Label>
+      <Label htmlFor={id}>Role</Label>
       <select
-        id="staffRole"
+        id={id}
         name="role"
-        defaultValue="cashier"
+        defaultValue={defaultValue}
+        disabled={disabled}
         className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
       >
         <option value="cashier">Cashier — till only</option>
@@ -281,6 +403,158 @@ function SubmitButton() {
         </>
       ) : (
         "Create login"
+      )}
+    </Button>
+  )
+}
+
+function EditLoginDialog({
+  person,
+  isSelf,
+  canUseServiceKey,
+  onDone,
+}: {
+  person: StaffLogin
+  isSelf: boolean
+  canUseServiceKey: boolean
+  onDone: () => void
+}) {
+  return (
+    <Dialog open onOpenChange={(next) => !next && onDone()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit {person.fullName}</DialogTitle>
+          <DialogDescription>
+            Changes the staff record, and the sign-in behind it when the email
+            or password is touched.
+          </DialogDescription>
+        </DialogHeader>
+        {/* Unmounts on close, resetting the action state. */}
+        <EditLoginForm
+          person={person}
+          isSelf={isSelf}
+          canUseServiceKey={canUseServiceKey}
+          onSaved={onDone}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function EditLoginForm({
+  person,
+  isSelf,
+  canUseServiceKey,
+  onSaved,
+}: {
+  person: StaffLogin
+  isSelf: boolean
+  canUseServiceKey: boolean
+  onSaved: () => void
+}) {
+  const [state, formAction] = useActionState(updateStaffLogin, IDLE_STATE)
+
+  useEffect(() => {
+    if (state.status === "success") onSaved()
+  }, [state, onSaved])
+
+  return (
+    <form action={formAction} className="space-y-4" noValidate>
+      <input type="hidden" name="profileId" value={person.id} />
+      {/* Convenience only: lets the action skip a no-op credential write.
+          The submitted values themselves are always authoritative. */}
+      <input type="hidden" name="originalEmail" value={person.email ?? ""} />
+
+      {state.error ? (
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="space-y-2">
+        <Label htmlFor={`staffFullName-${person.id}`}>Full name</Label>
+        <Input
+          id={`staffFullName-${person.id}`}
+          name="fullName"
+          defaultValue={person.fullName}
+        />
+        {state.fieldErrors.fullName ? (
+          <p className="text-destructive text-sm">{state.fieldErrors.fullName}</p>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`staffEmail-${person.id}`}>Email</Label>
+        <Input
+          id={`staffEmail-${person.id}`}
+          name="email"
+          type="email"
+          defaultValue={person.email ?? ""}
+          disabled={!canUseServiceKey}
+        />
+        {!canUseServiceKey ? (
+          <p className="text-muted-foreground text-xs">
+            Needs SUPABASE_SERVICE_ROLE_KEY on the server.
+          </p>
+        ) : null}
+        {state.fieldErrors.email ? (
+          <p className="text-destructive text-sm">{state.fieldErrors.email}</p>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`staffPassword-${person.id}`}>New password</Label>
+        <Input
+          id={`staffPassword-${person.id}`}
+          name="password"
+          type="text"
+          defaultValue=""
+          placeholder="Leave blank to keep current"
+          disabled={!canUseServiceKey}
+        />
+        {canUseServiceKey ? (
+          <p className="text-muted-foreground text-xs">
+            At least 8 characters. Read it out once; never write it where they
+            work.
+          </p>
+        ) : null}
+        {state.fieldErrors.password ? (
+          <p className="text-destructive text-sm">{state.fieldErrors.password}</p>
+        ) : null}
+      </div>
+
+      {/* The acting owner's own role is frozen in the UI as well as the
+          action — demoting yourself leaves the shop with nobody able to
+          undo it. */}
+      <RoleField
+        id={`staffRole-${person.id}`}
+        error={state.fieldErrors.role}
+        defaultValue={person.role}
+        disabled={isSelf}
+      />
+
+      <DialogFooter>
+        <DialogClose render={<Button variant="outline" type="button" />}>
+          Cancel
+        </DialogClose>
+        <EditSubmitButton />
+      </DialogFooter>
+    </form>
+  )
+}
+
+function EditSubmitButton() {
+  const { pending } = useFormStatus()
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? (
+        <>
+          <LoaderCircle className="animate-spin" aria-hidden />
+          Saving…
+        </>
+      ) : (
+        "Save changes"
       )}
     </Button>
   )

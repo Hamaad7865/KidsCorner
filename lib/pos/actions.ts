@@ -208,7 +208,10 @@ export async function setCashierPin(
 
   const profileId = textOf(formData, "profileId")
   const pin = textOf(formData, "pin").trim()
-  const clearing = pin === ""
+  // The dialog's "Remove" button submits an explicit intent so it clears the
+  // PIN even if digits were left sitting in the field; an empty field still
+  // clears too, for whoever selects-all and saves.
+  const clearing = pin === "" || textOf(formData, "intent") === "remove"
 
   if (!clearing && !PIN_PATTERN.test(pin)) {
     return fail(null, { pin: "A PIN must be exactly 4 digits." })

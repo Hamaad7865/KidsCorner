@@ -114,7 +114,8 @@ export function StaffPins({
             <DialogHeader>
               <DialogTitle>PIN for {editing.fullName}</DialogTitle>
               <DialogDescription>
-                Four digits. Leave it blank to remove their PIN entirely.
+                Four digits, stored as a hash. Removing it takes them off the
+                till keypad until a new one is set.
               </DialogDescription>
             </DialogHeader>
             {/* Unmounts on close, resetting the action state. */}
@@ -190,9 +191,35 @@ function PinForm({ person, onSaved }: { person: Cashier; onSaved: () => void }) 
         <DialogClose render={<Button variant="outline" type="button" />}>
           Cancel
         </DialogClose>
+        {/* An explicit remove beats the old "leave it blank and save" —
+            which read as a bug the first time somebody tried it. The intent
+            field wins over any digits still in the box. */}
+        {person.hasPin ? <RemovePinButton /> : null}
         <SaveButton />
       </DialogFooter>
     </form>
+  )
+}
+
+function RemovePinButton() {
+  const { pending } = useFormStatus()
+  return (
+    <Button
+      type="submit"
+      name="intent"
+      value="remove"
+      variant="destructive"
+      disabled={pending}
+    >
+      {pending ? (
+        <>
+          <LoaderCircle className="animate-spin" aria-hidden />
+          Working…
+        </>
+      ) : (
+        "Remove PIN"
+      )}
+    </Button>
   )
 }
 

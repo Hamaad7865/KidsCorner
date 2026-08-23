@@ -19,7 +19,7 @@ import { createClient } from "@/lib/supabase/server"
 /**
  * Staff logins: who can sign in to the back office or a till device.
  *
- * Creating one is two writes in two different places — a row in Supabase Auth
+ * Each one is two writes in two different places — a row in Supabase Auth
  * (the credential), and a row in `profiles` (the role and the name the shop
  * knows them by). The first needs the service-role key, because the admin API
  * is the only door to `auth.users`; the second goes through this owner's own
@@ -90,18 +90,21 @@ export async function listStaffLogins(): Promise<{
   }
 }
 
+const staffNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Their name appears on receipts and sales — enter it.")
+  .max(60, "Keep the name under 60 characters.")
+const staffRoleSchema = z.enum(["cashier", "manager", "owner"])
+
 const createStaffSchema = z.object({
-  fullName: z
-    .string()
-    .trim()
-    .min(1, "Their name appears on receipts and sales — enter it.")
-    .max(60, "Keep the name under 60 characters."),
+  fullName: staffNameSchema,
   email: z.email("Enter a valid email address."),
   password: z
     .string()
     .min(8, "Use at least 8 characters — this opens the back office.")
     .max(72, "Supabase caps passwords at 72 characters."),
-  role: z.enum(["cashier", "manager", "owner"]),
+  role: staffRoleSchema,
 })
 
 export type CreateStaffInput = z.input<typeof createStaffSchema>
@@ -229,4 +232,218 @@ export async function setStaffActive(
 
   revalidatePath("/settings")
   return { ok: true }
+}
+
+const updateStaffSchema = z.object({
+  fullName: staffNameSchema,
+  email: z.email("Enter a valid email address."),
+  role: staffRoleSchema,
+  // Blank means "keep the current password". Only Supabase's own cap applies
+  // to the blank case, hence the union rather than a bare min().
+  password: z.union([
+    z.literal(""),
+    z
+      .string()
+      .min(8, "Use at least 8 characters — this opens the back office.")
+      .max(72, "Supabase caps passwords at 72 characters."),
+  ]),
+})
+
+/**
+ * Edits a login: name and role on the profile, email and (optionally) password
+ * on the auth user.
+ *
+ * The auth half runs FIRST so a refused email — already taken, service key
+ * missing — leaves the profile exactly as it was, rather than renaming
+ * somebody whose address change then failed. A role edit is refused for the
+ * acting owner themselves: with self-deactivation already blocked this is the
+ * remaining way to end up with zero owners, and an owner demoted by their own
+ * hand has nobody left to undo it.
+ */
+export async function updateStaffLogin(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) return formFail("Your session has expired.")
+  if (profile.role !== "owner") {
+    return formFail("Only the owner can edit logins.")
+  }
+
+  const parsed = updateStaffSchema.safeParse({
+    fullName: textOf(formData, "fullName"),
+    email: textOf(formData, "email"),
+    role: textOf(formData, "role"),
+    password: textOf(formData, "password"),
+  })
+  if (!parsed.success) return formFail(null, fieldErrorsOf(parsed.error))
+
+  const { fullName, email, role } = parsed.data
+  const password = parsed.data.password
+  const profileId = textOf(formData, "profileId")
+  const originalEmail = textOf(formData, "originalEmail")
+
+  const supabase = await createClient()
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("full_name, role")
+    .eq("id", profileId)
+    .maybeSingle()
+  if (!target) return formFail("That staff member could not be found.")
+  if (profileId === profile.id && role !== target.role) {
+    return formFail("You cannot change your own role — have another owner do it.")
+  }
+
+  const emailChanged = email.toLowerCase() !== originalEmail.trim().toLowerCase()
+  const needsAuth = Boolean(password) || emailChanged
+
+  if (needsAuth) {
+    if (!isServiceRoleConfigured) {
+      return formFail(
+        "SUPABASE_SERVICE_ROLE_KEY is not set on this deployment, so emails and passwords cannot be changed here. Name and role still can.",
+      )
+    }
+    const admin = createAdminClient()
+    const { error: authError } = await admin.auth.admin.updateUserById(
+      profileId,
+      {
+        ...(emailChanged ? { email, email_confirm: true } : {}),
+        ...(password ? { password } : {}),
+      },
+    )
+    if (authError) {
+      const message = /already|exists|duplicate/i.test(authError.message)
+        ? `${email} already belongs to another login.`
+        : authError.message
+      return formFail(message)
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ full_name: fullName, role })
+    .eq("id", profileId)
+    .select("id")
+
+  if (error) return formFail(error.message)
+  if (!data || data.length === 0) {
+    return formFail("That staff member could not be updated — check you are the owner.")
+  }
+
+  await logAudit(supabase, {
+    type: "staff.login_updated",
+    refType: "profile",
+    refId: profileId,
+    summary:
+      role !== target.role
+        ? `${fullName} is now ${role}`
+        : `${fullName}'s login was updated`,
+    detail: {
+      name_changed: fullName !== target.full_name,
+      role_changed: role !== target.role,
+      email_changed: emailChanged,
+      password_reset: Boolean(password),
+      changed_by: profile.id,
+    },
+  })
+
+  revalidatePath("/settings")
+  return formOk("Login updated.")
+}
+
+/**
+ * Removes a login outright: the auth user first, whose deletion cascades to
+ * the profile row.
+ *
+ * Deletion is only possible while nobody else points at the person. The first
+ * sale they ring up creates `sales.cashier_id` → `profiles` references that no
+ * `ON DELETE` action will break — deliberately, history must keep who rang it.
+ * So the everyday exit stays the active toggle, and this fails with that
+ * suggestion when the references are already there.
+ */
+export async function deleteStaffLogin(
+  targetId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) {
+    return { ok: false, error: "Your session has expired." }
+  }
+  if (profile.role !== "owner") {
+    return { ok: false, error: "Only the owner can remove logins." }
+  }
+  if (targetId === profile.id) {
+    return { ok: false, error: "You cannot delete your own login." }
+  }
+
+  const supabase = await createClient()
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", targetId)
+    .maybeSingle()
+
+  let authDeleted = false
+  if (isServiceRoleConfigured) {
+    const { error } = await createAdminClient().auth.admin.deleteUser(targetId)
+    if (!error) {
+      authDeleted = true
+    } else if (!/not found/i.test(error.message)) {
+      // Includes the FK refusal: Postgres names the constraint that held on.
+      return { ok: false, error: deleteRefusal(error.message) }
+    }
+    // "not found" means there was never an auth user behind this profile —
+    // seeded by hand in an emergency, perhaps. The profile row is still ours
+    // to remove below.
+  }
+
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .delete()
+    .eq("id", targetId)
+
+  if (profileError) return { ok: false, error: deleteRefusal(profileError.message) }
+  if (!authDeleted && !isServiceRoleConfigured) {
+    // The sign-in itself survives in Supabase Auth, but with the profile gone
+    // `signIn` refuses it — dead credential, not a live door. Say so rather
+    // than let the row's disappearance imply more than happened.
+    await logAudit(supabase, {
+      type: "staff.login_deleted",
+      refType: "profile",
+      refId: targetId,
+      summary: `${target?.full_name ?? "Staff member"} removed from staff`,
+      detail: {
+        auth_user_deleted: false,
+        deleted_by: profile.id,
+      },
+    })
+    revalidatePath("/settings")
+    return { ok: true }
+  }
+
+  await logAudit(supabase, {
+    type: "staff.login_deleted",
+    refType: "profile",
+    refId: targetId,
+    summary: `${target?.full_name ?? "Staff member"} removed from staff`,
+    detail: { auth_user_deleted: authDeleted, deleted_by: profile.id },
+  })
+  revalidatePath("/settings")
+  return { ok: true }
+}
+
+/**
+ * Turns a raw Postgres/admin refusal into something an owner can act on.
+ *
+ * FK violations are the expected shape here; every other message passes
+ * through as-is, because guessing wrong about an unknown failure helps nobody.
+ */
+function deleteRefusal(message: string): string {
+  if (/foreign key|fkey|duplicate key/i.test(message)) {
+    return (
+      "This person still has records tied to them — sales rung, shifts opened, audits written — " +
+      "so the account cannot be deleted without rewriting history. Switch them off instead; " +
+      "that keeps everything intact."
+    )
+  }
+  return message
 }
