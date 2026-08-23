@@ -57,3 +57,22 @@ next-env.d.ts
 # the target database before any DDL.
 supabase/.temp/*
 !supabase/.temp/linked-project.json
+
+# graphify's own working state — the codebase graph it builds, chunked and
+# cached JSON that can run past 15k lines for this repo alone. Regenerated on
+# demand; never source.
+graphify-out/
+
+# opencode's local config — supabase-auth.json is a credential, not source.
+.opencode/
+
+# Editor-local settings, not shared with the team.
+.vscode/
+
+# Node heap dumps from a debugging session.
+*.heapsnapshot
+
+# A stray local file that should never have been in a repo checkout — not
+# committed, not referenced by any code; delete it once you've confirmed
+# whether it holds anything real.
+kc_keystore_secrets.txt
