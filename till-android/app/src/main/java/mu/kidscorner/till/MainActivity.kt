@@ -40,6 +40,8 @@ import mu.kidscorner.till.ui.BasketDiscountDialog
 import mu.kidscorner.till.ui.CloseShiftScreen
 import mu.kidscorner.till.ui.CustomItemDialog
 import mu.kidscorner.till.ui.CustomerDialog
+import mu.kidscorner.till.ui.DepositCreateDialog
+import mu.kidscorner.till.ui.DepositsScreen
 import mu.kidscorner.till.ui.DeviceSetupScreen
 import mu.kidscorner.till.ui.HeldSalesDialog
 import mu.kidscorner.till.ui.LockScreen
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** Which overlay is up, if any. One at a time — a till is not a desktop. */
-private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, Printer, Actions, Note, Custom, Txns, Update }
+private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, DepositCreate, Printer, Actions, Note, Custom, Txns, Update }
 
 @Composable
 private fun TillRoot(vm: TillViewModel = viewModel()) {
@@ -251,6 +253,42 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 onSelectProduct = vm::selectStockProduct,
                 onRetry = vm::retryStockCheck,
                 onBack = vm::closeStockCheck,
+            )
+
+            is TillScreen.Deposits -> DepositsScreen(
+                cashierName = screen.cashier.fullName,
+                deposits = state.deposits,
+                loading = state.depositsLoading,
+                query = state.depositsQuery,
+                status = state.depositsStatus,
+                online = state.online,
+                selected = state.selectedDeposit,
+                detailLoading = state.depositLoading,
+                busy = state.depositBusy,
+                error = state.depositError,
+                shiftOpen = state.shop?.shift != null,
+                paymentMethods = state.shop?.paymentMethods ?: listOf("cash"),
+                onQuery = vm::searchDeposits,
+                onStatus = vm::setDepositStatus,
+                onOpen = vm::selectDeposit,
+                onCloseDetail = vm::closeDepositDetail,
+                onBack = vm::closeDeposits,
+                onTopUp = { method, amount, tendered ->
+                    state.selectedDeposit?.deposit?.orderId?.let { orderId ->
+                        vm.topUpDeposit(orderId, method, amount, tendered)
+                    }
+                },
+                onCollect = { selections, payments ->
+                    state.selectedDeposit?.deposit?.orderId?.let { orderId ->
+                        vm.collectDepositItems(orderId, selections, payments)
+                    }
+                },
+                onCancelDeposit = { reason ->
+                    state.selectedDeposit?.deposit?.orderId?.let { orderId ->
+                        vm.cancelDeposit(orderId, reason)
+                    }
+                },
+                onDismissError = vm::clearDepositError,
             )
 
             is TillScreen.Paying -> PaymentScreen(
@@ -488,6 +526,42 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             },
         )
 
+        // The current basket becomes a layaway. Requires an attached customer —
+        // without a name behind it, a deposit is a shelf nobody can release —
+        // which is why this overlay checks before showing anything useful.
+        Overlay.DepositCreate -> {
+            val customerAttached = state.customer != null && state.lines.isNotEmpty()
+            when {
+                // Success clears the basket; that is this dialog's job done.
+                // The slip itself surfaces through the shared preview dialog.
+                !state.depositBusy && state.depositError == null &&
+                    state.lines.isEmpty() -> {
+                    LaunchedEffect(Unit) { overlay = Overlay.None }
+                }
+                !customerAttached -> {
+                    ToastPill("Attach a customer to take a deposit")
+                    overlay = Overlay.None
+                }
+                else -> DepositCreateDialog(
+                    total = state.totals.total,
+                    hasDiscounts = state.totals.lineDiscounts > 0.0 ||
+                        (state.discount?.amount ?: 0.0) > 0.0,
+                    managers = managers,
+                    busy = state.depositBusy,
+                    error = state.depositError,
+                    shiftOpen = state.shop?.shift != null,
+                    paymentMethods = state.shop?.paymentMethods ?: listOf("cash"),
+                    onConfirm = { method, amount, collectBy, note, approval ->
+                        vm.takeDepositFromCart(method, amount, null, collectBy, note, approval)
+                    },
+                    onDismiss = {
+                        overlay = Overlay.None
+                        vm.clearDepositError()
+                    },
+                )
+            }
+        }
+
         Overlay.Actions -> ActionsDialog(
             lastReceiptNo = state.history.firstOrNull()?.saleNo,
             onReprintLast = {
@@ -500,6 +574,15 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },
             onAccountPayment = { overlay = Overlay.AccountPayment },
+            onOpenDeposits = {
+                overlay = Overlay.None
+                vm.openDeposits()
+            },
+            onTakeDeposit = {
+                vm.beginDepositAttempt()
+                overlay = Overlay.DepositCreate
+            },
+            canTakeDeposit = state.customer != null && state.lines.isNotEmpty(),
             onDismiss = { overlay = Overlay.None },
         )
 
@@ -578,6 +661,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.StockCheck) {
         vm.closeStockCheck()
+    }
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Deposits) {
+        vm.closeDeposits()
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Selling) {
         /* swallowed */

@@ -28,6 +28,16 @@ import mu.kidscorner.till.data.CloseShiftResponse
 import mu.kidscorner.till.data.CreateCustomerRequest
 import mu.kidscorner.till.data.CreditCharge
 import mu.kidscorner.till.data.Customer
+import mu.kidscorner.till.data.CreateDepositRequest
+import mu.kidscorner.till.data.DepositDetailResponse
+import mu.kidscorner.till.data.DepositDto
+import mu.kidscorner.till.data.DepositItemInput
+import mu.kidscorner.till.data.DepositPaymentInput
+import mu.kidscorner.till.data.DepositSummaryRow
+import mu.kidscorner.till.data.DepositTopUpRequest
+import mu.kidscorner.till.data.DepositCancelRequest
+import mu.kidscorner.till.data.DepositCollectRequest
+import mu.kidscorner.till.data.DepositPickLine
 import mu.kidscorner.till.data.DiscountRule
 import mu.kidscorner.till.data.DownloadState
 import mu.kidscorner.till.data.HeldSale
@@ -65,8 +75,15 @@ import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.ReceiptLine
 import mu.kidscorner.till.print.ShopIdentity
 import mu.kidscorner.till.print.CreditNoteDoc
+import mu.kidscorner.till.print.DepositRefundSlipDoc
+import mu.kidscorner.till.print.DepositSlipDoc
+import mu.kidscorner.till.print.DepositSlipLine
+import mu.kidscorner.till.print.DepositTopUpSlipDoc
 import mu.kidscorner.till.print.buildAccountPaymentSlip
 import mu.kidscorner.till.print.buildCreditNote
+import mu.kidscorner.till.print.buildDepositRefundSlip
+import mu.kidscorner.till.print.buildDepositSlip
+import mu.kidscorner.till.print.buildDepositTopUpSlip
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
 import mu.kidscorner.till.print.toPlainText
@@ -96,6 +113,9 @@ sealed interface TillScreen {
 
     /** Looking up live stock without changing the active sale. */
     data class StockCheck(val cashier: Cashier) : TillScreen
+
+    /** Layaways: what is held for whom, and the money against it. */
+    data class Deposits(val cashier: Cashier) : TillScreen
 
     /** Taking payment for the basket. */
     data class Paying(val cashier: Cashier) : TillScreen
@@ -189,6 +209,20 @@ data class TillState(
     /** The sales behind the picked customer's tab, shown while settling. */
     val creditCharges: List<CreditCharge> = emptyList(),
     val creditChargesLoading: Boolean = false,
+
+    /**
+     * Layaways. The list answers "is my cot still held?"; the detail is what a
+     * visit acts on — top-up, pickup or cancellation. All online only: money
+     * moves against balances only the server knows.
+     */
+    val deposits: List<DepositSummaryRow> = emptyList(),
+    val depositsLoading: Boolean = false,
+    val depositsStatus: String = "open",
+    val depositsQuery: String = "",
+    val selectedDeposit: DepositDetailResponse? = null,
+    val depositLoading: Boolean = false,
+    val depositBusy: Boolean = false,
+    val depositError: String? = null,
 
     val history: List<SaleSummary> = emptyList(),
     val historyLoading: Boolean = false,
@@ -1269,6 +1303,572 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCustomerSearch() =
         _state.update { it.copy(customerResults = emptyList(), customerError = null) }
 
+    // ------------------------------------------------------------- deposits
+
+    /**
+     * Attempt keys for the four deposit writes.
+     *
+     * Minted when a flow opens and kept across retries of that flow — pressing
+     * Confirm again after a failure must reach the server as the SAME attempt,
+     * which is what stops a double charge when the first one committed without
+     * answering. Rotated only on success or when the cashier backs out.
+     */
+    private var createDepositKey: String = UUID.randomUUID().toString()
+    private var topUpKey: String = UUID.randomUUID().toString()
+    private var collectKey: String = UUID.randomUUID().toString()
+    private var cancelKey: String = UUID.randomUUID().toString()
+
+    /**
+     * The VAT policy and instant frozen for the current pickup attempt.
+     *
+     * Same shape as [CheckoutFreeze]: captured once, replayed byte-for-byte,
+     * invalidated automatically when the key rotates.
+     */
+    private var collectFreeze: CheckoutFreeze? = null
+
+    /** Opens the layaway screen and pulls the live list. */
+    fun openDeposits() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(screen = TillScreen.Deposits(cashier), depositError = null)
+        }
+        loadDeposits()
+    }
+
+    fun closeDeposits() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.Selling(cashier),
+                deposits = emptyList(),
+                selectedDeposit = null,
+                depositError = null,
+                depositsQuery = "",
+                depositsStatus = "open",
+            )
+        }
+    }
+
+    fun searchDeposits(query: String) {
+        _state.update { it.copy(depositsQuery = query) }
+        loadDeposits()
+    }
+
+    fun setDepositStatus(status: String) {
+        if (status == _state.value.depositsStatus) return
+        _state.update { it.copy(depositsStatus = status) }
+        loadDeposits()
+    }
+
+    private fun loadDeposits() = viewModelScope.launch {
+        val current = _state.value
+        _state.update { it.copy(depositsLoading = true) }
+        repo.deposits(current.depositsStatus.ifBlank { "open" }, current.depositsQuery)
+            .onSuccess { response ->
+                // A newer search may have started while this was in flight;
+                // its answer wins, this one is dropped.
+                if (_state.value.depositsStatus == current.depositsStatus &&
+                    _state.value.depositsQuery == current.depositsQuery
+                ) {
+                    _state.update {
+                        it.copy(
+                            depositsLoading = false,
+                            deposits = if (response.ok) response.deposits else it.deposits,
+                            depositError = if (response.ok) null else response.error,
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        depositsLoading = false,
+                        depositError = moneyMessage(cause.message ?: "Could not load deposits."),
+                    )
+                }
+            }
+    }
+
+    /** Loads one order in full, for the visit screen. */
+    fun selectDeposit(orderId: Int) = viewModelScope.launch {
+        _state.update { it.copy(depositLoading = true, depositError = null) }
+        repo.depositDetail(orderId)
+            .onSuccess { response ->
+                _state.update {
+                    if (response.ok) {
+                        it.copy(depositLoading = false, selectedDeposit = response)
+                    } else {
+                        it.copy(
+                            depositLoading = false,
+                            depositError = response.error ?: "Could not load that deposit.",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        depositLoading = false,
+                        depositError = moneyMessage(cause.message ?: "Could not load that deposit."),
+                    )
+                }
+            }
+    }
+
+    fun closeDepositDetail() =
+        _state.update { it.copy(selectedDeposit = null, depositError = null) }
+
+    fun clearDepositError() =
+        _state.update { it.copy(depositError = null) }
+
+    /** Called when a deposit dialog OPENS: a fresh key for a fresh attempt. */
+    fun beginDepositAttempt() {
+        createDepositKey = UUID.randomUUID().toString()
+        topUpKey = UUID.randomUUID().toString()
+        collectKey = UUID.randomUUID().toString()
+        collectFreeze = null
+        cancelKey = UUID.randomUUID().toString()
+        _state.update { it.copy(depositBusy = false, depositError = null) }
+    }
+
+    /**
+     * Turns the current basket into a layaway.
+     *
+     * The basket must belong to somebody: a deposit with no name behind it is
+     * a shelf nobody can release. Custom lines are refused here rather than at
+     * the server — gift wrap has no stock to hold in the cupboard.
+     */
+    fun takeDepositFromCart(
+        method: String,
+        amount: Double,
+        tendered: Double?,
+        collectByIso: String?,
+        note: String?,
+        approval: Approval?,
+    ) = viewModelScope.launch {
+        val current = _state.value
+        val customer = current.customer
+        if (customer == null || current.lines.isEmpty()) return@launch
+        if (current.lines.any { it.isCustom }) {
+            _state.update {
+                it.copy(depositError = "Custom lines cannot go on deposit — remove them first.")
+            }
+            return@launch
+        }
+        val hasDiscount = current.lines.any { it.discount > 0.0 } ||
+            (current.discount?.amount ?: 0.0) > 0.0
+        if (hasDiscount && approval == null) {
+            _state.update {
+                it.copy(depositError = "A deposit with money off needs a manager's PIN.")
+            }
+            return@launch
+        }
+        if (method == "cash" && current.shop?.shift == null) {
+            _state.update { it.copy(depositError = "Open the till before taking cash.") }
+            return@launch
+        }
+
+        _state.update { it.copy(depositBusy = true, depositError = null) }
+
+        repo.createDeposit(
+            CreateDepositRequest(
+                customerId = customer.id,
+                items = current.lines.map { line ->
+                    DepositItemInput(
+                        variantId = line.variantId,
+                        qty = line.qty,
+                        discount = round2(line.discount),
+                    )
+                },
+                payment = if (amount > 0.0) {
+                    DepositPaymentInput(method = method, amount = round2(amount), tendered = tendered)
+                } else {
+                    null
+                },
+                collectBy = collectByIso,
+                note = note?.trim()?.ifBlank { null },
+                shiftId = if (method == "cash") current.shop?.shift?.id else null,
+                deviceId = current.deviceId,
+                approval = approval,
+                idempotencyKey = createDepositKey,
+            ),
+        )
+            .onSuccess { response ->
+                if (!response.ok) {
+                    _state.update {
+                        it.copy(
+                            depositBusy = false,
+                            depositError = response.error ?: "The deposit could not be opened.",
+                        )
+                    }
+                    return@onSuccess
+                }
+
+                // Committed. Rotate the key so a NEXT deposit is a NEW attempt,
+                // print the customer's slip, and hand back an empty basket.
+                createDepositKey = UUID.randomUUID().toString()
+
+                _state.update { it.copy(depositBusy = false, depositError = null) }
+                toast("Deposit ${response.orderNo} opened · balance ${formatRs(response.balance)}")
+                printDepositSlip(
+                    orderNo = response.orderNo,
+                    customerName = customer.fullName,
+                    customerPhone = customer.phone,
+                    lines = current.lines,
+                    total = response.total,
+                    balance = response.balance,
+                    collectByIso = collectByIso,
+                    note = note,
+                )
+                // The basket is spoken for; nothing of it remains to sell.
+                clearCart()
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        depositBusy = false,
+                        depositError = moneyMessage(cause.message ?: "Could not open the deposit."),
+                    )
+                }
+            }
+    }
+
+    /** Extra money onto an open order, between visits. */
+    fun topUpDeposit(orderId: Int, method: String, amount: Double, tendered: Double?) =
+        viewModelScope.launch {
+            if (amount <= 0.0) return@launch
+            val current = _state.value
+            if (method == "cash" && current.shop?.shift == null) {
+                _state.update { it.copy(depositError = "Open the till before taking cash.") }
+                return@launch
+            }
+
+            _state.update { it.copy(depositBusy = true, depositError = null) }
+            repo.depositTopUp(
+                orderId,
+                DepositTopUpRequest(
+                    method = method,
+                    amount = round2(amount),
+                    tendered = tendered,
+                    shiftId = if (method == "cash") current.shop?.shift?.id else null,
+                    deviceId = current.deviceId,
+                    idempotencyKey = topUpKey,
+                ),
+            )
+                .onSuccess { response ->
+                    if (!response.ok) {
+                        _state.update {
+                            it.copy(
+                                depositBusy = false,
+                                depositError = response.error ?: "The payment could not be recorded.",
+                            )
+                        }
+                        return@onSuccess
+                    }
+                    topUpKey = UUID.randomUUID().toString()
+                    _state.update { it.copy(depositBusy = false, depositError = null) }
+                    val detail = _state.value.selectedDeposit?.deposit
+                    if (detail != null) {
+                        printDepositTopUpSlip(detail, method, round2(amount), response.paid, response.balance)
+                    }
+                    toast("Payment recorded · balance ${formatRs(response.balance)}")
+                    selectDeposit(orderId)
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            depositBusy = false,
+                            depositError = moneyMessage(cause.message ?: "Could not record that payment."),
+                        )
+                    }
+                }
+        }
+
+    /**
+     * A pickup visit: hands over the chosen lines and writes their sale.
+     *
+     * The sale prints through the normal receipt path, so what the customer
+     * takes home looks exactly like any other ticket from this shop.
+     */
+    fun collectDepositItems(
+        orderId: Int,
+        selections: List<Pair<Long, Int>>,
+        payments: List<DepositPaymentInput>,
+    ) = viewModelScope.launch {
+        if (selections.isEmpty()) return@launch
+        val current = _state.value
+
+        // A pickup writes a real sale into a drawer; without one there is
+        // nowhere for today's cash to land and nothing to print against.
+        val shiftId = current.shop?.shift?.id
+        if (shiftId == null) {
+            _state.update {
+                it.copy(depositError = "Open the till before handing over goods.")
+            }
+            return@launch
+        }
+
+        val fresh = collectFreeze?.takeIf { it.saleKey == collectKey } ?: CheckoutFreeze(
+            saleKey = collectKey,
+            policyId = current.shop?.vatPolicyId,
+            checkedOutAt = nowIso(),
+        ).also { collectFreeze = it }
+
+        _state.update { it.copy(depositBusy = true, depositError = null) }
+        repo.collectDeposit(
+            orderId,
+            DepositCollectRequest(
+                lines = selections.map { DepositPickLine(itemId = it.first, qty = it.second) },
+                payments = payments,
+                shiftId = shiftId,
+                deviceId = current.deviceId,
+                vatPolicyId = fresh.policyId,
+                checkedOutAt = fresh.checkedOutAt,
+                idempotencyKey = collectKey,
+            ),
+        )
+            .onSuccess { response ->
+                if (!response.ok) {
+                    _state.update {
+                        it.copy(
+                            depositBusy = false,
+                            depositError = response.error ?: "The collection could not be recorded.",
+                        )
+                    }
+                    return@onSuccess
+                }
+                collectKey = UUID.randomUUID().toString()
+                collectFreeze = null
+                _state.update { it.copy(depositBusy = false, depositError = null) }
+                toast("Goods handed over · printing receipt")
+
+                // The pickup IS an ordinary sale — printed as one, from the
+                // server's own record rather than anything local.
+                repo.saleDetail(response.saleId.toInt()).getOrNull()?.sale?.let { sale ->
+                    printSaleReceipt(sale)
+                }
+                selectDeposit(orderId)
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        depositBusy = false,
+                        depositError = moneyMessage(cause.message ?: "Could not record the collection."),
+                    )
+                }
+            }
+    }
+
+    /**
+     * Cancels an open layaway: refund what was never collected, release the
+     * rest of the stock. Cash leaves the drawer, so the till must be open.
+     */
+    fun cancelDeposit(orderId: Int, reason: String) = viewModelScope.launch {
+        val trimmed = reason.trim()
+        if (trimmed.isEmpty()) {
+            _state.update { it.copy(depositError = "Say why the deposit is being cancelled.") }
+            return@launch
+        }
+        val current = _state.value
+
+        _state.update { it.copy(depositBusy = true, depositError = null) }
+        repo.cancelDeposit(
+            orderId,
+            DepositCancelRequest(
+                reason = trimmed.take(200),
+                shiftId = current.shop?.shift?.id,
+                deviceId = current.deviceId,
+                idempotencyKey = cancelKey,
+            ),
+        )
+            .onSuccess { response ->
+                if (!response.ok) {
+                    _state.update {
+                        it.copy(
+                            depositBusy = false,
+                            depositError = response.error ?: "The deposit could not be cancelled.",
+                        )
+                    }
+                    return@onSuccess
+                }
+                if (response.alreadyCancelled) {
+                    _state.update { it.copy(depositBusy = false, depositError = null) }
+                } else {
+                    cancelKey = UUID.randomUUID().toString()
+                    _state.update { it.copy(depositBusy = false, depositError = null) }
+                    val detail = _state.value.selectedDeposit?.deposit
+                    if (detail != null) {
+                        printDepositRefundSlip(
+                            detail,
+                            refunded = response.refunded,
+                            cashRefunded = response.cashRefunded,
+                            releasedUnits = response.releasedUnits,
+                            reason = trimmed,
+                        )
+                    }
+                    toast(
+                        if (response.refunded > 0.0) {
+                            "Cancelled · ${formatRs(response.refunded)} refunded"
+                        } else {
+                            "Cancelled · stock returned to the shelf"
+                        },
+                    )
+                }
+                selectDeposit(orderId)
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        depositBusy = false,
+                        depositError = moneyMessage(cause.message ?: "Could not cancel that deposit."),
+                    )
+                }
+            }
+    }
+
+    /** "Failed to connect…" is no use to somebody holding notes. */
+    private fun moneyMessage(message: String): String =
+        if (!_state.value.online) {
+            "No connection. Deposits need the shop's server — try again when the line is back."
+        } else {
+            message
+        }
+
+    private suspend fun printSaleReceipt(sale: SaleDetail) {
+        val shop = _state.value.shop
+        val lines = buildReceipt(
+            sale = sale,
+            shop = ShopIdentity(
+                name = shop?.shopName ?: "Kids Corner",
+                address = shop?.shopAddress,
+                phone = shop?.shopPhone,
+                vatNumber = shop?.vatNumber,
+            ),
+            width = printerSettings.paper,
+        )
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+        if (result is PrintResult.Failed) {
+            toast("Receipt did not print — reprint it from History")
+        }
+    }
+
+    private fun printDepositSlip(
+        orderNo: String,
+        customerName: String,
+        customerPhone: String?,
+        lines: List<CartLine>,
+        total: Double,
+        balance: Double,
+        collectByIso: String?,
+        note: String?,
+    ) = viewModelScope.launch {
+        val shop = _state.value.shop
+        val docLines = buildDepositSlip(
+            doc = DepositSlipDoc(
+                orderNo = orderNo,
+                customerName = customerName,
+                customerPhone = customerPhone,
+                dateIso = nowIso(),
+                items = lines.map {
+                    DepositSlipLine(it.productName + " " + it.variantLabel, it.qty, it.unitPrice, it.discount)
+                },
+                total = total,
+                balance = balance,
+                collectByIso = collectByIso,
+                note = note,
+                cashierName = cashierOf(_state.value.screen)?.fullName,
+            ),
+            shop = ShopIdentity(
+                name = shop?.shopName ?: "Kids Corner",
+                address = shop?.shopAddress,
+                phone = shop?.shopPhone,
+            ),
+            width = printerSettings.paper,
+        )
+        _state.update { it.copy(receiptPreview = docLines.toPlainText(printerSettings.paper)) }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(docLines, printerSettings.paper))
+        if (result is PrintResult.Failed) {
+            toast("Deposit slip did not print — the deposit is still recorded")
+        }
+    }
+
+    private fun printDepositTopUpSlip(
+        detail: DepositDto,
+        method: String,
+        amountNow: Double,
+        paidTotal: Double,
+        balance: Double,
+    ) = viewModelScope.launch {
+        val shop = _state.value.shop
+        val lines = buildDepositTopUpSlip(
+            doc = DepositTopUpSlipDoc(
+                orderNo = detail.orderNo,
+                customerName = detail.customerName,
+                dateIso = nowIso(),
+                method = method,
+                amountPaidNow = amountNow,
+                totalPaid = paidTotal,
+                balance = balance,
+                collectByIso = detail.collectBy,
+                cashierName = cashierOf(_state.value.screen)?.fullName,
+            ),
+            shop = ShopIdentity(
+                name = shop?.shopName ?: "Kids Corner",
+                address = shop?.shopAddress,
+                phone = shop?.shopPhone,
+            ),
+            width = printerSettings.paper,
+        )
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+        if (result is PrintResult.Failed) {
+            toast("Slip did not print — the payment is still recorded")
+        }
+    }
+
+    private fun printDepositRefundSlip(
+        detail: DepositDto,
+        refunded: Double,
+        cashRefunded: Double,
+        releasedUnits: Int,
+        reason: String,
+    ) = viewModelScope.launch {
+        val shop = _state.value.shop
+        val lines = buildDepositRefundSlip(
+            doc = DepositRefundSlipDoc(
+                orderNo = detail.orderNo,
+                customerName = detail.customerName,
+                dateIso = nowIso(),
+                refunded = refunded,
+                cashRefunded = cashRefunded,
+                releasedUnits = releasedUnits,
+                reason = reason,
+                cashierName = cashierOf(_state.value.screen)?.fullName,
+            ),
+            shop = ShopIdentity(
+                name = shop?.shopName ?: "Kids Corner",
+                address = shop?.shopAddress,
+                phone = shop?.shopPhone,
+            ),
+            width = printerSettings.paper,
+        )
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+        if (result is PrintResult.Failed) {
+            toast("Refund slip did not print — the cancellation is still recorded")
+        }
+    }
+
+
     /**
      * Has the back office closed this till out from under us?
      *
@@ -1871,6 +2471,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     private fun cashierOf(screen: TillScreen): Cashier? = when (screen) {
         is TillScreen.Selling -> screen.cashier
         is TillScreen.StockCheck -> screen.cashier
+        is TillScreen.Deposits -> screen.cashier
         is TillScreen.Paying -> screen.cashier
         is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.ClosingShift -> screen.cashier

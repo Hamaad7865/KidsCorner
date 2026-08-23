@@ -223,6 +223,9 @@ class GalleryActivity : ComponentActivity() {
                             onSaleNote = { showing = "note" },
                             onSettings = {},
                             onAccountPayment = {},
+                            onOpenDeposits = {},
+                            onTakeDeposit = {},
+                            canTakeDeposit = true,
                             onDismiss = { showing = null },
                         )
 

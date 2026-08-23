@@ -319,6 +319,19 @@ class UnauthorizedException(message: String) : Exception(message)
  */
 class SessionEndedException(message: String) : Exception(message)
 
+/**
+ * The server ANSWERED and refused — a 400/403/409/500 carrying a message.
+ *
+ * Distinct from a transport failure on purpose: the till is demonstrably
+ * online, so the offline pill must not light up over "Only 1 of Canvas
+ * sandals on the shelf", and the cashier must read the refusal's own words
+ * rather than "no connection". Before this existed, every non-401 answer was
+ * an IllegalStateException — which the repository counted as a dead line, so
+ * a business refusal masqueraded as an outage and the dialog said the exact
+ * opposite of the truth.
+ */
+class ServerAnsweredException(message: String) : Exception(message)
+
 class TillApi(private val http: HttpClient) {
 
     private val origin = BuildConfig.API_ORIGIN
@@ -447,6 +460,59 @@ class TillApi(private val http: HttpClient) {
             parameter("customerId", customerId)
         }.decode()
 
+    // ── deposits (layaway) — online only, like refunds and settlements ────
+
+    /**
+     * The layaway list. `status` filters open/collected/cancelled/all; `query`
+     * matches order number, customer name or phone.
+     */
+    suspend fun deposits(
+        token: String,
+        status: String = "open",
+        query: String? = null,
+    ): DepositsListResponse =
+        http.get("$origin/api/till/deposits") {
+            bearer(token)
+            parameter("status", status)
+            if (!query.isNullOrBlank()) parameter("q", query)
+        }.decode()
+
+    suspend fun createDeposit(token: String, body: CreateDepositRequest): DepositCreateResponse =
+        http.post("$origin/api/till/deposits") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
+    suspend fun depositDetail(token: String, orderId: Int): DepositDetailResponse =
+        http.get("$origin/api/till/deposits/$orderId") { bearer(token) }.decode()
+
+    suspend fun depositTopUp(token: String, orderId: Int, body: DepositTopUpRequest): DepositTopUpResponse =
+        http.post("$origin/api/till/deposits/$orderId/payment") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
+    /**
+     * A pickup visit: takes some or all of the order home and writes the
+     * ordinary sale for it. Never queued — money changes hands against state
+     * only the server knows, exactly as with account settlements.
+     */
+    suspend fun collectDeposit(token: String, orderId: Int, body: DepositCollectRequest): DepositCollectResponse =
+        http.post("$origin/api/till/deposits/$orderId/collect") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
+    suspend fun cancelDeposit(token: String, orderId: Int, body: DepositCancelRequest): DepositCancelResponse =
+        http.post("$origin/api/till/deposits/$orderId/cancel") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
     suspend fun discounts(token: String): DiscountsResponse =
         http.get("$origin/api/till/discounts") { bearer(token) }.decode()
 
@@ -486,7 +552,7 @@ class TillApi(private val http: HttpClient) {
         val message = readError(status, text)
         if (sessionIsOver(text)) throw SessionEndedException(message)
         if (status == HttpStatusCode.Unauthorized) throw UnauthorizedException(message)
-        throw IllegalStateException(message)
+        throw ServerAnsweredException(message)
     }
 
     private fun HttpRequestBuilder.bearer(token: String) {

@@ -182,6 +182,26 @@ class TillRepository(
     suspend fun creditStatement(customerId: Int): Result<CreditStatementResponse> =
         authed { api.creditStatement(it, customerId) }
 
+    // ── deposits (layaway). All online only — money against server state. ──
+
+    suspend fun deposits(status: String = "open", query: String? = null): Result<DepositsListResponse> =
+        authed { api.deposits(it, status, query) }
+
+    suspend fun createDeposit(body: CreateDepositRequest): Result<DepositCreateResponse> =
+        authed { api.createDeposit(it, body) }
+
+    suspend fun depositDetail(orderId: Int): Result<DepositDetailResponse> =
+        authed { api.depositDetail(it, orderId) }
+
+    suspend fun depositTopUp(orderId: Int, body: DepositTopUpRequest): Result<DepositTopUpResponse> =
+        authed { api.depositTopUp(it, orderId, body) }
+
+    suspend fun collectDeposit(orderId: Int, body: DepositCollectRequest): Result<DepositCollectResponse> =
+        authed { api.collectDeposit(it, orderId, body) }
+
+    suspend fun cancelDeposit(orderId: Int, body: DepositCancelRequest): Result<DepositCancelResponse> =
+        authed { api.cancelDeposit(it, orderId, body) }
+
     suspend fun discounts(): Result<DiscountsResponse> = authed { api.discounts(it) }
 
     suspend fun sales(query: String): Result<SalesListResponse> = authed { api.sales(it, query) }
@@ -341,8 +361,14 @@ class TillRepository(
         }
     }.also { result ->
         // A 401 still means the server answered, so it does not count as being
-        // offline — the till is reachable and the token is simply stale.
-        val reachable = result.isSuccess || result.exceptionOrNull() is UnauthorizedException
+        // offline — the till is reachable and the token is simply stale. The
+        // same holds for a ServerAnsweredException: a 400 or 500 is the server
+        // SPEAKING, and lighting the offline pill over "Only 1 left" tells the
+        // cashier the exact opposite of the truth.
+        val cause = result.exceptionOrNull()
+        val reachable = result.isSuccess ||
+            cause is UnauthorizedException ||
+            cause is ServerAnsweredException
         _online.value = reachable
     }
 

@@ -24,8 +24,10 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material3.Icon
@@ -68,6 +70,11 @@ fun ActionsDialog(
     onSettings: () -> Unit,
     /** A customer settling their account at the counter. */
     onAccountPayment: () -> Unit,
+    /** Layaways: what is held for whom. */
+    onOpenDeposits: () -> Unit,
+    /** The current basket becomes a deposit (needs a customer attached). */
+    onTakeDeposit: () -> Unit,
+    canTakeDeposit: Boolean,
     onDismiss: () -> Unit,
 ) {
     val noRipple = remember { MutableInteractionSource() }
@@ -148,6 +155,27 @@ fun ActionsDialog(
                         Color(0xFFE7F0FA),
                         Color(0xFF2E5F8A),
                         onClick = onAccountPayment,
+                    ),
+                    Action(
+                        "Take deposit",
+                        if (canTakeDeposit) {
+                            "Hold this basket for money down"
+                        } else {
+                            "Needs items and a customer"
+                        },
+                        Icons.Default.Savings,
+                        Color(0xFFE6F4EA),
+                        Color(0xFF2E6B45),
+                        enabled = canTakeDeposit,
+                        onClick = onTakeDeposit,
+                    ),
+                    Action(
+                        "Deposits",
+                        "Layaways, top-ups, pickups",
+                        Icons.Default.Inventory2,
+                        Color(0xFFE6F4EA),
+                        Color(0xFF2E6B45),
+                        onClick = onOpenDeposits,
                     ),
                     Action(
                         "Custom item",
