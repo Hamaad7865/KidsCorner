@@ -271,7 +271,12 @@ data class Customer(
 data class CustomersResponse(
     val ok: Boolean = true,
     val customers: List<Customer> = emptyList(),
-    /** Browse mode only: whether another page follows this one. */
+    /**
+     * Browse mode: whether another page follows this one.
+     * Debtors mode: the list was cut off — overflow belongs to search, not a
+     * next page. Absent from search answers entirely, so an older APK parsing
+     * one sees exactly what it always saw.
+     */
     val hasMore: Boolean = false,
     val error: String? = null,
 )

@@ -207,6 +207,18 @@ data class TillState(
     val customerBrowseHasMore: Boolean = false,
     val customerBrowseError: String? = null,
 
+    /**
+     * Who owes right now, for the payment-on-account dialog's opening list.
+     *
+     * Fetched when the dialog opens rather than kept fresh, because the only
+     * thing that changes a tab from this screen is the dialog itself — which
+     * closes over every change and reloads on the next open.
+     */
+    val customerDebtors: List<Customer> = emptyList(),
+    val customerDebtorsLoading: Boolean = false,
+    val customerDebtorsTruncated: Boolean = false,
+    val customerDebtorsError: String? = null,
+
     /** The customer whose read-only profile is open, if any. */
     val customerProfile: Customer? = null,
     val customerProfileCharges: List<CreditCharge> = emptyList(),
@@ -1157,12 +1169,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * server writes — "they only owe Rs 350" — is shown word for word.
      */
     fun settleCredit(
-        customerId: Int,
+        payer: Customer,
         amount: Double,
         method: String,
         saleNos: List<String> = emptyList(),
     ) = viewModelScope.launch {
         val current = _state.value
+        val customerId = payer.id
         val shiftId = current.shop?.shift?.id
         if (method == "cash" && shiftId == null) {
             _state.update {
@@ -1173,12 +1186,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
         // Captured before the payment lands, for the printed slip: who is paying,
         // what they owed going in, and who took it. The new balance comes back on
-        // the response.
-        val payingRow = current.customerResults.find { it.id == customerId }
-        val customerName =
-            payingRow?.fullName ?: current.customer?.fullName ?: "Customer"
-        val previousBalance =
-            payingRow?.creditBalance ?: current.customer?.creditBalance ?: 0.0
+        // the response. The row travels here from the dialog itself rather than
+        // being looked up in a list, because a payment is entered from three
+        // places — search results, the owing list, a profile preset — and none
+        // of them is guaranteed to still be holding the row when Record is
+        // pressed. Falling back to whatever else was in state would print a
+        // stranger's name over somebody's payment.
+        val customerName = payer.fullName
+        val previousBalance = payer.creditBalance
         val cashierName = cashierOf(current.screen)?.fullName
 
         // The receipts the cashier named, with what was still owed on each —
@@ -1217,6 +1232,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                 ?.copy(creditBalance = response.balance),
                             customerProfileBalance = if (it.customerProfile?.id == customerId) response.balance
                                 else it.customerProfileBalance,
+                            customerBrowse = it.customerBrowse.map { row ->
+                                if (row.id == customerId) row.copy(creditBalance = response.balance)
+                                else row
+                            },
+                            customerDebtors = it.customerDebtors.map { row ->
+                                if (row.id == customerId) row.copy(creditBalance = response.balance)
+                                else row
+                            },
                         )
                     } else {
                         it.copy(
@@ -1253,6 +1276,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun clearCreditPaymentResult() =
         _state.update {
             it.copy(
+                // busy too: a visit torn down mid-recording must not leave the
+                // next one staring at a greyed-out "Recording…" button.
+                creditPaymentBusy = false,
                 creditPaymentDone = false,
                 creditPaymentError = null,
                 creditPaymentPreset = null,
@@ -1261,6 +1287,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
+    private var creditStatementJob: Job? = null
+
     /**
      * Loads the sales behind a customer's tab, for the account-payment view.
      *
@@ -1268,13 +1296,21 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * leaves the list empty and the cashier can still take the money against the
      * balance the search already showed. The server applies payments oldest-first
      * under a lock regardless of what this list says.
+     *
+     * Serialised behind a job handle like every other fetch here: a slow
+     * statement for one customer must never land over a faster one's rows and
+     * put A's receipts under B's name — dismiss-and-repick within one network
+     * round trip is all it takes on a flaky line.
      */
-    fun loadCreditStatement(customerId: Int) = viewModelScope.launch {
-        _state.update { it.copy(creditChargesLoading = true, creditCharges = emptyList()) }
-        val charges = repo.creditStatement(customerId).getOrNull()
-            ?.takeIf { it.ok }?.charges
-            ?: emptyList()
-        _state.update { it.copy(creditChargesLoading = false, creditCharges = charges) }
+    fun loadCreditStatement(customerId: Int) {
+        creditStatementJob?.cancel()
+        creditStatementJob = viewModelScope.launch {
+            _state.update { it.copy(creditChargesLoading = true, creditCharges = emptyList()) }
+            val charges = repo.creditStatement(customerId).getOrNull()
+                ?.takeIf { it.ok }?.charges
+                ?: emptyList()
+            _state.update { it.copy(creditChargesLoading = false, creditCharges = charges) }
+        }
     }
 
     /**
@@ -2831,7 +2867,16 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         customerSearch = viewModelScope.launch {
-            _state.update { it.copy(customerSearching = true, customerError = null) }
+            _state.update {
+                it.copy(
+                    customerSearching = true,
+                    customerError = null,
+                    // Emptied at launch, not just replaced on success: if this
+                    // search FAILS, the previous query's matches must not be
+                    // left sitting there as if they answered the new one.
+                    customerResults = emptyList(),
+                )
+            }
             repo.searchCustomers(trimmed)
                 .onSuccess { response ->
                     _state.update {
@@ -2847,6 +2892,73 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
         }
+    }
+
+    // ------------------------------------------------------- payment debtors
+
+    /**
+     * Loads who owes, for the payment dialog's opening list.
+     *
+     * Skipped for the preset flow — opened from a profile, the dialog never
+     * shows its picker, so the round trip buys nothing. One page and no
+     * pagination: an overflowing list says so and points at the search box,
+     * which is why a stale answer can never be waited out with "load more".
+     */
+    private var customerDebtorsJob: Job? = null
+
+    fun loadCustomerDebtors() {
+        if (_state.value.creditPaymentPreset != null) return
+        customerDebtorsJob?.cancel()
+        customerDebtorsJob = viewModelScope.launch {
+            _state.update { it.copy(customerDebtorsLoading = true, customerDebtorsError = null) }
+            repo.listDebtors()
+                .onSuccess { response ->
+                    _state.update {
+                        it.copy(
+                            customerDebtorsLoading = false,
+                            customerDebtors = response.customers,
+                            customerDebtorsTruncated = response.hasMore,
+                            customerDebtorsError = null,
+                        )
+                    }
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            customerDebtorsLoading = false,
+                            customerDebtorsError = cause.message
+                                ?: "Could not load who owes.",
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Clears the debtor list, alongside [clearCustomerSearch] on dismiss. */
+    fun clearCustomerDebtors() =
+        _state.update {
+            it.copy(
+                customerDebtors = emptyList(),
+                customerDebtorsLoading = false,
+                customerDebtorsTruncated = false,
+                customerDebtorsError = null,
+            )
+        }
+
+    /**
+     * Opens the payment dialog on its OWING RIGHT NOW list.
+     *
+     * Clears whatever a previous visit left behind first. The overlay can be
+     * torn down without its dismissal running — system back and activity
+     * recreation both skip onDismiss — so a stranded done flag or preset would
+     * otherwise replay itself onto this fresh opening: the dialog would flash
+     * open and instantly close, or open onto the wrong customer's pane.
+     */
+    fun openAccountPayment() {
+        clearCreditPaymentResult()
+        clearCustomerSearch()
+        clearCustomerDebtors()
+        loadCustomerDebtors()
     }
 
     fun createCustomer(name: String, phone: String?, openAccount: Boolean = false) =
@@ -3083,6 +3195,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     /** Opens the account-payment view pre-loaded with the profile's customer. */
     fun openPaymentFromProfile() {
         val profile = _state.value.customerProfile ?: return
+        // The same teardown-without-dismissal hazard [openAccountPayment]
+        // guards: arrive clean no matter how the last visit ended.
+        clearCustomerSearch()
+        clearCustomerDebtors()
+        clearCreditPaymentResult()
         _state.update { it.copy(creditPaymentPreset = profile) }
         loadCreditStatement(profile.id)
     }

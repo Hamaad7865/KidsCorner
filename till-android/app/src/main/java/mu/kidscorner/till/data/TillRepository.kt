@@ -176,6 +176,9 @@ class TillRepository(
     suspend fun listCustomers(offset: Int, limit: Int = 40, query: String? = null): Result<CustomersResponse> =
         authed { api.listCustomers(it, offset, limit, query) }
 
+    /** Who owes right now, for the payment dialog's opening list. */
+    suspend fun listDebtors(): Result<CustomersResponse> = authed { api.listDebtors(it) }
+
     // ── recent customers, cached on this device ────────────────────────────
 
     /** The RECENT list, newest touch first. Reads local only — never fails. */

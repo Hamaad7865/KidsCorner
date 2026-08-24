@@ -48,12 +48,52 @@ function toCustomer(row: {
   }
 }
 
+/** How many debtors the payment dialog lists before it hands off to search. */
+const DEBTOR_CAP = 40
+
 export async function GET(request: Request) {
   const session = await requireTillSession(request)
   if ("response" in session) return session.response
 
   const params = new URL(request.url).searchParams
   const query = params.get("q")?.trim() ?? ""
+
+  // ── debtors mode: the payment-on-account dialog's opening list ─────────────
+  //
+  // The cashier opens that dialog to take money in, so its useful default is
+  // the people it would be taken from — not a blank box waiting to be told a
+  // name. Biggest tab first, because that is the order a payment is worth
+  // asking about; closed accounts stay listed, since an account switched off
+  // with money still owed is exactly the row a payment chases.
+  //
+  // One page, deliberately: anyone past the cap is found by typing, so
+  // `hasMore` says "the list is truncated" for the dialog to point at search,
+  // rather than growing a second paginated list beside the directory.
+  if (params.get("mode") === "debtors") {
+    const { data, error } = await session.supabase
+      .from("customer_credit_accounts")
+      .select("customer_id, full_name, phone, credit_enabled, credit_on_hold, balance")
+      // Positive only. A negative balance means the shop is holding THEIR
+      // money — nobody hands over cash against that.
+      .gt("balance", 0)
+      .order("balance", { ascending: false })
+      // Named tiebreakers after the balance: Postgres leaves equal values
+      // unordered, and without these, ties straddling the cap would reshuffle
+      // WHO makes the page between queries — a customer on the list one day,
+      // gone the next, with no ledger change to explain it.
+      .order("full_name")
+      .order("customer_id")
+      .limit(DEBTOR_CAP + 1)
+
+    if (error) return apiError(error.message, 500)
+
+    const rows = data ?? []
+    return NextResponse.json({
+      ok: true,
+      customers: rows.slice(0, DEBTOR_CAP).map((row) => toCustomer(row)),
+      hasMore: rows.length > DEBTOR_CAP,
+    })
+  }
 
   // ── browse mode: the customer directory ────────────────────────────────────
   //

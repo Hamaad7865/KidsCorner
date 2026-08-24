@@ -312,7 +312,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 onLoadMore = vm::loadMoreCustomers,
                 onOpenProfile = vm::selectCustomerProfile,
                 onCloseProfile = vm::closeCustomerProfile,
-                onTakePayment = vm::openPaymentFromProfile,
+                onTakePayment = {
+                    vm.openPaymentFromProfile()
+                    overlay = Overlay.AccountPayment
+                },
                 onUseCustomer = vm::useSelectedCustomer,
                 onBack = vm::closeCustomers,
                 onDismissError = vm::clearCustomerBrowseError,
@@ -540,6 +543,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             results = state.customerResults,
             searching = state.customerSearching,
             searchError = state.customerError,
+            debtors = state.customerDebtors,
+            debtorsLoading = state.customerDebtorsLoading,
+            debtorsTruncated = state.customerDebtorsTruncated,
+            debtorsError = state.customerDebtorsError,
             presetCustomer = state.creditPaymentPreset,
             busy = state.creditPaymentBusy,
             error = state.creditPaymentError,
@@ -549,13 +556,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             shiftOpen = state.shop?.shift != null,
             onSearch = vm::searchCustomers,
             onSelectCustomer = vm::loadCreditStatement,
-            onSettle = { customerId, amount, method, saleNos ->
-                vm.settleCredit(customerId, amount, method, saleNos)
+            onSettle = { payer, amount, method, saleNos ->
+                vm.settleCredit(payer, amount, method, saleNos)
             },
             onDismiss = {
                 overlay = Overlay.None
                 vm.clearCreditPaymentResult()
                 vm.clearCustomerSearch()
+                vm.clearCustomerDebtors()
             },
         )
 
@@ -606,7 +614,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },
-            onAccountPayment = { overlay = Overlay.AccountPayment },
+            onAccountPayment = {
+                vm.openAccountPayment()
+                overlay = Overlay.AccountPayment
+            },
             onOpenDeposits = {
                 overlay = Overlay.None
                 vm.openDeposits()

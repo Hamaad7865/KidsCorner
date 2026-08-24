@@ -49,7 +49,7 @@ function readChain(result: { data: unknown[] | null; error: { message: string } 
     calls.push([name, args])
     return chain
   }
-  for (const name of ["select", "or", "ilike", "eq", "order"]) chain[name] = step(name)
+  for (const name of ["select", "or", "ilike", "eq", "gt", "order"]) chain[name] = step(name)
   chain.limit = (...args: unknown[]) => {
     calls.push(["limit", args])
     return chain
@@ -213,6 +213,91 @@ describe("the attach-dialog search (GET ?q=)", () => {
       ],
     })
     expect("hasMore" in json).toBe(false)
+  })
+})
+
+describe("debtors mode (?mode=debtors)", () => {
+  // One open account, one switched off with money still owed — the row a
+  // payment chases and the list must not drop. The stub cannot execute
+  // filters, so "positive balances only" is asserted on the gt call below
+  // rather than by feeding an in-credit row through here.
+  const DEBTOR_ROWS = [
+    {
+      customer_id: 3,
+      full_name: "Ancha Peertum",
+      phone: null,
+      credit_enabled: true,
+      credit_on_hold: false,
+      balance: 300,
+    },
+    {
+      customer_id: 4,
+      full_name: "Closed But Owes",
+      phone: null,
+      credit_enabled: false,
+      credit_on_hold: false,
+      balance: 25,
+    },
+  ]
+
+  it("asks the database for positive balances, biggest first", async () => {
+    const { chain, calls } = readChain({ data: DEBTOR_ROWS, error: null })
+    session.supabase.from.mockReturnValue(chain)
+
+    const json = await getBody("http://t/api/till/customers?mode=debtors")
+
+    expect(json).toEqual({
+      ok: true,
+      customers: [
+        expect.objectContaining({ id: 3, fullName: "Ancha Peertum", creditBalance: 300 }),
+        expect.objectContaining({ id: 4, fullName: "Closed But Owes", creditEnabled: false }),
+      ],
+      hasMore: false,
+    })
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ["gt", ["balance", 0]],
+        ["order", ["balance", { ascending: false }]],
+        // Ties must not reshuffle who makes a capped page between queries.
+        ["order", ["full_name"]],
+        ["order", ["customer_id"]],
+      ]),
+    )
+    expect(session.supabase.from).toHaveBeenCalledWith("customer_credit_accounts")
+  })
+
+  it("says there is more when the cap is hit, and shows only the cap", async () => {
+    const overflowing = Array.from({ length: 41 }, (_, i) => ({
+      ...DEBTOR_ROWS[0],
+      customer_id: i,
+    }))
+    const { chain, calls } = readChain({ data: overflowing, error: null })
+    session.supabase.from.mockReturnValue(chain)
+
+    const json = await getBody("http://t/api/till/customers?mode=debtors")
+
+    expect(json.customers).toHaveLength(40)
+    expect(json.hasMore).toBe(true)
+    // Asked for one past the cap, so `hasMore` is an observation, not a guess.
+    expect(calls).toContainEqual(["limit", [41]])
+  })
+
+  it("ignores q entirely — debtors are not a search", async () => {
+    const { chain, calls } = readChain({ data: [], error: null })
+    session.supabase.from.mockReturnValue(chain)
+
+    await getBody("http://t/api/till/customers?mode=debtors&q=rita")
+
+    expect(calls.some(([name]) => name === "or" || name === "ilike")).toBe(false)
+  })
+
+  it("surfaces a database failure through apiError", async () => {
+    session.supabase.from.mockReturnValue(readChain({ data: null, error: { message: "no such view" } }).chain)
+
+    const response = await GET(new Request("http://t/api/till/customers?mode=debtors"))
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toMatchObject({ ok: false })
   })
 })
 

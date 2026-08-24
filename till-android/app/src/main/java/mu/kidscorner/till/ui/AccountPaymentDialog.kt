@@ -46,8 +46,10 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * A customer walking in to pay their tab.
  *
  * The counter-side twin of the back office's "Record a payment". Two steps, in
- * the order the conversation happens: find the customer (their balance rides
- * along on every search result), then take the money and say how it arrived.
+ * the order the conversation happens: find the customer — the dialog opens on
+ * everyone who owes, biggest tab first, and the box searches the rest — then
+ * take the money and say how it arrived. Either way the balance rides along on
+ * the picked row.
  *
  * The amount is checked in the DATABASE, not here. The dialog clamps the input
  * for politeness — nobody should type Rs 500 against a Rs 350 tab and hit an
@@ -65,6 +67,12 @@ fun AccountPaymentDialog(
     results: List<Customer>,
     searching: Boolean,
     searchError: String?,
+    /** Who owes right now, shown before anything is typed. */
+    debtors: List<Customer>,
+    debtorsLoading: Boolean,
+    /** The server's list was cut off, so overflow belongs to the search box. */
+    debtorsTruncated: Boolean = false,
+    debtorsError: String?,
     /** Set when opened from a customer profile - skips the search step. */
     presetCustomer: Customer? = null,
     busy: Boolean,
@@ -78,7 +86,10 @@ fun AccountPaymentDialog(
     onSearch: (String) -> Unit,
     /** Fired when a customer is picked, to fetch the sales behind their tab. */
     onSelectCustomer: (Int) -> Unit,
-    onSettle: (customerId: Int, amount: Double, method: String, saleNos: List<String>) -> Unit,
+    /** The whole picked row travels with the payment — the slip's name and
+     *  previous balance come from what was on screen, not from a lookup that
+     *  may no longer be holding it. */
+    onSettle: (payer: Customer, amount: Double, method: String, saleNos: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember(presetCustomer) { mutableStateOf("") }
@@ -130,6 +141,22 @@ fun AccountPaymentDialog(
     ) {
         val customer = picked
 
+        // One pick action for both lists — the debtors on arrival and the
+        // searched-for stragglers behave identically from here on.
+        val pickCustomer: (Customer) -> Unit = { row ->
+            picked = row
+            selectedSaleIds = emptySet()
+            // Fetch the sales behind the tab, so the cashier and customer can
+            // see what the balance is made of before paying it.
+            onSelectCustomer(row.id)
+            // The whole tab, ready to take. Defaulting to the balance is the
+            // honest first offer — a part payment is a deliberate edit, and a
+            // cashier should not have to type a figure just to do the ordinary
+            // thing.
+            amount = trimZeros(row.creditBalance)
+            method = ""
+        }
+
         if (customer == null) {
             Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
                 HandoffField(
@@ -143,7 +170,7 @@ fun AccountPaymentDialog(
                 Text(
                     when {
                         searching -> "SEARCHING"
-                        query.length < 2 -> "WHO IS PAYING?"
+                        query.length < 2 -> "OWING RIGHT NOW"
                         results.isEmpty() -> "NO MATCH"
                         else -> "${results.size} FOUND"
                     },
@@ -158,6 +185,47 @@ fun AccountPaymentDialog(
                     Box(Modifier.fillMaxWidth().height(60.dp), Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(22.dp), Handoff.AccentSolid, 2.dp)
                     }
+                } else if (query.length < 2) {
+                    // The opening list: who owes, before anyone has to type.
+                    // Search takes over the moment there is something to say.
+                    when {
+                        debtorsLoading ->
+                            Box(Modifier.fillMaxWidth().height(60.dp), Alignment.Center) {
+                                CircularProgressIndicator(
+                                    Modifier.size(22.dp),
+                                    Handoff.AccentSolid,
+                                    2.dp,
+                                )
+                            }
+
+                        else -> {
+                            debtorsError?.let {
+                                Text(it, fontSize = 12.5.sp, color = Handoff.Danger)
+                            }
+                            if (debtors.isEmpty() && debtorsError == null) {
+                                Text(
+                                    "Nobody owes anything.",
+                                    fontSize = 12.5.sp,
+                                    color = Handoff.Muted3,
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                )
+                            } else if (debtors.isNotEmpty()) {
+                                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                                    items(debtors, key = { it.id }) { row ->
+                                        CustomerOwesRow(row) { pickCustomer(row) }
+                                    }
+                                }
+                                if (debtorsTruncated) {
+                                    Text(
+                                        "Showing the ${debtors.size} largest tabs — search above for anyone else.",
+                                        fontSize = 12.5.sp,
+                                        color = Handoff.Muted3,
+                                        modifier = Modifier.padding(vertical = 10.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 } else {
                     searchError?.let {
                         Text(it, fontSize = 12.5.sp, color = Handoff.Danger)
@@ -165,82 +233,7 @@ fun AccountPaymentDialog(
 
                     LazyColumn(Modifier.heightIn(max = 320.dp)) {
                         items(results, key = { it.id }) { row ->
-                            Surface(
-                                onClick = {
-                                    picked = row
-                                    selectedSaleIds = emptySet()
-                                    // Fetch the sales behind the tab, so the
-                                    // cashier and customer can see what the
-                                    // balance is made of before paying it.
-                                    onSelectCustomer(row.id)
-                                    // The whole tab, ready to take. Defaulting to
-                                    // the balance is the honest first offer — a
-                                    // part payment is a deliberate edit, and a
-                                    // cashier should not have to type a figure
-                                    // just to do the ordinary thing.
-                                    amount = trimZeros(row.creditBalance)
-                                    method = ""
-                                },
-                                color = androidx.compose.ui.graphics.Color.Transparent,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column {
-                                    Row(
-                                        Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    ) {
-                                        Avatar(
-                                            row.fullName,
-                                            size = 40,
-                                            tint = Handoff.AvatarTint,
-                                            ink = Handoff.AvatarInk,
-                                        )
-                                        Column(Modifier.weight(1f)) {
-                                            Text(
-                                                row.fullName,
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = Handoff.Ink,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                            row.phone?.let {
-                                                Text(
-                                                    it,
-                                                    fontFamily = PlexMono,
-                                                    fontSize = 12.5.sp,
-                                                    color = Handoff.Muted3,
-                                                )
-                                            }
-                                        }
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text(
-                                                if (row.owes) formatRs(row.creditBalance)
-                                                else if (row.creditBalance < 0) "in credit"
-                                                else "paid up",
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontFamily = PlexMono,
-                                                color = if (row.owes) Handoff.InkStrong else Handoff.Muted3,
-                                            )
-                                            if (row.owes) {
-                                                Text(
-                                                    "OWES",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    letterSpacing = 0.8.sp,
-                                                    color = Handoff.Muted3,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Box(
-                                        Modifier.fillMaxWidth().height(1.dp)
-                                            .background(Handoff.LineFaint),
-                                    )
-                                }
-                            }
+                            CustomerOwesRow(row) { pickCustomer(row) }
                         }
                     }
 
@@ -490,7 +483,7 @@ fun AccountPaymentDialog(
                     enabled = !busy && typed > 0 && method.isNotBlank() && !overBalance,
                 ) {
                     onSettle(
-                        customer.id,
+                        customer,
                         round2(typed),
                         method,
                         // The receipt numbers behind the ticked rows, for the
@@ -519,4 +512,74 @@ private fun trimZeros(value: Double): String {
     val whole = value.toLong()
     val cents = Math.round((value - whole) * 100)
     return if (cents == 0L) "$whole" else "$whole.${cents.toString().padStart(2, '0')}"
+}
+
+/**
+ * One pickable customer line, shared by the debtor list and the search
+ * results, so the two ways of arriving at a name can never look different.
+ */
+@Composable
+private fun CustomerOwesRow(row: Customer, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = androidx.compose.ui.graphics.Color.Transparent,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column {
+            Row(
+                Modifier.padding(horizontal = 10.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Avatar(
+                    row.fullName,
+                    size = 40,
+                    tint = Handoff.AvatarTint,
+                    ink = Handoff.AvatarInk,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        row.fullName,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Handoff.Ink,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    row.phone?.let {
+                        Text(
+                            it,
+                            fontFamily = PlexMono,
+                            fontSize = 12.5.sp,
+                            color = Handoff.Muted3,
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        if (row.owes) formatRs(row.creditBalance)
+                        else if (row.creditBalance < 0) "in credit"
+                        else "paid up",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = PlexMono,
+                        color = if (row.owes) Handoff.InkStrong else Handoff.Muted3,
+                    )
+                    if (row.owes) {
+                        Text(
+                            "OWES",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                            color = Handoff.Muted3,
+                        )
+                    }
+                }
+            }
+            Box(
+                Modifier.fillMaxWidth().height(1.dp)
+                    .background(Handoff.LineFaint),
+            )
+        }
+    }
 }

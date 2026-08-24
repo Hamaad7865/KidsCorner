@@ -450,6 +450,21 @@ class TillApi(private val http: HttpClient) {
             if (!query.isNullOrBlank()) parameter("q", query)
         }.decode()
 
+    /**
+     * Who owes right now, biggest tab first, for the payment dialog's opening
+     * list.
+     *
+     * Separate from [listCustomers] because it is not a page of the directory:
+     * the server orders by balance instead of name and keeps only positive
+     * balances, and `hasMore` in the answer means "the list was cut off — hand
+     * overflow to search", never "ask for the next page".
+     */
+    suspend fun listDebtors(token: String): CustomersResponse =
+        http.get("$origin/api/till/customers") {
+            bearer(token)
+            parameter("mode", "debtors")
+        }.decode()
+
     suspend fun createCustomer(token: String, request: CreateCustomerRequest): CreateCustomerResponse =
         http.post("$origin/api/till/customers") {
             bearer(token)
