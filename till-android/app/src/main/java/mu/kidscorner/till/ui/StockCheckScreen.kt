@@ -153,7 +153,7 @@ fun StockCheckScreen(
                 modifier = Modifier.weight(1f).focusRequester(focus),
                 singleLine = true,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                placeholder = { Text("Product name, SKU or barcode") },
+                placeholder = { Text("Product name, code or barcode") },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { submit() }),
             )

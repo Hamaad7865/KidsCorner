@@ -2143,6 +2143,7 @@ private fun groupsFor(query: String, catalog: List<CatalogVariant>): List<Produc
         .filter {
             it.productName.lowercase().contains(q) ||
                 it.sku.lowercase().contains(q) ||
+                it.productCode.orEmpty().lowercase().contains(q) ||
                 it.barcode.orEmpty().lowercase().contains(q)
         }
         .groupBy { it.productId }
