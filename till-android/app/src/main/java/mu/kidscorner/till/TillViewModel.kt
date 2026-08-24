@@ -56,6 +56,7 @@ import mu.kidscorner.till.data.SettleCreditRequest
 import mu.kidscorner.till.data.ShiftTotals
 import mu.kidscorner.till.data.StockCheckLocation
 import mu.kidscorner.till.data.TillApi
+import mu.kidscorner.till.data.UpdateCustomerRequest
 import mu.kidscorner.till.data.ZTotals
 import mu.kidscorner.till.data.TillDatabase
 import mu.kidscorner.till.data.TillRepository
@@ -229,7 +230,8 @@ data class TillState(
     val customerProfileSalesLoading: Boolean = false,
     val customerProfileDeposits: List<DepositSummaryRow> = emptyList(),
     val customerProfileDepositsLoading: Boolean = false,
-
+    val customerEditSaving: Boolean = false,
+    val customerEditError: String? = null,
     /** Rules the cashier may offer. Refreshed with the catalog. */
     val discountRules: List<DiscountRule> = emptyList(),
 
@@ -3078,6 +3080,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 customerProfileChargesLoading = false,
                 customerProfileSalesLoading = false,
                 customerProfileDepositsLoading = false,
+                customerEditSaving = false,
+                customerEditError = null,
             )
         }
     }
@@ -3180,9 +3184,63 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 customerProfileChargesLoading = false,
                 customerProfileSalesLoading = false,
                 customerProfileDepositsLoading = false,
+                customerEditSaving = false,
+                customerEditError = null,
             )
         }
     }
+
+    /**
+     * Saves an edit to the open profile's name and phone number.
+     *
+     * The answer replaces the profile card wholesale — the server echoes the
+     * account state back, so the balance shown can never be older than the
+     * name. The directory row is mended in place too: a list still showing a
+     * name that was just corrected would send the cashier back into the same
+     * mistake on the next visit.
+     */
+    fun editCustomerProfile(name: String, phone: String?) {
+        val profile = _state.value.customerProfile ?: return
+        if (_state.value.customerEditSaving) return
+        viewModelScope.launch {
+            _state.update { it.copy(customerEditSaving = true, customerEditError = null) }
+            repo.updateCustomer(profile.id, UpdateCustomerRequest(name, phone))
+                .onSuccess { response ->
+                    val updated = response.customer
+                    if (!response.ok || updated == null) {
+                        _state.update {
+                            it.copy(
+                                customerEditSaving = false,
+                                customerEditError = response.error ?: "Could not save those details.",
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                customerEditSaving = false,
+                                customerEditError = null,
+                                customerProfile = updated,
+                                customerBrowse = it.customerBrowse.map { row ->
+                                    if (row.id == updated.id) updated else row
+                                },
+                            )
+                        }
+                        recordRecentCustomer(updated)
+                    }
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            customerEditSaving = false,
+                            customerEditError = cause.message ?: "Could not save those details.",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun clearCustomerEditError() =
+        _state.update { it.copy(customerEditError = null) }
 
     /** The ONE place browsing turns into an attach. */
     fun useSelectedCustomer() {

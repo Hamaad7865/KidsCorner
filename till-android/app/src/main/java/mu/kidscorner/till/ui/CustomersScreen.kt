@@ -40,6 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
@@ -80,6 +82,10 @@ fun CustomersScreen(
     profileDeposits: List<DepositSummaryRow>,
     profileDepositsLoading: Boolean,
     onTakePayment: () -> Unit,
+    editSaving: Boolean,
+    editError: String?,
+    onEditCustomer: (String, String?) -> Unit,
+    onClearEditError: () -> Unit,
     onQuery: (String) -> Unit,
     onLoadMore: () -> Unit,
     onOpenProfile: (Customer) -> Unit,
@@ -100,6 +106,9 @@ fun CustomersScreen(
                 deposits = profileDeposits,
                 depositsLoading = profileDepositsLoading,
                 onTakePayment = onTakePayment,
+                editSaving = editSaving,
+                editError = editError,
+                onEditCustomer = onEditCustomer,
                 onBack = onCloseProfile,
                 onUseCustomer = onUseCustomer,
             )
@@ -335,8 +344,13 @@ private fun CustomerProfilePane(
     depositsLoading: Boolean,
     onBack: () -> Unit,
     onTakePayment: () -> Unit,
+    editSaving: Boolean,
+    editError: String?,
+    onEditCustomer: (String, String?) -> Unit,
     onUseCustomer: () -> Unit,
 ) {
+    var editing by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -375,9 +389,18 @@ private fun CustomerProfilePane(
             }
         }
 
-        // Pinned under the header, outside the scroll: exactly one action, and
-        // it is always valid whatever the sections below have loaded.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+        // Pinned under the header, outside the scroll: always valid whatever
+        // the sections below have loaded.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            HandoffButton(
+                label = "Edit details",
+                modifier = Modifier.weight(1f),
+                primary = false,
+                onClick = { editing = true },
+            )
             HandoffButton(
                 label = "Use this customer",
                 modifier = Modifier.weight(1f),
@@ -550,6 +573,96 @@ private fun CustomerProfilePane(
             }
 
             Spacer(Modifier.height(16.dp))
+        }
+    }
+
+    if (editing) {
+        EditCustomerDialog(
+            customer = customer,
+            saving = editSaving,
+            error = editError,
+            onSave = onEditCustomer,
+            onDismiss = { editing = false },
+        )
+    }
+}
+
+/**
+ * Corrects the one thing a cashier learns while the customer stands there:
+ * their name, their number. Money lives elsewhere and stays read-only.
+ *
+ * Closes itself on success by watching the profile swap to what was asked
+ * for — keyed on the values this dialog submitted, so reopening it never
+ * dismisses instantly.
+ */
+@Composable
+private fun EditCustomerDialog(
+    customer: Customer,
+    saving: Boolean,
+    error: String?,
+    onSave: (String, String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf(customer.fullName) }
+    var phone by remember { mutableStateOf(customer.phone.orEmpty()) }
+    var saveRequested by remember { mutableStateOf(false) }
+    val savedName = remember { customer.fullName }
+    val savedPhone = remember { customer.phone }
+
+    LaunchedEffect(customer) {
+        if (saveRequested &&
+            customer.fullName == savedName.trim() &&
+            customer.phone == phone.trim().ifBlank { null }
+        ) {
+            onDismiss()
+        }
+    }
+
+    HandoffDialog(
+        title = "Edit details",
+        width = 460,
+        divided = false,
+        onDismiss = onDismiss,
+    ) {
+        Column(
+            Modifier.padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            FieldLabel("Name")
+            HandoffField(name, { name = it }, "e.g. Marie Appadoo", imeAction = ImeAction.Next)
+            FieldLabel("Mobile")
+            HandoffField(
+                phone,
+                { phone = it },
+                "5xxx xxxx",
+                keyboard = KeyboardType.Phone,
+                mono = true,
+            )
+
+            error?.let {
+                Text(it, fontSize = 12.5.sp, color = Handoff.Danger)
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            HandoffButton(
+                label = "Cancel",
+                modifier = Modifier.weight(1f),
+                primary = false,
+                onClick = onDismiss,
+            )
+            HandoffButton(
+                label = if (saving) "Saving…" else "Save changes",
+                modifier = Modifier.weight(1f),
+                enabled = name.trim().length >= 2 && !saving,
+                onClick = {
+                    saveRequested = true
+                    onSave(name.trim(), phone.trim().ifBlank { null })
+                },
+            )
         }
     }
 }

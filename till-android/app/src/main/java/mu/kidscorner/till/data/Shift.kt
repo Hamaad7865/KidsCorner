@@ -308,6 +308,21 @@ data class CreateCustomerResponse(
     val needsApproval: Boolean = false,
 )
 
+@Serializable
+data class UpdateCustomerRequest(
+    val name: String,
+    /** Blank on the wire becomes null server-side — "no number" is a real state. */
+    val phone: String? = null,
+)
+
+@Serializable
+data class UpdateCustomerResponse(
+    val ok: Boolean,
+    /** The edited customer, with the account state as the server last saw it. */
+    val customer: Customer? = null,
+    val error: String? = null,
+)
+
 // ------------------------------------------------------- payments on account
 
 @Serializable

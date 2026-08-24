@@ -9,6 +9,7 @@ import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -467,6 +468,14 @@ class TillApi(private val http: HttpClient) {
 
     suspend fun createCustomer(token: String, request: CreateCustomerRequest): CreateCustomerResponse =
         http.post("$origin/api/till/customers") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.decode()
+
+    /** Corrects a customer's name and phone number, online only. */
+    suspend fun updateCustomer(token: String, id: Int, request: UpdateCustomerRequest): UpdateCustomerResponse =
+        http.patch("$origin/api/till/customers/$id") {
             bearer(token)
             contentType(ContentType.Application.Json)
             setBody(request)

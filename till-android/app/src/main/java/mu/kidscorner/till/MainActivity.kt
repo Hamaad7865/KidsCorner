@@ -316,6 +316,10 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                     vm.openPaymentFromProfile()
                     overlay = Overlay.AccountPayment
                 },
+                editSaving = state.customerEditSaving,
+                editError = state.customerEditError,
+                onEditCustomer = { name, phone -> vm.editCustomerProfile(name, phone) },
+                onClearEditError = vm::clearCustomerEditError,
                 onUseCustomer = vm::useSelectedCustomer,
                 onBack = vm::closeCustomers,
                 onDismissError = vm::clearCustomerBrowseError,

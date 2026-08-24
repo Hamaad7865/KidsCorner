@@ -212,6 +212,10 @@ class TillRepository(
     suspend fun createCustomer(request: CreateCustomerRequest): Result<CreateCustomerResponse> =
         authed { api.createCustomer(it, request) }
 
+    /** Corrects a customer's name and phone number. Online only, like a refund. */
+    suspend fun updateCustomer(id: Int, request: UpdateCustomerRequest): Result<UpdateCustomerResponse> =
+        authed { api.updateCustomer(it, id, request) }
+
     /** Money received against a customer's account. Online only, like a refund. */
     suspend fun settleCredit(body: SettleCreditRequest): Result<SettleCreditResponse> =
         authed { api.settleCredit(it, body) }
