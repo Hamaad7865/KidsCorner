@@ -99,13 +99,14 @@ interface CatalogDao {
 }
 
 @Database(
-    entities = [CatalogVariant::class, QueuedSale::class],
-    version = 5,
+    entities = [CatalogVariant::class, QueuedSale::class, RecentCustomer::class],
+    version = 6,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
     abstract fun catalog(): CatalogDao
     abstract fun queue(): SaleQueueDao
+    abstract fun recents(): RecentCustomerDao
 
     companion object {
         /**
@@ -166,6 +167,34 @@ abstract class TillDatabase : RoomDatabase() {
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `productCode` TEXT")
+            }
+        }
+
+        /**
+         * Adds the recent-customers cache behind the attach dialog's RECENT
+         * section.
+         *
+         * Written out rather than dropped and refetched for the same reason as
+         * every migration in this database: it shares a file with queued_sales,
+         * and a destructive fallback there would take real unsent revenue with
+         * it.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `recent_customers` (
+                        `id` INTEGER NOT NULL,
+                        `fullName` TEXT NOT NULL,
+                        `phone` TEXT,
+                        `creditEnabled` INTEGER NOT NULL,
+                        `creditBalance` REAL NOT NULL,
+                        `creditOnHold` INTEGER NOT NULL,
+                        `lastUsedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

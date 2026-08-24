@@ -430,6 +430,26 @@ class TillApi(private val http: HttpClient) {
             parameter("q", query)
         }.decode()
 
+    /**
+     * A page of the whole directory, for the browse screen.
+     *
+     * Deliberately separate from [searchCustomers]: that one sends a bare `q=`
+     * on mount and must keep meaning "search, answer empty", never "list
+     * everyone". The pagination parameters are what ask the server for pages.
+     */
+    suspend fun listCustomers(
+        token: String,
+        offset: Int,
+        limit: Int = 40,
+        query: String? = null,
+    ): CustomersResponse =
+        http.get("$origin/api/till/customers") {
+            bearer(token)
+            parameter("offset", offset)
+            parameter("limit", limit)
+            if (!query.isNullOrBlank()) parameter("q", query)
+        }.decode()
+
     suspend fun createCustomer(token: String, request: CreateCustomerRequest): CreateCustomerResponse =
         http.post("$origin/api/till/customers") {
             bearer(token)
@@ -470,11 +490,13 @@ class TillApi(private val http: HttpClient) {
         token: String,
         status: String = "open",
         query: String? = null,
+        customerId: Int? = null,
     ): DepositsListResponse =
         http.get("$origin/api/till/deposits") {
             bearer(token)
             parameter("status", status)
             if (!query.isNullOrBlank()) parameter("q", query)
+            if (customerId != null) parameter("customerId", customerId)
         }.decode()
 
     suspend fun createDeposit(token: String, body: CreateDepositRequest): DepositCreateResponse =
@@ -516,10 +538,11 @@ class TillApi(private val http: HttpClient) {
     suspend fun discounts(token: String): DiscountsResponse =
         http.get("$origin/api/till/discounts") { bearer(token) }.decode()
 
-    suspend fun sales(token: String, query: String): SalesListResponse =
+    suspend fun sales(token: String, query: String, customerId: Int? = null): SalesListResponse =
         http.get("$origin/api/till/sales") {
             bearer(token)
             if (query.isNotBlank()) parameter("q", query)
+            if (customerId != null) parameter("customerId", customerId)
         }.decode()
 
     suspend fun saleDetail(token: String, saleId: Int): SaleDetailResponse =

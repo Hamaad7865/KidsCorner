@@ -117,6 +117,9 @@ sealed interface TillScreen {
     /** Layaways: what is held for whom, and the money against it. */
     data class Deposits(val cashier: Cashier) : TillScreen
 
+    /** The customer directory: browse everyone, open a read-only profile. */
+    data class Customers(val cashier: Cashier) : TillScreen
+
     /** Taking payment for the basket. */
     data class Paying(val cashier: Cashier) : TillScreen
 
@@ -188,6 +191,31 @@ data class TillState(
     val customerResults: List<Customer> = emptyList(),
     val customerSearching: Boolean = false,
     val customerError: String? = null,
+
+    /**
+     * The last customers this till dealt with, cached on the device — the
+     * RECENT section of the attach dialog. Survives a restart, like the
+     * catalog cache it sits beside.
+     */
+    val recentCustomers: List<Customer> = emptyList(),
+
+    /** The customer directory (browse-everyone screen), server-paginated. */
+    val customerBrowse: List<Customer> = emptyList(),
+    val customerBrowseLoading: Boolean = false,
+    val customerBrowseQuery: String = "",
+    val customerBrowseOffset: Int = 0,
+    val customerBrowseHasMore: Boolean = false,
+    val customerBrowseError: String? = null,
+
+    /** The customer whose read-only profile is open, if any. */
+    val customerProfile: Customer? = null,
+    val customerProfileCharges: List<CreditCharge> = emptyList(),
+    val customerProfileBalance: Double = 0.0,
+    val customerProfileChargesLoading: Boolean = false,
+    val customerProfileSales: List<SaleSummary> = emptyList(),
+    val customerProfileSalesLoading: Boolean = false,
+    val customerProfileDeposits: List<DepositSummaryRow> = emptyList(),
+    val customerProfileDepositsLoading: Boolean = false,
 
     /** Rules the cashier may offer. Refreshed with the catalog. */
     val discountRules: List<DiscountRule> = emptyList(),
@@ -369,6 +397,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             TillDatabase.MIGRATION_2_3,
             TillDatabase.MIGRATION_3_4,
             TillDatabase.MIGRATION_4_5,
+            TillDatabase.MIGRATION_5_6,
         )
         .build()
 
@@ -379,6 +408,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         gate = OfflineGate(app),
         catalog = db.catalog(),
         queue = db.queue(),
+        recents = db.recents(),
     )
 
     private val printerSettings = PrinterSettings(app)
@@ -519,7 +549,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // Whatever was cached last time, on screen before the network is asked.
         val cached = repo.cachedCatalog()
         if (cached.isNotEmpty()) _state.update { it.copy(catalog = cached) }
-        _state.update { it.copy(queuedCount = repo.queuedCount()) }
+        // Recents too: the attach dialog should show yesterday's regulars
+        // before any fetch answers, same as the catalog does.
+        val recents = repo.recentCustomers()
+        _state.update { it.copy(queuedCount = repo.queuedCount(), recentCustomers = recents) }
 
         loadShop()
         startQueuePump()
@@ -2472,6 +2505,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         is TillScreen.Selling -> screen.cashier
         is TillScreen.StockCheck -> screen.cashier
         is TillScreen.Deposits -> screen.cashier
+        is TillScreen.Customers -> screen.cashier
         is TillScreen.Paying -> screen.cashier
         is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.ClosingShift -> screen.cashier
@@ -2767,6 +2801,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun attachCustomer(customer: Customer?) {
         if (_state.value.settleFrozen) return
         _state.update { it.copy(customer = customer, customerResults = emptyList()) }
+        // Every attach is a "this customer came in" event, wherever it started
+        // from — search, recents or the directory's Use button.
+        if (customer != null) recordRecentCustomer(customer)
     }
 
     /**
@@ -2825,6 +2862,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             pendingCustomerCreate = null,
                         )
                     }
+                    // Created and immediately used — a first touch, by definition.
+                    recordRecentCustomer(response.customer)
                 } else if (response.needsApproval) {
                     // Held, not discarded: the prompt resubmits this exact name
                     // and phone once a manager has typed their PIN, the same
@@ -2871,6 +2910,217 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearPendingCustomerCreate() =
         _state.update { it.copy(pendingCustomerCreate = null, needsApproval = false) }
+
+    // -------------------------------------------------- customer directory
+
+    /**
+     * The browse-everyone screen and the profile it opens.
+     *
+     * Deliberately separate state from the attach dialog's search: browsing is
+     * paginated and must survive a detour into a profile, where the dialog's
+     * results are disposable. The three profile fetches are independent on
+     * purpose — charges, sales and deposits land as each arrives rather than
+     * waiting for the slowest, following the hand-rolled convention of
+     * loadCreditStatement / selectDeposit / openRefund.
+     */
+    private var customerBrowseJob: Job? = null
+
+    private fun recordRecentCustomer(customer: Customer) {
+        viewModelScope.launch {
+            repo.touchRecentCustomer(customer)
+            _state.update { it.copy(recentCustomers = repo.recentCustomers()) }
+        }
+    }
+
+    /** Opens the directory screen and pulls its first page. */
+    fun openCustomers() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(screen = TillScreen.Customers(cashier), customerBrowseError = null)
+        }
+        loadCustomerBrowse(reset = true)
+    }
+
+    /** Leaves the directory entirely — back to checkout, everything dropped. */
+    fun closeCustomers() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        customerBrowseJob?.cancel()
+        _state.update {
+            it.copy(
+                screen = TillScreen.Selling(cashier),
+                customerBrowse = emptyList(),
+                customerBrowseQuery = "",
+                customerBrowseOffset = 0,
+                customerBrowseHasMore = false,
+                customerBrowseError = null,
+                customerProfile = null,
+                customerProfileCharges = emptyList(),
+                customerProfileSales = emptyList(),
+                customerProfileDeposits = emptyList(),
+                customerProfileChargesLoading = false,
+                customerProfileSalesLoading = false,
+                customerProfileDepositsLoading = false,
+            )
+        }
+    }
+
+    fun searchCustomerBrowse(query: String) {
+        _state.update { it.copy(customerBrowseQuery = query) }
+        loadCustomerBrowse(reset = true)
+    }
+
+    fun loadMoreCustomers() {
+        if (_state.value.customerBrowseLoading || !_state.value.customerBrowseHasMore) return
+        loadCustomerBrowse(reset = false)
+    }
+
+    fun clearCustomerBrowseError() =
+        _state.update { it.copy(customerBrowseError = null) }
+
+    /**
+     * Fetches one page of the directory.
+     *
+     * Cancel-and-restart per search keystroke, the same race the attach
+     * dialog's search serialises against: a slow answer for "ma" must never
+     * overwrite a fast one for "marie". A stale append (a page for an older
+     * query landing after a reset) is dropped by comparing the live query.
+     */
+    private fun loadCustomerBrowse(reset: Boolean) {
+        customerBrowseJob?.cancel()
+        val current = _state.value
+        val offset = if (reset) 0 else current.customerBrowseOffset
+        val query = current.customerBrowseQuery.trim().takeIf { it.length >= 2 }
+
+        customerBrowseJob = viewModelScope.launch {
+            _state.update { it.copy(customerBrowseLoading = true) }
+            repo.listCustomers(offset = offset, query = query)
+                .onSuccess { response ->
+                    if (reset && _state.value.customerBrowseQuery != current.customerBrowseQuery) return@onSuccess
+                    _state.update {
+                        if (!response.ok) {
+                            it.copy(
+                                customerBrowseLoading = false,
+                                customerBrowseError = response.error ?: "Could not load customers.",
+                            )
+                        } else {
+                            it.copy(
+                                customerBrowseLoading = false,
+                                customerBrowse = if (reset) response.customers
+                                else it.customerBrowse + response.customers,
+                                customerBrowseOffset = offset + response.customers.size,
+                                customerBrowseHasMore = response.hasMore,
+                                customerBrowseError = null,
+                            )
+                        }
+                    }
+                }
+                .onFailure { cause ->
+                    if (reset && _state.value.customerBrowseQuery != current.customerBrowseQuery) return@onFailure
+                    _state.update {
+                        it.copy(
+                            customerBrowseLoading = false,
+                            customerBrowseError = moneyMessage(cause.message ?: "Could not load customers."),
+                        )
+                    }
+                }
+        }
+    }
+
+    /**
+     * Opens a read-only profile.
+     *
+     * Sets the header immediately so the pane renders while the three sections
+     * still stream in. Nothing here touches checkout's attached customer —
+     * looking is not attaching; only [useSelectedCustomer] does that.
+     */
+    fun selectCustomerProfile(customer: Customer) {
+        _state.update {
+            it.copy(
+                customerProfile = customer,
+                customerProfileCharges = emptyList(),
+                customerProfileSales = emptyList(),
+                customerProfileDeposits = emptyList(),
+                customerProfileBalance = 0.0,
+                customerProfileChargesLoading = true,
+                customerProfileSalesLoading = true,
+                customerProfileDepositsLoading = true,
+            )
+        }
+        loadCustomerProfileCharges(customer.id)
+        loadCustomerProfileSales(customer.id)
+        loadCustomerProfileDeposits(customer.id)
+    }
+
+    /** Back from the profile to the list pane, keeping scroll position and pages. */
+    fun closeCustomerProfile() {
+        _state.update {
+            it.copy(
+                customerProfile = null,
+                customerProfileCharges = emptyList(),
+                customerProfileSales = emptyList(),
+                customerProfileDeposits = emptyList(),
+                customerProfileChargesLoading = false,
+                customerProfileSalesLoading = false,
+                customerProfileDepositsLoading = false,
+            )
+        }
+    }
+
+    /** The ONE place browsing turns into an attach. */
+    fun useSelectedCustomer() {
+        val profile = _state.value.customerProfile ?: return
+        closeCustomerProfile()
+        attachCustomer(profile)
+        closeCustomers()
+    }
+
+    private fun loadCustomerProfileCharges(customerId: Int) = viewModelScope.launch {
+        repo.creditStatement(customerId)
+            .onSuccess { response ->
+                _state.update {
+                    it.copy(
+                        customerProfileChargesLoading = false,
+                        customerProfileCharges = response.charges,
+                        // The balance rides along with the same answer; zeroed
+                        // when the read failed so no stale figure lingers.
+                        customerProfileBalance = if (response.ok) response.balance else 0.0,
+                    )
+                }
+            }
+            .onFailure {
+                _state.update { s -> s.copy(customerProfileChargesLoading = false) }
+            }
+    }
+
+    private fun loadCustomerProfileSales(customerId: Int) = viewModelScope.launch {
+        repo.sales(query = "", customerId = customerId)
+            .onSuccess { response ->
+                _state.update {
+                    it.copy(
+                        customerProfileSalesLoading = false,
+                        customerProfileSales = if (response.ok) response.sales else emptyList(),
+                    )
+                }
+            }
+            .onFailure {
+                _state.update { s -> s.copy(customerProfileSalesLoading = false) }
+            }
+    }
+
+    private fun loadCustomerProfileDeposits(customerId: Int) = viewModelScope.launch {
+        repo.deposits(status = "all", customerId = customerId)
+            .onSuccess { response ->
+                _state.update {
+                    it.copy(
+                        customerProfileDepositsLoading = false,
+                        customerProfileDeposits = if (response.ok) response.deposits else emptyList(),
+                    )
+                }
+            }
+            .onFailure {
+                _state.update { s -> s.copy(customerProfileDepositsLoading = false) }
+            }
+    }
 
     // ------------------------------------------------------------ discount
 

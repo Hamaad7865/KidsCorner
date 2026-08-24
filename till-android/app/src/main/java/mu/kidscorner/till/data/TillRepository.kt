@@ -21,6 +21,7 @@ class TillRepository(
     private val gate: OfflineGate,
     private val catalog: CatalogDao,
     private val queue: SaleQueueDao,
+    private val recents: RecentCustomerDao,
 ) {
 
     private val refreshLock = Mutex()
@@ -171,6 +172,40 @@ class TillRepository(
     suspend fun searchCustomers(query: String): Result<CustomersResponse> =
         authed { api.searchCustomers(it, query) }
 
+    /** One page of the whole directory, for the browse screen. */
+    suspend fun listCustomers(offset: Int, limit: Int = 40, query: String? = null): Result<CustomersResponse> =
+        authed { api.listCustomers(it, offset, limit, query) }
+
+    // ── recent customers, cached on this device ────────────────────────────
+
+    /** The RECENT list, newest touch first. Reads local only — never fails. */
+    suspend fun recentCustomers(): List<Customer> = runCatching {
+        recents.recent(RECENT_CUSTOMERS_CAP).map { it.toCustomer() }
+    }.getOrDefault(emptyList())
+
+    /**
+     * Records a customer as just-used.
+     *
+     * Best-effort on purpose: it rides along with an attach the cashier has
+     * already watched succeed, and a failed cache write must never turn into
+     * "the customer could not be attached".
+     */
+    suspend fun touchRecentCustomer(customer: Customer) {
+        runCatching {
+            recents.touchAndTrim(
+                RecentCustomer(
+                    id = customer.id,
+                    fullName = customer.fullName,
+                    phone = customer.phone,
+                    creditEnabled = customer.creditEnabled,
+                    creditBalance = customer.creditBalance,
+                    creditOnHold = customer.creditOnHold,
+                    lastUsedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
     suspend fun createCustomer(request: CreateCustomerRequest): Result<CreateCustomerResponse> =
         authed { api.createCustomer(it, request) }
 
@@ -184,8 +219,12 @@ class TillRepository(
 
     // ── deposits (layaway). All online only — money against server state. ──
 
-    suspend fun deposits(status: String = "open", query: String? = null): Result<DepositsListResponse> =
-        authed { api.deposits(it, status, query) }
+    suspend fun deposits(
+        status: String = "open",
+        query: String? = null,
+        customerId: Int? = null,
+    ): Result<DepositsListResponse> =
+        authed { api.deposits(it, status, query, customerId) }
 
     suspend fun createDeposit(body: CreateDepositRequest): Result<DepositCreateResponse> =
         authed { api.createDeposit(it, body) }
@@ -204,7 +243,8 @@ class TillRepository(
 
     suspend fun discounts(): Result<DiscountsResponse> = authed { api.discounts(it) }
 
-    suspend fun sales(query: String): Result<SalesListResponse> = authed { api.sales(it, query) }
+    suspend fun sales(query: String, customerId: Int? = null): Result<SalesListResponse> =
+        authed { api.sales(it, query, customerId) }
 
     suspend fun saleDetail(saleId: Int): Result<SaleDetailResponse> =
         authed { api.saleDetail(it, saleId) }

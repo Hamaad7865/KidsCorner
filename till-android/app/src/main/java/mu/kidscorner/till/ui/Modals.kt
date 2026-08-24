@@ -79,9 +79,11 @@ fun CustomerDialog(
     searching: Boolean,
     error: String?,
     attachedCustomerId: Int?,
+    recents: List<Customer>,
     onSearch: (String) -> Unit,
     onPick: (Customer) -> Unit,
     onCreate: (String, String?, Boolean) -> Unit,
+    onBrowseCustomers: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -124,6 +126,9 @@ fun CustomerDialog(
             }
 
             Column(Modifier.weight(1f, fill = false).padding(horizontal = 20.dp)) {
+                // Under two characters the box is not searching, so it shows
+                // the device's own recents; past that it shows live matches.
+                val visible = if (query.length < 2) recents else results
                 Text(
                     when {
                         searching -> "SEARCHING"
@@ -144,7 +149,7 @@ fun CustomerDialog(
                     }
                 } else {
                     LazyColumn(Modifier.heightIn(max = 300.dp)) {
-                        items(results, key = { it.id }) { customer ->
+                        items(visible, key = { it.id }) { customer ->
                             Surface(
                                 onClick = { onPick(customer) },
                                 color = Color.Transparent,
@@ -193,6 +198,13 @@ fun CustomerDialog(
                     if (query.length >= 2 && results.isEmpty()) {
                         Text(
                             "No customer matches. Add them below.",
+                            fontSize = 12.5.sp,
+                            color = Handoff.Muted3,
+                            modifier = Modifier.padding(vertical = 10.dp),
+                        )
+                    } else if (query.length < 2 && recents.isEmpty()) {
+                        Text(
+                            "No recent customers yet. Search above or browse everyone.",
                             fontSize = 12.5.sp,
                             color = Handoff.Muted3,
                             modifier = Modifier.padding(vertical = 10.dp),
@@ -254,13 +266,13 @@ fun CustomerDialog(
             Modifier.fillMaxWidth().padding(20.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            HandoffButton(
-                label = if (adding) "Back to search" else "Add a new customer",
-                modifier = Modifier.weight(1f),
-                primary = false,
-                onClick = { adding = !adding },
-            )
             if (adding) {
+                HandoffButton(
+                    label = "Back to search",
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                    onClick = { adding = false },
+                )
                 HandoffButton(
                     label = if (searching) "Adding…" else "Add and attach",
                     modifier = Modifier.weight(1f),
@@ -269,6 +281,22 @@ fun CustomerDialog(
                         createRequested = true
                         onCreate(newName.trim(), newPhone.trim().ifBlank { null }, openAccount)
                     },
+                )
+            } else {
+                // The second, deliberate path: browse the whole directory and
+                // read a profile before deciding. Attaching stays the explicit
+                // act it always was — this button only opens the list.
+                HandoffButton(
+                    label = "Show customers",
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                    onClick = onBrowseCustomers,
+                )
+                HandoffButton(
+                    label = "Add a new customer",
+                    modifier = Modifier.weight(1f),
+                    primary = false,
+                    onClick = { adding = true },
                 )
             }
         }

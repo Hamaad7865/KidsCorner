@@ -574,9 +574,11 @@ class GalleryActivity : ComponentActivity() {
                             searching = false,
                             error = null,
                             attachedCustomerId = null,
+                            recents = SAMPLE_CUSTOMERS.take(2),
                             onSearch = {},
                             onPick = {},
                             onCreate = { _, _, _ -> },
+                            onBrowseCustomers = {},
                             onDismiss = { showing = null },
                         )
 

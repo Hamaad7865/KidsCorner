@@ -40,6 +40,7 @@ import mu.kidscorner.till.ui.BasketDiscountDialog
 import mu.kidscorner.till.ui.CloseShiftScreen
 import mu.kidscorner.till.ui.CustomItemDialog
 import mu.kidscorner.till.ui.CustomerDialog
+import mu.kidscorner.till.ui.CustomersScreen
 import mu.kidscorner.till.ui.DepositCreateDialog
 import mu.kidscorner.till.ui.DepositsScreen
 import mu.kidscorner.till.ui.DeviceSetupScreen
@@ -291,6 +292,31 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 onDismissError = vm::clearDepositError,
             )
 
+            is TillScreen.Customers -> CustomersScreen(
+                cashierName = screen.cashier.fullName,
+                online = state.online,
+                browse = state.customerBrowse,
+                browseLoading = state.customerBrowseLoading,
+                browseQuery = state.customerBrowseQuery,
+                browseHasMore = state.customerBrowseHasMore,
+                error = state.customerBrowseError,
+                profile = state.customerProfile,
+                profileCharges = state.customerProfileCharges,
+                profileBalance = state.customerProfileBalance,
+                profileChargesLoading = state.customerProfileChargesLoading,
+                profileSales = state.customerProfileSales,
+                profileSalesLoading = state.customerProfileSalesLoading,
+                profileDeposits = state.customerProfileDeposits,
+                profileDepositsLoading = state.customerProfileDepositsLoading,
+                onQuery = vm::searchCustomerBrowse,
+                onLoadMore = vm::loadMoreCustomers,
+                onOpenProfile = vm::selectCustomerProfile,
+                onCloseProfile = vm::closeCustomerProfile,
+                onUseCustomer = vm::useSelectedCustomer,
+                onBack = vm::closeCustomers,
+                onDismissError = vm::clearCustomerBrowseError,
+            )
+
             is TillScreen.Paying -> PaymentScreen(
                 totals = state.totals,
                 lines = state.lines,
@@ -414,9 +440,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             searching = state.customerSearching,
             error = state.customerError,
             attachedCustomerId = state.customer?.id,
+            recents = state.recentCustomers,
             onSearch = vm::searchCustomers,
             onPick = { vm.attachCustomer(it); overlay = Overlay.None },
             onCreate = { name, phone, openAccount -> vm.createCustomer(name, phone, openAccount) },
+            onBrowseCustomers = {
+                overlay = Overlay.None
+                vm.openCustomers()
+            },
             onDismiss = { overlay = Overlay.None },
         )
 
@@ -664,6 +695,12 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Deposits) {
         vm.closeDeposits()
+    }
+    // Two-level back: a profile first returns to the list, not checkout. Losing
+    // the browse position — scroll offset and loaded pages — to one accidental
+    // back press would be a worse outcome than redoing the cheap list fetch.
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Customers) {
+        if (state.customerProfile != null) vm.closeCustomerProfile() else vm.closeCustomers()
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Selling) {
         /* swallowed */

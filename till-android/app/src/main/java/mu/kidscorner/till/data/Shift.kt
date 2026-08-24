@@ -271,6 +271,8 @@ data class Customer(
 data class CustomersResponse(
     val ok: Boolean = true,
     val customers: List<Customer> = emptyList(),
+    /** Browse mode only: whether another page follows this one. */
+    val hasMore: Boolean = false,
     val error: String? = null,
 )
 
