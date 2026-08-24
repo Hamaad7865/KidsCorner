@@ -24,41 +24,97 @@ import { verifyApproval } from "@/lib/pos/sale-core"
  * database re-checks the limit under a lock, so a stale balance here can show an
  * old number but can never authorise a charge.
  */
+/**
+ * The shape both read paths send. One mapper so the search path and the browse
+ * path can never drift apart in what a customer row looks like to the till.
+ */
+function toCustomer(row: {
+  customer_id: number | null
+  full_name: string | null
+  phone: string | null
+  credit_enabled: boolean | null
+  credit_on_hold: boolean | null
+  balance: number | string | null
+}) {
+  return {
+    id: row.customer_id,
+    fullName: row.full_name ?? "",
+    phone: row.phone,
+    // Named so an older APK that does not know about credit simply ignores
+    // them. `creditEnabled` false is the "no account" case the till keys off.
+    creditEnabled: row.credit_enabled ?? false,
+    creditBalance: round2(Number(row.balance ?? 0)),
+    creditOnHold: row.credit_on_hold ?? false,
+  }
+}
+
 export async function GET(request: Request) {
   const session = await requireTillSession(request)
   if ("response" in session) return session.response
 
-  const query = new URL(request.url).searchParams.get("q")?.trim() ?? ""
-  // Two characters minimum, so an empty box does not stream the whole list back.
-  if (query.length < 2) return NextResponse.json({ ok: true, customers: [] })
+  const params = new URL(request.url).searchParams
+  const query = params.get("q")?.trim() ?? ""
 
-  // Escaped before interpolation: % and _ are wildcards in LIKE, and a comma
-  // would end the PostgREST `or` filter and let the rest be read as new
-  // conditions.
-  const safe = query.replace(/[%_,()]/g, "")
-  if (safe.length < 2) return NextResponse.json({ ok: true, customers: [] })
+  // ── browse mode: the customer directory ────────────────────────────────────
+  //
+  // Gated on explicit pagination params rather than on q being blank. The
+  // attach dialog already sends `q=""` on mount and expects an empty list
+  // back — branching on a blank query would silently turn that into a fetch
+  // of everyone. An explicit `offset`/`limit` is an unambiguous ask for pages.
+  const offsetParam = params.get("offset")
+  const limitParam = params.get("limit")
+  if (offsetParam === null && limitParam === null) {
+    // Two characters minimum, so an empty box does not stream the whole list back.
+    if (query.length < 2) return NextResponse.json({ ok: true, customers: [] })
 
-  const { data, error } = await session.supabase
+    // Escaped before interpolation: % and _ are wildcards in LIKE, and a comma
+    // would end the PostgREST `or` filter and let the rest be read as new
+    // conditions.
+    const safe = query.replace(/[%_,()]/g, "")
+    if (safe.length < 2) return NextResponse.json({ ok: true, customers: [] })
+
+    const { data, error } = await session.supabase
+      .from("customer_credit_accounts")
+      .select("customer_id, full_name, phone, credit_enabled, credit_on_hold, balance")
+      .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
+      .order("full_name")
+      .limit(20)
+
+    if (error) return apiError(error.message, 500)
+
+    return NextResponse.json({
+      ok: true,
+      customers: (data ?? []).map((row) => toCustomer(row)),
+    })
+  }
+
+  const offset = Math.max(0, Number.parseInt(offsetParam ?? "0", 10) || 0)
+  const limit = Math.min(100, Math.max(1, Number.parseInt(limitParam ?? "40", 10) || 40))
+
+  // Same view as the search: the directory wants the account state too, so a
+  // card can show who owes what without a second round trip.
+  let select = session.supabase
     .from("customer_credit_accounts")
     .select("customer_id, full_name, phone, credit_enabled, credit_on_hold, balance")
-    .or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
     .order("full_name")
-    .limit(20)
 
+  // The browse screen's own search box composes with pagination: same escape,
+  // same two-character floor as the dialog's search above.
+  if (query.length >= 2) {
+    const safe = query.replace(/[%_,()]/g, "")
+    if (safe.length >= 2) select = select.or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`)
+  }
+
+  const { data, error } = await select.range(offset, offset + limit - 1)
   if (error) return apiError(error.message, 500)
 
+  const rows = data ?? []
   return NextResponse.json({
     ok: true,
-    customers: (data ?? []).map((row) => ({
-      id: row.customer_id,
-      fullName: row.full_name,
-      phone: row.phone,
-      // Named so an older APK that does not know about credit simply ignores
-      // them. `creditEnabled` false is the "no account" case the till keys off.
-      creditEnabled: row.credit_enabled ?? false,
-      creditBalance: round2(Number(row.balance ?? 0)),
-      creditOnHold: row.credit_on_hold ?? false,
-    })),
+    customers: rows.map((row) => toCustomer(row)),
+    // No COUNT query: "the page came back full" is close enough for a Load-more
+    // button that simply goes quiet when the next page is empty or short.
+    hasMore: rows.length === limit,
   })
 }
 

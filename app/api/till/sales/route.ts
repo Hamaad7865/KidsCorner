@@ -13,14 +13,29 @@ import { requireTillSession } from "@/lib/api/till-session"
  * Not scoped to the open shift. The commonest reprint is "the customer came
  * back after we changed shift", and a history that hid yesterday's sale would
  * fail exactly when it is needed.
+ *
+ * `customerId` switches the endpoint into "one customer's history" mode: the
+ * same shape, but a higher cap, because a profile wants completeness where the
+ * quick-reprint list wants recency. Without it the route behaves exactly as it
+ * always did.
  */
 const LIMIT = 40
+const CUSTOMER_HISTORY_LIMIT = 200
+
+/** A positive integer, or null — anything else is treated as absent. */
+function customerIdParam(raw: string | null): number | null {
+  if (!/^\d+$/.test(raw ?? "")) return null
+  const id = Number(raw)
+  return id > 0 ? id : null
+}
 
 export async function GET(request: Request) {
   const session = await requireTillSession(request)
   if ("response" in session) return session.response
 
-  const query = new URL(request.url).searchParams.get("q")?.trim() ?? ""
+  const params = new URL(request.url).searchParams
+  const query = params.get("q")?.trim() ?? ""
+  const customerId = customerIdParam(params.get("customerId"))
 
   let select = session.supabase
     .from("sales")
@@ -31,7 +46,11 @@ export async function GET(request: Request) {
        sale_items ( qty )`,
     )
     .order("id", { ascending: false })
-    .limit(LIMIT)
+    .limit(customerId ? CUSTOMER_HISTORY_LIMIT : LIMIT)
+
+  // Composes with the sale-number search: a customer's history filtered to one
+  // receipt number is exactly how "which visit was this?" gets answered.
+  if (customerId) select = select.eq("customer_id", customerId)
 
   if (query.length >= 2) {
     // Escaped before interpolation: % and _ are LIKE wildcards, and a comma

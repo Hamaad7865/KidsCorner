@@ -34,7 +34,47 @@ vi.mock("@/lib/activity/audit", () => ({
   logAudit: (...args: unknown[]) => logAuditSpy(...args),
 }))
 
-const { POST } = await import("./route")
+const { POST, GET } = await import("./route")
+
+/**
+ * A chainable stub for the read paths: every builder returns the chain, and
+ * the chain itself is thenable, so whichever call the route awaits last
+ * resolves the whole run. Every builder call is recorded, in order, so tests
+ * can assert on the filters rather than trust the shape.
+ */
+function readChain(result: { data: unknown[] | null; error: { message: string } | null }) {
+  const calls: Array<[string, unknown[]]> = []
+  const chain: Record<string, unknown> = {}
+  const step = (name: string) => (...args: unknown[]) => {
+    calls.push([name, args])
+    return chain
+  }
+  for (const name of ["select", "or", "ilike", "eq", "order"]) chain[name] = step(name)
+  chain.limit = (...args: unknown[]) => {
+    calls.push(["limit", args])
+    return chain
+  }
+  chain.range = (...args: unknown[]) => {
+    calls.push(["range", args])
+    return chain
+  }
+  chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve, reject)
+  return { chain: chain as never, calls }
+}
+
+const getBody = async (url: string) => (await GET(new Request(url))).json()
+
+const CUSTOMER_ROWS = [
+  {
+    customer_id: 7,
+    full_name: "Rita Appadoo",
+    phone: "5712 3456",
+    credit_enabled: true,
+    credit_on_hold: false,
+    balance: 120.5,
+  },
+]
 
 const body = (over: Record<string, unknown> = {}) => ({
   name: "Rita Appadoo",
@@ -139,5 +179,113 @@ describe("the duplicate-phone error", () => {
       ok: false,
       error: "A customer with that phone number already exists.",
     })
+  })
+})
+
+describe("the attach-dialog search (GET ?q=)", () => {
+  it("answers an empty list for an empty box, and nothing else", async () => {
+    // The dialog fires this on mount. The browse screen must not hijack it.
+    const json = await getBody("http://t/api/till/customers?q=")
+
+    expect(json).toEqual({ ok: true, customers: [] })
+    // Not even looked at the database.
+    expect(session.supabase.from).not.toHaveBeenCalled()
+  })
+
+  it("searches names and phones, capped, with no hasMore key", async () => {
+    session.supabase.from.mockReturnValue(readChain({ data: CUSTOMER_ROWS, error: null }).chain)
+
+    const json = await getBody("http://t/api/till/customers?q=rita")
+
+    // Byte-identical to the pre-browse contract: no pagination keys at all,
+    // so an older APK parsing this response sees exactly what it always saw.
+    expect(json).toEqual({
+      ok: true,
+      customers: [
+        {
+          id: 7,
+          fullName: "Rita Appadoo",
+          phone: "5712 3456",
+          creditEnabled: true,
+          creditBalance: 120.5,
+          creditOnHold: false,
+        },
+      ],
+    })
+    expect("hasMore" in json).toBe(false)
+  })
+})
+
+describe("browse mode (?offset= / ?limit=)", () => {
+  it("a full page says there is more; a short page says it is the last", async () => {
+    const full = [{ ...CUSTOMER_ROWS[0], customer_id: 1 }, { ...CUSTOMER_ROWS[0], customer_id: 2 }]
+    session.supabase.from.mockReturnValue(readChain({ data: full, error: null }).chain)
+    const first = await getBody("http://t/api/till/customers?offset=0&limit=2")
+    expect(first.hasMore).toBe(true)
+
+    const last = [CUSTOMER_ROWS[0]]
+    session.supabase.from.mockReturnValue(readChain({ data: last, error: null }).chain)
+    const second = await getBody("http://t/api/till/customers?offset=2&limit=2")
+    expect(second.hasMore).toBe(false)
+  })
+
+  it("either pagination param alone is enough to enter browse mode", async () => {
+    session.supabase.from.mockReturnValue(readChain({ data: [], error: null }).chain)
+
+    const offsetOnly = await getBody("http://t/api/till/customers?offset=40")
+    const limitOnly = await getBody("http://t/api/till/customers?limit=40")
+
+    expect(offsetOnly).toMatchObject({ ok: true, customers: [], hasMore: false })
+    expect(limitOnly).toMatchObject({ ok: true, customers: [], hasMore: false })
+  })
+
+  it("pages by range, ordered by name", async () => {
+    const { chain, calls } = readChain({ data: [], error: null })
+    session.supabase.from.mockReturnValue(chain)
+
+    await getBody("http://t/api/till/customers?offset=40&limit=40")
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ["order", ["full_name"]],
+        ["range", [40, 79]],
+      ]),
+    )
+    expect(session.supabase.from).toHaveBeenCalledWith("customer_credit_accounts")
+  })
+
+  it("composes the search box with pagination", async () => {
+    const { chain, calls } = readChain({ data: [], error: null })
+    session.supabase.from.mockReturnValue(chain)
+
+    await getBody("http://t/api/till/customers?offset=0&limit=40&q=rita")
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ["or", ["full_name.ilike.%rita%,phone.ilike.%rita%"]],
+        ["range", [0, 39]],
+      ]),
+    )
+  })
+
+  it("clamps silly numbers instead of passing them through", async () => {
+    const { calls } = (() => {
+      const built = readChain({ data: [], error: null })
+      session.supabase.from.mockReturnValue(built.chain)
+      return built
+    })()
+
+    await getBody("http://t/api/till/customers?offset=-5&limit=9999")
+
+    expect(calls).toEqual(expect.arrayContaining([["range", [0, 99]]]))
+  })
+
+  it("a read failure still reads as a 500", async () => {
+    session.supabase.from.mockReturnValue(
+      readChain({ data: null, error: { message: "connection refused" } }).chain,
+    )
+
+    const response = await GET(new Request("http://t/api/till/customers?offset=0&limit=40"))
+    expect(response.status).toBe(500)
   })
 })

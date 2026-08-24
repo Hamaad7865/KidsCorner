@@ -22,13 +22,24 @@ import { formatRs } from "@/lib/format"
  *        cannot be skipped — same rule as a sale's line discount.
  */
 
+/** A positive integer, or null — anything else is treated as absent. */
+function customerIdParam(raw: string | null): number | null {
+  if (!/^\d+$/.test(raw ?? "")) return null
+  const id = Number(raw)
+  return id > 0 ? id : null
+}
+
 export async function GET(request: Request) {
   const session = await requireTillSession(request)
   if ("response" in session) return session.response
 
   const url = new URL(request.url)
   const q = (url.searchParams.get("q") ?? "").trim()
-  const status = url.searchParams.get("status") ?? "open"
+  const customerId = customerIdParam(url.searchParams.get("customerId"))
+  // A profile wants the customer's WHOLE deposit history, so browsing one
+  // customer defaults to every status; the till's own list still defaults to
+  // the live ones. An explicit ?status= wins in both cases.
+  const status = url.searchParams.get("status") ?? (customerId !== null ? "all" : "open")
 
   let query = session.supabase
     .from("deposit_order_summaries")
@@ -39,6 +50,8 @@ export async function GET(request: Request) {
     )
     .order("created_at", { ascending: false })
     .limit(50)
+
+  if (customerId !== null) query = query.eq("customer_id", customerId)
 
   if (status === "open" || status === "collected" || status === "cancelled") {
     query = query.eq("status", status)
