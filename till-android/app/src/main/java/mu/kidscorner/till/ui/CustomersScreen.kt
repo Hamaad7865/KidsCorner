@@ -79,6 +79,7 @@ fun CustomersScreen(
     profileSalesLoading: Boolean,
     profileDeposits: List<DepositSummaryRow>,
     profileDepositsLoading: Boolean,
+    onTakePayment: () -> Unit,
     onQuery: (String) -> Unit,
     onLoadMore: () -> Unit,
     onOpenProfile: (Customer) -> Unit,
@@ -98,6 +99,7 @@ fun CustomersScreen(
                 salesLoading = profileSalesLoading,
                 deposits = profileDeposits,
                 depositsLoading = profileDepositsLoading,
+                onTakePayment = onTakePayment,
                 onBack = onCloseProfile,
                 onUseCustomer = onUseCustomer,
             )
@@ -332,6 +334,7 @@ private fun CustomerProfilePane(
     deposits: List<DepositSummaryRow>,
     depositsLoading: Boolean,
     onBack: () -> Unit,
+    onTakePayment: () -> Unit,
     onUseCustomer: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -436,6 +439,13 @@ private fun CustomerProfilePane(
                                 letterSpacing = 0.8.sp,
                                 color = Handoff.Muted3,
                             )
+                            if (balance > 0) {
+                                HandoffButton(
+                                    label = "Take payment",
+                                    primary = false,
+                                    onClick = onTakePayment,
+                                )
+                            }
                         }
                     }
                 }

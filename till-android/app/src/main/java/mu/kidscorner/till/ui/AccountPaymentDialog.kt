@@ -65,6 +65,8 @@ fun AccountPaymentDialog(
     results: List<Customer>,
     searching: Boolean,
     searchError: String?,
+    /** Set when opened from a customer profile - skips the search step. */
+    presetCustomer: Customer? = null,
     busy: Boolean,
     error: String?,
     done: Boolean,
@@ -79,8 +81,8 @@ fun AccountPaymentDialog(
     onSettle: (customerId: Int, amount: Double, method: String, saleNos: List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
-    var picked by remember { mutableStateOf<Customer?>(null) }
+    var query by remember(presetCustomer) { mutableStateOf("") }
+    var picked by remember(presetCustomer) { mutableStateOf(presetCustomer) }
     var amount by remember { mutableStateOf("") }
     var method by remember { mutableStateOf("") }
     /**
@@ -99,8 +101,10 @@ fun AccountPaymentDialog(
 
     // Debounced: the same scanner-speed typist the customer picker serves.
     LaunchedEffect(query) {
-        delay(300)
-        if (picked == null) onSearch(query)
+        if (presetCustomer == null) {
+            delay(300)
+            if (picked == null) onSearch(query)
+        }
     }
 
     // Cash first only while a shift is open; otherwise the first method that

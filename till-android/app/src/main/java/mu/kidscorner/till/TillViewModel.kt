@@ -211,6 +211,7 @@ data class TillState(
     val customerProfile: Customer? = null,
     val customerProfileCharges: List<CreditCharge> = emptyList(),
     val customerProfileBalance: Double = 0.0,
+    val creditPaymentPreset: Customer? = null,
     val customerProfileChargesLoading: Boolean = false,
     val customerProfileSales: List<SaleSummary> = emptyList(),
     val customerProfileSalesLoading: Boolean = false,
@@ -1212,6 +1213,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                 if (row.id == customerId) row.copy(creditBalance = response.balance)
                                 else row
                             },
+                            customerProfile = it.customerProfile?.takeIf { c -> c.id == customerId }
+                                ?.copy(creditBalance = response.balance),
+                            customerProfileBalance = if (it.customerProfile?.id == customerId) response.balance
+                                else it.customerProfileBalance,
                         )
                     } else {
                         it.copy(
@@ -1250,6 +1255,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 creditPaymentDone = false,
                 creditPaymentError = null,
+                creditPaymentPreset = null,
                 creditCharges = emptyList(),
                 creditChargesLoading = false,
             )
@@ -3072,6 +3078,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         closeCustomerProfile()
         attachCustomer(profile)
         closeCustomers()
+    }
+
+    /** Opens the account-payment view pre-loaded with the profile's customer. */
+    fun openPaymentFromProfile() {
+        val profile = _state.value.customerProfile ?: return
+        _state.update { it.copy(creditPaymentPreset = profile) }
+        loadCreditStatement(profile.id)
     }
 
     private fun loadCustomerProfileCharges(customerId: Int) = viewModelScope.launch {
