@@ -272,13 +272,6 @@ fun SellScreen(
     var query by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf<ProductGroup?>(null) }
     var tab by remember { mutableStateOf<Int?>(null) }
-
-    /**
-     * Whether the till's own keyboard (KcKeyboard) is showing. It follows the
-     * search field's focus — the field is the one place a cashier types free
-     * text, and the system IME is never used on the tablet.
-     */
-    var searchFocused by remember { mutableStateOf(false) }
     /**
      * The category rail, open unless the tablet is too narrow for three columns.
      *
@@ -411,7 +404,6 @@ fun SellScreen(
                         onSubmit = ::submitSearch,
                         onClear = { query = "" },
                         focusRequester = search,
-                        onFocusedChange = { searchFocused = it },
                         modifier = Modifier.weight(1f),
                     )
                     ScanButton(onClick = ::submitSearch)
@@ -599,21 +591,6 @@ fun SellScreen(
             }
         }
 
-        // The till's own keyboard, docked under everything. It appears only
-        // while the search field is focused and never resizes the screen —
-        // the layout above simply gives up the strip it occupies, the way a
-        // fixed piece of chrome does.
-        KcKeyboard(
-            layout = KcKeyboardLayout.TEXT,
-            visible = searchFocused,
-            onKey = { query += it },
-            onBackspace = { if (query.isNotEmpty()) query = query.dropLast(1) },
-            onDone = {
-                searchFocused = false
-                submitSearch()
-            },
-        )
-
     }
 
     picker?.let { group ->
@@ -644,10 +621,8 @@ private fun SearchField(
     onClear: () -> Unit,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
-    onFocusedChange: (Boolean) -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
-    val keyboardController = LocalSoftwareKeyboardController.current
 
     Box(
         modifier
@@ -678,25 +653,13 @@ private fun SearchField(
                 color = Handoff.Ink,
             ),
             cursorBrush = SolidColor(Handoff.Accent),
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Done,
-                // The till draws its own keyboard (KcKeyboard) — the system
-                // IME must not auto-open when the field takes focus, which
-                // it otherwise does and squeezes the whole sell screen.
-                showKeyboardOnFocus = false,
-            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 46.dp, end = 56.dp)
                 .focusRequester(focusRequester)
-                .onFocusChanged {
-                    focused = it.isFocused
-                    onFocusedChange(it.isFocused)
-                    if (!it.isFocused) {
-                        keyboardController?.hide()
-                    }
-                },
+                .onFocusChanged { focused = it.isFocused },
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text(
