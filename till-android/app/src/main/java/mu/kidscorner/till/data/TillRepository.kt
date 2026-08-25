@@ -269,6 +269,13 @@ class TillRepository(
      */
     suspend fun refund(request: RefundRequest): Result<RefundResponse> = authed { api.refund(it, request) }
 
+    /**
+     * An exchange is never queued, exactly as a return never is: the credit
+     * depends on what has *already* been returned against that sale, which
+     * only the server knows at the moment it is asked.
+     */
+    suspend fun exchange(request: ExchangeRequest): Result<ExchangeResponse> = authed { api.exchange(it, request) }
+
     // --------------------------------------------------------------- queue
 
     /**

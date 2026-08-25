@@ -39,6 +39,7 @@ import mu.kidscorner.till.ui.AccountPaymentDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
 import mu.kidscorner.till.ui.CloseShiftScreen
 import mu.kidscorner.till.ui.CustomItemDialog
+import mu.kidscorner.till.ui.ExchangeScreen
 import mu.kidscorner.till.ui.CustomerDialog
 import mu.kidscorner.till.ui.CustomersScreen
 import mu.kidscorner.till.ui.DepositCreateDialog
@@ -407,6 +408,24 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 }
             }
 
+            is TillScreen.Exchanging -> {
+                val sale = state.selectedSale
+                if (sale == null) {
+                    LaunchedEffect(Unit) { vm.closeExchange() }
+                } else {
+                    ExchangeScreen(
+                        sale = sale,
+                        alreadyReturned = sale.lines.associate { it.id to it.returnedQty },
+                        catalog = state.catalog,
+                        paymentMethods = state.shop?.paymentMethods ?: listOf("cash"),
+                        busy = state.busy,
+                        error = state.historyError,
+                        onBack = vm::closeExchange,
+                        onExchange = vm::submitExchange,
+                    )
+                }
+            }
+
             is TillScreen.ClosingShift -> CloseShiftScreen(
                 totals = state.shiftTotals,
                 summary = state.closeSummary,
@@ -508,6 +527,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onReprint = { vm.printReceipt(it) },
             onGiftReceipt = { vm.printReceipt(it, gift = true) },
             onReturn = { overlay = Overlay.None; vm.openRefund(it) },
+            onExchange = { overlay = Overlay.None; vm.openExchange(it) },
             onDismiss = { overlay = Overlay.None },
         )
 
@@ -681,18 +701,21 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
         Overlay.Approval -> {
             val forRefund = state.pendingRefund != null
             val forCustomerCreate = state.pendingCustomerCreate != null
+            val forExchange = state.pendingExchange != null
             ManagerApprovalDialog(
                 managers = managers,
                 reason = when {
                     forRefund -> state.historyError ?: "This return needs an owner or manager."
                     forCustomerCreate ->
                         state.customerError ?: "Opening a credit account needs an owner or manager."
+                    forExchange -> state.historyError ?: "This exchange needs an owner or manager."
                     else -> state.error ?: "This discount needs an owner or manager."
                 },
                 busy = if (forCustomerCreate) state.customerSearching else state.busy,
                 onApprove = { managerId, pin ->
                     overlay = Overlay.None
                     when {
+                        forExchange -> vm.retryExchange(Approval(managerId, pin))
                         forRefund -> vm.retryRefund(Approval(managerId, pin))
                         forCustomerCreate -> vm.retryCustomerCreate(Approval(managerId, pin))
                         else -> {
@@ -707,6 +730,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                     // left set would re-open this dialog the next time anything
                     // else set `needsApproval`.
                     when {
+                        forExchange -> vm.clearPendingExchange()
                         forRefund -> vm.clearPendingRefund()
                         forCustomerCreate -> vm.clearPendingCustomerCreate()
                         else -> vm.clearApprovalPrompt()

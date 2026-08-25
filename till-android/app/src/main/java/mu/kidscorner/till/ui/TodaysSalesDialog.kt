@@ -70,6 +70,7 @@ fun TodaysSalesDialog(
     onReprint: (Int) -> Unit,
     onGiftReceipt: (Int) -> Unit,
     onReturn: (Int) -> Unit,
+    onExchange: (Int) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf(initialQuery) }
@@ -264,6 +265,34 @@ fun TodaysSalesDialog(
                                 ) {
                                     Text(
                                         "Return",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+
+                            // Same rule as Return — a spent sale has nothing
+                            // left to swap. Accent-tinted rather than danger:
+                            // an exchange takes money, it does not give it.
+                            Surface(
+                                onClick = { onExchange(sale.id) },
+                                enabled = !refunded,
+                                shape = RoundedCornerShape(11.dp),
+                                color = if (refunded) Handoff.FieldWell else Handoff.AccentTint,
+                                contentColor = if (refunded) Handoff.Fainter else Handoff.AccentSolid,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (refunded) Handoff.LineIdle else Handoff.AccentLine,
+                                ),
+                                modifier = Modifier.height(48.dp),
+                            ) {
+                                Box(
+                                    Modifier.fillMaxHeight().padding(horizontal = 15.dp),
+                                    Alignment.Center,
+                                ) {
+                                    Text(
+                                        "Exchange",
                                         fontSize = 13.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,

@@ -582,6 +582,13 @@ class TillApi(private val http: HttpClient) {
             setBody(request)
         }.decode()
 
+    suspend fun exchange(token: String, request: ExchangeRequest): ExchangeResponse =
+        http.post("$origin/api/till/exchange") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.decode()
+
     /**
      * `expectSuccess` is off, so Ktor hands back every status rather than
      * throwing. That is what a wrong PIN needs — it arrives as 200 with

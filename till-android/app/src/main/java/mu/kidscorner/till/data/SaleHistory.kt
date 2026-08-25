@@ -197,3 +197,40 @@ data class PrintResponse(
     val printCount: Int? = null,
     val error: String? = null,
 )
+
+// ─────────────────────────────────────────────────────────────── exchanges ──
+
+/**
+ * An exchange: lines of an existing sale coming back, replacement variants
+ * going out, one payment settling the gap. The server re-prices everything —
+ * returns at what was paid, replacements at today's list price — so the only
+ * numbers here are ids and quantities.
+ */
+@Serializable
+data class ExchangeRequest(
+    val saleId: Int,
+    val shiftId: Int? = null,
+    /** Cash handed over for the gap; the server computes change from it. */
+    val tendered: Double? = null,
+    val paymentMethod: String,
+    val returnItems: List<RefundItem>,
+    val newItems: List<ExchangeItem>,
+    val deviceId: Int? = null,
+    /** Sent only when a sale past the 7-day window needs a manager. */
+    val approval: Approval? = null,
+)
+
+@Serializable
+data class ExchangeItem(val variantId: Int, val qty: Int)
+
+@Serializable
+data class ExchangeResponse(
+    val ok: Boolean = false,
+    /** Past the window without a manager's PIN: retry with one. */
+    val needsApproval: Boolean = false,
+    /** The new sale the replacements landed on — its id, for reprinting. */
+    val saleId: Int? = null,
+    /** What the customer paid (the gap). Never negative: see create_exchange. */
+    val gap: Double? = null,
+    val error: String? = null,
+)

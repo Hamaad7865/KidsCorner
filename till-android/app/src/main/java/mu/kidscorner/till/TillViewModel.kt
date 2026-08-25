@@ -40,6 +40,9 @@ import mu.kidscorner.till.data.DepositCollectRequest
 import mu.kidscorner.till.data.DepositPickLine
 import mu.kidscorner.till.data.DiscountRule
 import mu.kidscorner.till.data.DownloadState
+import mu.kidscorner.till.data.ExchangeRequest
+import mu.kidscorner.till.data.ExchangeItem
+import mu.kidscorner.till.data.ExchangeResponse
 import mu.kidscorner.till.data.HeldSale
 import mu.kidscorner.till.data.MovementRequest
 import mu.kidscorner.till.data.OfflineGate
@@ -129,6 +132,9 @@ sealed interface TillScreen {
 
     /** Giving goods back against a past sale. */
     data class Refunding(val cashier: Cashier) : TillScreen
+
+    /** Swapping goods from a past sale for new ones — one gap to settle. */
+    data class Exchanging(val cashier: Cashier) : TillScreen
 
     /** End of day: count the drawer against what the ledger expects. */
     data class ClosingShift(val cashier: Cashier) : TillScreen
@@ -302,6 +308,13 @@ data class TillState(
      * which act it is authorising.
      */
     val pendingCustomerCreate: CreateCustomerRequest? = null,
+
+    /**
+     * An exchange the server refused until a manager approves it — a sale past
+     * the 7-day window. Held so the shared approval prompt resubmits this
+     * exact request once a PIN is typed, and knows which act it authorises.
+     */
+    val pendingExchange: ExchangeRequest? = null,
 
     /** What would come out of the printer, as monospaced text. */
     val receiptPreview: String? = null,
@@ -2084,6 +2097,48 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             }
     }
 
+    /**
+     * Opens an exchange against a past sale. The same detail load a return
+     * uses — the lines on it are what can come back.
+     */
+    fun openExchange(saleId: Int) = viewModelScope.launch {
+        val cashier = cashierOf(_state.value.screen) ?: return@launch
+        _state.update { it.copy(saleDetailLoading = true, historyError = null) }
+        repo.saleDetail(saleId)
+            .onSuccess { response ->
+                val sale = response.sale
+                _state.update {
+                    if (sale == null) {
+                        it.copy(
+                            saleDetailLoading = false,
+                            historyError = response.error ?: "Could not open that sale.",
+                        )
+                    } else {
+                        it.copy(
+                            saleDetailLoading = false,
+                            selectedSale = sale,
+                            screen = TillScreen.Exchanging(cashier),
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        saleDetailLoading = false,
+                        historyError = cause.message ?: "Could not open that sale.",
+                    )
+                }
+            }
+    }
+
+    fun closeExchange() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(screen = TillScreen.Selling(cashier), selectedSale = null, historyError = null)
+        }
+    }
+
     private var toastJob: Job? = null
 
     /** `toastMsg` — replaces whatever is showing, then clears after 2.2s. */
@@ -2202,6 +2257,85 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearPendingRefund() =
         _state.update { it.copy(pendingRefund = null, needsApproval = false) }
+
+    /**
+     * Submits an exchange. `tendered` is cash only — the server records it so
+     * change can be worked out; other methods settle exactly.
+     */
+    fun submitExchange(
+        returnQtyByLine: Map<Int, Int>,
+        newItems: List<Pair<Int, Int>>,
+        method: String,
+        tendered: Double?,
+    ) = viewModelScope.launch {
+        val sale = _state.value.selectedSale ?: return@launch
+        val items = returnQtyByLine.filterValues { it > 0 }.map { (id, qty) -> RefundItem(id, qty) }
+        if (items.isEmpty() || newItems.isEmpty()) return@launch
+
+        postExchange(
+            ExchangeRequest(
+                saleId = sale.id,
+                shiftId = _state.value.shop?.shift?.id,
+                tendered = tendered,
+                paymentMethod = method,
+                returnItems = items,
+                newItems = newItems.map { (variantId, qty) -> ExchangeItem(variantId, qty) },
+                deviceId = _state.value.deviceId,
+            ),
+        )
+    }
+
+    /** Resubmits a refused exchange with a manager's PIN — replayed verbatim. */
+    fun retryExchange(approval: Approval) {
+        val pending = _state.value.pendingExchange ?: return
+        _state.update { it.copy(needsApproval = false) }
+        viewModelScope.launch { postExchange(pending.copy(approval = approval)) }
+    }
+
+    fun clearPendingExchange() =
+        _state.update { it.copy(pendingExchange = null, needsApproval = false) }
+
+    private suspend fun postExchange(request: ExchangeRequest) {
+        _state.update { it.copy(busy = true, historyError = null) }
+        repo.exchange(request)
+            .onSuccess { response ->
+                val cashier = cashierOf(_state.value.screen)
+                _state.update {
+                    if (response.needsApproval) {
+                        it.copy(
+                            busy = false,
+                            pendingExchange = request.copy(approval = null),
+                            needsApproval = true,
+                            historyError = response.error,
+                        )
+                    } else if (!response.ok || cashier == null || response.saleId == null) {
+                        it.copy(
+                            busy = false,
+                            pendingExchange = null,
+                            historyError = response.error ?: "The exchange did not go through.",
+                        )
+                    } else {
+                        it.copy(
+                            busy = false,
+                            screen = TillScreen.Selling(cashier),
+                            selectedSale = null,
+                            pendingExchange = null,
+                            needsApproval = false,
+                            toast = "Exchanged — ${formatRs(response.gap ?: 0.0)} taken",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        busy = false,
+                        pendingExchange = null,
+                        historyError = cause.message ?: "The exchange did not go through.",
+                    )
+                }
+            }
+    }
 
     private suspend fun postRefund(request: RefundRequest) {
         _state.update { it.copy(busy = true, historyError = null) }
