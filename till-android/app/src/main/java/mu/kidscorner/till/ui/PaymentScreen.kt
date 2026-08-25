@@ -433,6 +433,7 @@ fun PaymentScreen(
                     onKey = { key ->
                         splitEntry =
                             if (key == "back") splitEntry.dropLast(1)
+                            else if (key == "clear") ""
                             else splitEntry.appendPadKey(key)
                         val typed = splitEntry.toDoubleOrNull() ?: 0.0
                         allocation = allocation + (splitFocus to round2(typed))
@@ -619,6 +620,7 @@ fun PaymentScreen(
                             NumPad(enabled = !busy && !frozen) { key ->
                                 entry =
                                     if (key == "back") entry.dropLast(1)
+                                    else if (key == "clear") ""
                                     else entry.appendPadKey(key)
                             }
                         }
@@ -1166,11 +1168,12 @@ private fun NumPad(enabled: Boolean, onKey: (String) -> Unit) {
             listOf("4", "5", "6"),
             listOf("7", "8", "9"),
             listOf(".", "0", "⌫"),
+            listOf("C"),
         ).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { key ->
                     Surface(
-                        onClick = { onKey(if (key == "⌫") "back" else key) },
+                        onClick = { onKey(if (key == "⌫") "back" else if (key == "C") "clear" else key) },
                         enabled = enabled,
                         shape = RoundedCornerShape(12.dp),
                         color = Handoff.Well,

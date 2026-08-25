@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -128,43 +127,49 @@ private fun TextRows(
     onCaps: () -> Unit,
     onKey: (String) -> Unit,
 ) {
-    listOf("qwertyuiop", "asdfghjkl").forEach { row ->
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 3.dp),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            row.forEach { ch ->
-                KeyCap(
-                    label = if (shift || caps) ch.uppercase() else ch.toString(),
-                    modifier = Modifier.padding(horizontal = 2.5.dp),
-                    onClick = { onKey(ch.toString()) },
-                )
-            }
+    // Every key takes an equal weight of the row, so the keyboard spans the
+    // screen edge to edge — a wall tablet is tapped with fingers, not a stylus,
+    // and a key that fills its share of the width is the one that gets hit.
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        "qwertyuiop".forEach { ch ->
+            KeyCap(
+                label = if (shift || caps) ch.uppercase() else ch.toString(),
+                modifier = Modifier.weight(1f).padding(horizontal = 2.5.dp),
+                onClick = { onKey(ch.toString()) },
+            )
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        "asdfghjkl".forEach { ch ->
+            KeyCap(
+                label = if (shift || caps) ch.uppercase() else ch.toString(),
+                modifier = Modifier.weight(1f).padding(horizontal = 2.5.dp),
+                onClick = { onKey(ch.toString()) },
+            )
         }
     }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         KeyCap(
             label = "",
             icon = Icons.Default.KeyboardCapslock,
             active = caps,
-            modifier = Modifier.padding(horizontal = 2.5.dp),
+            modifier = Modifier.weight(1.5f).padding(horizontal = 2.5.dp),
             onClick = onCaps,
         )
         "zxcvbnm".forEach { ch ->
             KeyCap(
                 label = if (shift || caps) ch.uppercase() else ch.toString(),
-                modifier = Modifier.padding(horizontal = 2.5.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 2.5.dp),
                 onClick = { onKey(ch.toString()) },
             )
         }
         KeyCap(
-            label = if (shift || caps) "⇧" else "⇧",
+            label = "⇧",
             active = shift,
-            modifier = Modifier.padding(horizontal = 2.5.dp),
+            modifier = Modifier.weight(1.5f).padding(horizontal = 2.5.dp),
             onClick = onShift,
         )
     }
@@ -172,18 +177,18 @@ private fun TextRows(
 
 @Composable
 private fun NumericRows(onKey: (String) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column {
         listOf(
             listOf("7", "8", "9"),
             listOf("4", "5", "6"),
             listOf("1", "2", "3"),
             listOf(".", "0", "-"),
         ).forEach { row ->
-            Row {
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                 row.forEach { ch ->
                     KeyCap(
                         label = ch,
-                        modifier = Modifier.padding(3.dp),
+                        modifier = Modifier.weight(1f).padding(horizontal = 2.5.dp),
                         onClick = { onKey(ch) },
                     )
                 }
@@ -210,8 +215,8 @@ private fun KeyCap(
     val fg = if (active || filled) Color.White else Handoff.Ink
     Box(
         modifier
-            .defaultMinSize(minWidth = 40.dp)
-            .height(46.dp)
+            .fillMaxWidth()
+            .height(58.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
             .clickable(
@@ -225,10 +230,10 @@ private fun KeyCap(
                 icon,
                 contentDescription = label.ifEmpty { "key" },
                 tint = fg,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(26.dp),
             )
         } else {
-            Text(label, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = fg)
+            Text(label, fontSize = 21.sp, fontWeight = FontWeight.Medium, color = fg)
         }
     }
 }
