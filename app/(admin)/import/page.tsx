@@ -16,10 +16,10 @@ export default async function ImportPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="font-heading text-xl font-semibold">Excel import</h1>
+        <h1 className="font-heading text-xl font-semibold">Import from Excel</h1>
         <p className="text-muted-foreground text-sm">
-          Bulk-load the catalogue from a spreadsheet. One row per variant — the
-          product name repeats across its size and colour rows.
+          Bring in a supplier list or a stock count sheet. Nothing is saved until
+          you confirm on the last step.
         </p>
       </header>
 
