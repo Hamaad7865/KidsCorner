@@ -42,6 +42,15 @@ object Handoff {
     /** #0A736D / #0A6E68 — accent text on a tinted ground. */
     val AccentText = Brand800
 
+    /**
+     * The ramp's own crimson — the mark at its most vivid. A price on
+     * promotion wears this instead of the ink figure, so a markdown reads at
+     * counter distance the way a shop window reads. Brand, not danger: the
+     * promotion is a choice the shop made, and the two reds never share a shape
+     * (danger is text on its tint, this is a figure on white).
+     */
+    val Promo = Brand500
+
     /** #E9F6F4 / #F1FAF8 / #EAF6F4 — the tint behind an accent. */
     val AccentTint = Brand50
 

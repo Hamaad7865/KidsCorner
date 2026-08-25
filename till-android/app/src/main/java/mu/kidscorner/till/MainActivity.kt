@@ -104,7 +104,21 @@ private enum class Overlay { None, Customer, Held, Discount, Approval, Movement,
 private fun TillRoot(vm: TillViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var overlay by remember { mutableStateOf(Overlay.None) }
+    // The receipt number a scanned receipt code asked for, handed to the
+    // history dialog as its opening search. Cleared whenever history is
+    // opened the ordinary way, so a stale recall never filters a fresh list.
+    var recallQuery by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+
+    /**
+     * A scanned receipt code: the history dialog opens already searching for
+     * that one sale, with Reprint, Gift and Return one tap away.
+     */
+    val recallSale: (String) -> Unit = { saleNo ->
+        recallQuery = saleNo
+        vm.searchHistory(saleNo)
+        overlay = Overlay.Txns
+    }
 
     /**
      * Both Bluetooth permissions in one prompt.
@@ -231,6 +245,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onRemove = vm::removeLine,
                         onClear = vm::clearCart,
                         onFindBarcode = vm::findByBarcode,
+                        onRecallSale = recallSale,
                         onPay = vm::startPayment,
                         onLock = vm::lock,
                         onHold = vm::holdSale,
@@ -242,7 +257,11 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         onOpenTill = vm::startOpeningShift,
                         onCloseTill = vm::startClosingShift,
                         onOpenMovement = { overlay = Overlay.Movement },
-                        onOpenHistory = { overlay = Overlay.Txns; vm.searchHistory("") },
+                        onOpenHistory = {
+                            recallQuery = null
+                            overlay = Overlay.Txns
+                            vm.searchHistory("")
+                        },
                         saleOutcomeShowing = state.outcome != null,
                     )
                 }
@@ -308,6 +327,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 profileSalesLoading = state.customerProfileSalesLoading,
                 profileDeposits = state.customerProfileDeposits,
                 profileDepositsLoading = state.customerProfileDepositsLoading,
+                onViewReceipt = { vm.printReceipt(it) },
                 onQuery = vm::searchCustomerBrowse,
                 onLoadMore = vm::loadMoreCustomers,
                 onOpenProfile = vm::selectCustomerProfile,
@@ -482,6 +502,8 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
         Overlay.Txns -> TodaysSalesDialog(
             sales = state.history,
             loading = state.historyLoading,
+            initialQuery = recallQuery ?: "",
+            error = state.historyError,
             onSearch = vm::searchHistory,
             onReprint = { vm.printReceipt(it) },
             onGiftReceipt = { vm.printReceipt(it, gift = true) },
@@ -613,7 +635,11 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 overlay = Overlay.None
                 state.history.firstOrNull()?.let { vm.printReceipt(it.id) }
             },
-            onOpenHistory = { overlay = Overlay.Txns; vm.searchHistory("") },
+            onOpenHistory = {
+                recallQuery = null
+                overlay = Overlay.Txns
+                vm.searchHistory("")
+            },
             onOpenDrawer = { overlay = Overlay.None; vm.openCashDrawer() },
             onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },

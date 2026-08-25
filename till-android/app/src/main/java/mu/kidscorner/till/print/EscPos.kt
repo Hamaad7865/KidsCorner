@@ -96,6 +96,39 @@ object EscPos {
     private const val CODE39_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%"
 
     /**
+     * GS ( k — a QR symbol, for the receipt-recall code.
+     *
+     * Four commands against the printer's symbol storage: store the payload,
+     * pick the module size, pick the error-correction level, print. Module
+     * size 5 dots is the compromise between scan distance and paper: the
+     * symbol for a sale number is small at either paper width, and a phone
+     * camera should read it as easily as the till's scanner. Correction level
+     * M tolerates a crease across the corner — exactly where a receipt gets
+     * creased in a pocket.
+     */
+    fun qr(payload: String): ByteArray {
+        val data = payload.toByteArray(Charsets.US_ASCII)
+        if (data.isEmpty()) return ByteArray(0)
+
+        // The storage command is length-prefixed with the payload plus the
+        // function header itself: 2 bytes for "31 50 30" is three — cn, fn, m.
+        val len = data.size + 3
+        return ByteArrayOutputStream().apply {
+            write(
+                byteArrayOf(
+                    GS, 0x28, 0x6B,
+                    (len and 0xFF).toByte(), ((len shr 8) and 0xFF).toByte(),
+                    0x31, 0x50, 0x30,
+                ),
+            )
+            write(data)
+            write(byteArrayOf(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x05))
+            write(byteArrayOf(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x4D))
+            write(byteArrayOf(GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30))
+        }.toByteArray()
+    }
+
+    /**
      * The whole job: init, the lines, a feed and a cut.
      *
      * Text is encoded as CP437 rather than UTF-8. A thermal printer has a byte
@@ -113,6 +146,12 @@ object EscPos {
                 is ReceiptLine.Barcode -> {
                     out.write(align(1))
                     out.write(barcode(line.code))
+                    out.write(align(0))
+                }
+
+                is ReceiptLine.Qr -> {
+                    out.write(align(1))
+                    out.write(qr(line.payload))
                     out.write(align(0))
                 }
 

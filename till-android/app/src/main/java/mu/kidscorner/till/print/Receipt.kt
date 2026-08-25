@@ -38,6 +38,12 @@ sealed interface ReceiptLine {
 
     /** A machine-readable sale number, where the printer supports it. */
     data class Barcode(val code: String) : ReceiptLine
+
+    /**
+     * A QR symbol rendered by the printer — the receipt-recall code. Scanning
+     * it at the till pulls the sale back up for a reprint or a refund.
+     */
+    data class Qr(val payload: String) : ReceiptLine
 }
 
 enum class Align { Left, Centre, Right }
@@ -96,6 +102,10 @@ internal fun renderLine(line: ReceiptLine, columns: Int): String = when (line) {
     is ReceiptLine.Feed -> "\n".repeat((line.lines - 1).coerceAtLeast(0))
 
     is ReceiptLine.Barcode -> line.code
+
+    // The preview cannot draw a real symbol, so it says where the QR sits.
+    // Same payload the printer encodes — nothing about the receipt differs.
+    is ReceiptLine.Qr -> "[QR: ${line.payload}]"
 }
 
 /**

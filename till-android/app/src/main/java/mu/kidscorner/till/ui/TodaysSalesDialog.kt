@@ -63,13 +63,16 @@ import mu.kidscorner.till.ui.theme.PlexMono
 fun TodaysSalesDialog(
     sales: List<SaleSummary>,
     loading: Boolean,
+    /** Pre-filled search — a scanned receipt code lands here already pointed at its sale. */
+    initialQuery: String = "",
+    error: String? = null,
     onSearch: (String) -> Unit,
     onReprint: (Int) -> Unit,
     onGiftReceipt: (Int) -> Unit,
     onReturn: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery) }
     val noRipple = remember { MutableInteractionSource() }
 
     // Debounced, like every other search on this till: a receipt number typed
@@ -128,13 +131,14 @@ fun TodaysSalesDialog(
                 Alignment.Center,
             ) {
                 Text(
-                    if (loading) "Looking…" else if (query.isBlank()) {
-                        "Nothing rung up yet today."
-                    } else {
-                        "Nothing matches that."
+                    when {
+                        loading -> "Looking…"
+                        error != null -> error
+                        query.isBlank() -> "Nothing rung up yet today."
+                        else -> "Nothing matches that."
                     },
                     fontSize = 13.5.sp,
-                    color = Handoff.Muted3,
+                    color = if (error != null) Handoff.Danger else Handoff.Muted3,
                 )
             }
         } else {

@@ -778,6 +778,7 @@ fun SquareKey(
     size: Int = 48,
     enabled: Boolean = true,
     tint: Color = Handoff.Muted,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -787,7 +788,7 @@ fun SquareKey(
         color = if (enabled) Handoff.Well else Handoff.Blocked,
         contentColor = if (enabled) tint else Handoff.BlockedText,
         border = BorderStroke(1.dp, Handoff.LineIdle),
-        modifier = Modifier.size(size.dp),
+        modifier = modifier.size(size.dp),
     ) {
         Box(Modifier.fillMaxSize(), Alignment.Center) { content() }
     }

@@ -59,6 +59,20 @@ data class CatalogVariant(
      * cannot sell.
      */
     val imageUrl: String? = null,
+    /**
+     * The variant is under a live promotion.
+     *
+     * Purely a label: the promotion is a real change to `selling_price`, so the
+     * price already shown IS the promo price and a sale needs nothing more from
+     * this. It exists so the tile can say why a figure looks different from
+     * what the cashier remembers.
+     *
+     * Defaulted like every optional field here, so an older cached catalogue
+     * still decodes — it simply shows nothing, which is what that cache knows.
+     */
+    val onPromotion: Boolean = false,
+    /** What the promotion replaced, for the struck-through "was". */
+    val promoWasPrice: Double? = null,
 ) {
     /** "Blue · 3-4y", or whichever halves exist. */
     val variantLabel: String
@@ -100,7 +114,7 @@ interface CatalogDao {
 
 @Database(
     entities = [CatalogVariant::class, QueuedSale::class, RecentCustomer::class],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
@@ -195,6 +209,21 @@ abstract class TillDatabase : RoomDatabase() {
                     )
                     """.trimIndent(),
                 )
+            }
+        }
+
+        /**
+         * Adds the promotion marker to the cached catalogue.
+         *
+         * Columns only, same shape as 2→3: the flag defaults false and the old
+         * price to null, so a till that migrates before its next fetch simply
+         * shows no promo badge until the catalogue refreshes — which is the
+         * truth about what that cache knows.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `onPromotion` INTEGER NOT NULL DEFAULT 0")
+                connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `promoWasPrice` REAL")
             }
         }
     }

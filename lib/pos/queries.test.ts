@@ -38,8 +38,15 @@ describe("loadCatalog", () => {
       ],
       error: null,
     })
+
+    // The promotions read resolves immediately: no live markdowns.
+    const promos = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+
     const client = {
-      from: vi.fn(() => query),
+      from: vi.fn((table: string) => (table === "promotions" ? promos : query)),
     } as unknown as TillClient
 
     const [variant] = await loadCatalog(client)
@@ -49,6 +56,45 @@ describe("loadCatalog", () => {
       productName: "Chemise cotton",
       shelfLocation: "A12",
       productCode: "PC-1023",
+      onPromotion: false,
+      promoWasPrice: null,
     })
+  })
+
+  it("marks the variants carrying a live promotion, with what they were", async () => {
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      order: vi.fn(),
+      range: vi.fn(),
+    }
+    query.select.mockReturnValue(query)
+    query.eq.mockReturnValue(query)
+    query.order.mockReturnValue(query)
+    query.range.mockResolvedValue({
+      data: [
+        { id: 101, sku: "A", selling_price: 199, qty_on_hand: 3, products: { id: 7 }, sizes: {}, colours: {} },
+        { id: 102, sku: "B", selling_price: 340, qty_on_hand: 5, products: { id: 8 }, sizes: {}, colours: {} },
+      ],
+      error: null,
+    })
+    const promos = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi
+        .fn()
+        .mockResolvedValue({
+          data: [{ variant_id: 101, original_price: 250 }],
+          error: null,
+        }),
+    }
+
+    const client = {
+      from: vi.fn((table: string) => (table === "promotions" ? promos : query)),
+    } as unknown as TillClient
+
+    const variants = await loadCatalog(client)
+
+    expect(variants[0]).toMatchObject({ onPromotion: true, promoWasPrice: 250 })
+    expect(variants[1]).toMatchObject({ onPromotion: false, promoWasPrice: null })
   })
 })

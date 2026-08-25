@@ -277,6 +277,13 @@ fun buildReceipt(
     }
     sale.cashierName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
     add(ReceiptLine.Feed())
+    // The recall code: scanning it at the till pulls the sale back up for a
+    // reprint or a refund, without anybody typing an S-number. The CODE39
+    // below stays — it prints the number in plain sight and keeps working on
+    // a printer whose QR support turns out to be shaky.
+    add(ReceiptLine.Qr(sale.saleNo))
+    add(ReceiptLine.Text("Scan at the till to recall", Align.Centre))
+    add(ReceiptLine.Feed())
     add(ReceiptLine.Barcode(sale.saleNo))
 }
 

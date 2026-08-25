@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -81,6 +82,8 @@ fun CustomersScreen(
     profileSalesLoading: Boolean,
     profileDeposits: List<DepositSummaryRow>,
     profileDepositsLoading: Boolean,
+    /** Opens a purchase's receipt — the preview, and the printer. */
+    onViewReceipt: (Int) -> Unit,
     onTakePayment: () -> Unit,
     editSaving: Boolean,
     editError: String?,
@@ -105,6 +108,7 @@ fun CustomersScreen(
                 salesLoading = profileSalesLoading,
                 deposits = profileDeposits,
                 depositsLoading = profileDepositsLoading,
+                onViewReceipt = onViewReceipt,
                 onTakePayment = onTakePayment,
                 editSaving = editSaving,
                 editError = editError,
@@ -342,6 +346,7 @@ private fun CustomerProfilePane(
     salesLoading: Boolean,
     deposits: List<DepositSummaryRow>,
     depositsLoading: Boolean,
+    onViewReceipt: (Int) -> Unit,
     onBack: () -> Unit,
     onTakePayment: () -> Unit,
     editSaving: Boolean,
@@ -506,8 +511,16 @@ private fun CustomerProfilePane(
                     salesLoading -> SectionSpinner()
                     sales.isEmpty() -> SectionEmpty("No purchases yet.")
                     else -> sales.forEach { sale ->
+                        // The whole row opens the receipt, and the key says so:
+                        // a purchase here is a document, not just a figure —
+                        // the customer who lost their copy needs it back, and
+                        // the answer is one tap on the sale they are pointing
+                        // at. The preview is the same render the printer gets.
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onViewReceipt(sale.id) }
+                                .padding(vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -528,6 +541,14 @@ private fun CustomerProfilePane(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                             )
+                            SquareKey(
+                                onClick = { onViewReceipt(sale.id) },
+                                size = 40,
+                                tint = Handoff.InkStrong,
+                                modifier = Modifier.padding(start = 10.dp),
+                            ) {
+                                Icon(Icons.Default.Print, "View and print receipt", Modifier.size(16.dp))
+                            }
                         }
                     }
                 }

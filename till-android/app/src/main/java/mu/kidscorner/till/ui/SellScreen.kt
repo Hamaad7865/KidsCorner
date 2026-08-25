@@ -136,6 +136,15 @@ private fun Modifier.dashedBorder(colour: Color, radius: androidx.compose.ui.uni
 /** Results rendered before the cashier is asked for a narrower query. */
 private const val MAX_RESULTS = 40
 
+/**
+ * A receipt number, scanned off a receipt's own code — the QR or the CODE39
+ * printed under it. Deliberately the shop's sale-number shape (S + yymmdd +
+ * sequence) with no prefix: every receipt already printed carries a CODE39 of
+ * exactly this, so they all become scannable the moment the till updates, and
+ * no product barcode is numeric-with-an-S, so nothing collides.
+ */
+private val RECEIPT_NO = Regex("^S\\d{6}-\\d{1,5}$")
+
 /** Products shown per tab before the same. */
 private const val MAX_TILES = 60
 
@@ -156,6 +165,19 @@ private data class ProductGroup(
     val stock: Int get() = variants.sumOf { it.qtyOnHand }
     val minPrice: Double get() = variants.minOf { it.price }
     val maxPrice: Double get() = variants.maxOf { it.price }
+
+    /** Any variant under a live promotion — the tile's PROMO badge. */
+    val onPromotion: Boolean get() = variants.any { it.onPromotion }
+
+    /**
+     * What the promoted variants were, for the struck-through range beside the
+     * price. Null when none is on promotion.
+     */
+    val promoWasRange: Pair<Double, Double>?
+        get() {
+            val was = variants.filter { it.onPromotion }.mapNotNull { it.promoWasPrice }
+            return if (was.isEmpty()) null else was.min() to was.max()
+        }
 
     /** Distinct colours, in catalogue order — the swatch row on a tile. */
     val swatches: List<String?>
@@ -224,6 +246,8 @@ fun SellScreen(
     onRemove: (Int) -> Unit,
     onClear: () -> Unit,
     onFindBarcode: (String) -> CatalogVariant?,
+    /** A scanned receipt code — opens that sale for reprint or refund. */
+    onRecallSale: (String) -> Unit = {},
     onPay: () -> Unit,
     onLock: () -> Unit,
     onHold: () -> Unit,
@@ -328,6 +352,14 @@ fun SellScreen(
     fun submitSearch() {
         val raw = query.trim()
         if (raw.isEmpty()) return
+        // A receipt's own code recalls the SALE — reprint or refund — rather
+        // than rings anything up. Checked before the product lookup, since the
+        // two can never collide: no product barcode carries an S.
+        if (RECEIPT_NO.matches(raw)) {
+            onRecallSale(raw)
+            query = ""
+            return
+        }
         val scanned = onFindBarcode(raw)
         if (scanned != null) { addScanned(scanned); query = ""; return }
         if (results.size == 1) { open(results.first()); query = "" }
@@ -809,6 +841,11 @@ private fun TileGrid(
                         // 18-24m") ran straight into the price — a figure a
                         // customer is about to be charged must never be the
                         // thing that gets clipped.
+                        //
+                        // A promotion needs no badge: the price turns brand red
+                        // and what it replaced sits struck through beside it —
+                        // the markdown pattern every shop window uses, and it
+                        // costs the tile no space at all.
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -819,9 +856,23 @@ private fun TileGrid(
                                 fontFamily = PlexMono,
                                 fontSize = 15.5.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (out) Handoff.Danger else Handoff.InkFigure,
+                                color = when {
+                                    out -> Handoff.Danger
+                                    group.onPromotion -> Handoff.Promo
+                                    else -> Handoff.InkFigure
+                                },
                                 maxLines = 1,
                             )
+                            group.promoWasRange?.let { (wasMin, wasMax) ->
+                                Text(
+                                    formatPriceRange(wasMin, wasMax),
+                                    fontFamily = PlexMono,
+                                    fontSize = 10.5.sp,
+                                    color = Handoff.Faint,
+                                    textDecoration = TextDecoration.LineThrough,
+                                    maxLines = 1,
+                                )
+                            }
                             Text(
                                 group.sizes,
                                 fontSize = 10.5.sp,
@@ -910,12 +961,22 @@ private fun ResultRows(
                             )
                         }
                     }
+                    group.promoWasRange?.let { (wasMin, wasMax) ->
+                        Text(
+                            formatPriceRange(wasMin, wasMax),
+                            fontFamily = PlexMono,
+                            fontSize = 11.sp,
+                            color = Handoff.Faint,
+                            textDecoration = TextDecoration.LineThrough,
+                            maxLines = 1,
+                        )
+                    }
                     Text(
                         formatPriceRange(group.minPrice, group.maxPrice),
                         fontFamily = PlexMono,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Handoff.InkFigure,
+                        color = if (group.onPromotion) Handoff.Promo else Handoff.InkFigure,
                     )
                     // 48x48, radius:11px, tinted — the design's add key.
                     Box(

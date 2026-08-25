@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,6 +191,11 @@ fun VariantPickerDialog(
                                         ),
                                         modifier = Modifier.weight(1f).height(56.dp),
                                     ) {
+                                        // A promotion is per VARIANT — two sizes
+                                        // of one garment can be marked down apart —
+                                        // so the marker lives on the cell: the
+                                        // price turns brand red and what it
+                                        // replaced sits struck through after it.
                                         Box(Modifier.fillMaxSize(), Alignment.Center) {
                                             if (variant == null) {
                                                 Text("—", fontSize = 13.sp, color = Handoff.Ghost)
@@ -197,14 +203,31 @@ fun VariantPickerDialog(
                                                 Column(
                                                     horizontalAlignment = Alignment.CenterHorizontally,
                                                 ) {
-                                                    Text(
-                                                        formatAmount(variant.price),
-                                                        fontFamily = PlexMono,
-                                                        fontSize = 13.5.sp,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = if (inStock) Handoff.InkFigure
-                                                        else Handoff.Fainter,
-                                                    )
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    ) {
+                                                        Text(
+                                                            formatAmount(variant.price),
+                                                            fontFamily = PlexMono,
+                                                            fontSize = 13.5.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = when {
+                                                                !inStock -> Handoff.Fainter
+                                                                variant.onPromotion -> Handoff.Promo
+                                                                else -> Handoff.InkFigure
+                                                            },
+                                                        )
+                                                        if (variant.onPromotion && variant.promoWasPrice != null) {
+                                                            Text(
+                                                                formatAmount(variant.promoWasPrice),
+                                                                fontFamily = PlexMono,
+                                                                fontSize = 9.5.sp,
+                                                                color = Handoff.Faint,
+                                                                textDecoration = TextDecoration.LineThrough,
+                                                            )
+                                                        }
+                                                    }
                                                     Text(
                                                         if (inStock) "${variant.qtyOnHand} left" else "none",
                                                         fontSize = 10.5.sp,

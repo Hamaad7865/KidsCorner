@@ -150,6 +150,19 @@ export type CatalogVariant = {
    * the colour a customer is holding is already carried by `colourHex`.
    */
   imageUrl: string | null
+  /**
+   * The variant is under a live promotion.
+   *
+   * Display only, like every price here: the promotion IS a change to
+   * `selling_price`, so the number already shown is the promo price and the
+   * sale needs nothing from this flag. It exists so the till can say so — a
+   * cashier asked "why is this one cheaper" has the answer on the tile.
+   */
+  onPromotion: boolean
+  /**
+   * The price the promotion replaced. Null when `onPromotion` is false.
+   */
+  promoWasPrice: number | null
 }
 
 /** Page size for the catalog load — comfortably under PostgREST's max-rows. */
@@ -166,6 +179,18 @@ const CATALOG_PAGE = 900
 export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]> {
   const supabase = await clientFor(client)
   const rows: CatalogVariant[] = []
+
+  // One read of the live promotions. The table holds one row per variant
+  // markdown and is tiny — slow movers, not a catalogue — so a whole fetch
+  // beats joining it into every page below.
+  const { data: promos, error: promoError } = await supabase
+    .from("promotions")
+    .select("variant_id, original_price")
+    .eq("status", "active")
+  if (promoError) throw promoError
+  const promoWas = new Map<number, number>(
+    (promos ?? []).map((p) => [p.variant_id, Number(p.original_price)]),
+  )
 
   for (let page = 0; ; page += 1) {
     const from = page * CATALOG_PAGE
@@ -186,6 +211,7 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
     const batch = data ?? []
 
     for (const row of batch) {
+      const was = promoWas.get(row.id)
       rows.push({
         id: row.id,
         productId: row.products?.id ?? 0,
@@ -203,6 +229,8 @@ export async function loadCatalog(client?: TillClient): Promise<CatalogVariant[]
         price: Number(row.selling_price),
         qtyOnHand: row.qty_on_hand,
         imageUrl: row.products?.image_url ?? null,
+        onPromotion: was !== undefined,
+        promoWasPrice: was ?? null,
       })
     }
 
