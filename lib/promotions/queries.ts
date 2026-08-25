@@ -74,6 +74,72 @@ export async function countSlowMovers(days: number): Promise<number> {
   return Number(data) || 0
 }
 
+/** When an already-discounted item counts as STILL not selling. */
+export const DEFAULT_PROMO_STILL_DAYS = 14
+
+/** The second threshold: days on promotion without a sale before a re-cut. */
+export async function getPromoStillDays(): Promise<number> {
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "promo_still_days")
+    .maybeSingle()
+
+  const n = Number(data?.value)
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_PROMO_STILL_DAYS
+}
+
+export type StalePromotion = {
+  promotionId: number
+  variantId: number
+  productId: number
+  productName: string
+  productCode: string | null
+  sku: string
+  sizeLabel: string
+  colourName: string
+  qtyOnHand: number
+  costPrice: number
+  originalPrice: number
+  promoPrice: number
+  appliedAt: string
+  lastSoldAt: string | null
+  daysIdle: number
+}
+
+/**
+ * Active promotions idle for at least `days` — counted from the promotion's
+ * application or the variant's last sale, whichever came later. This is the
+ * second threshold's list: marked down once, still not moving, candidates for
+ * a further reduction.
+ */
+export async function listStalePromotions(days: number): Promise<StalePromotion[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc("stale_promotions" as never, {
+    p_days: days,
+  } as never)
+  if (error) throw error
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    promotionId: Number(row.promotion_id),
+    variantId: Number(row.variant_id),
+    productId: Number(row.product_id),
+    productName: String(row.product_name ?? ""),
+    productCode: (row.product_code as string) ?? null,
+    sku: String(row.sku ?? ""),
+    sizeLabel: String(row.size_label ?? ""),
+    colourName: String(row.colour_name ?? ""),
+    qtyOnHand: Number(row.qty_on_hand ?? 0),
+    costPrice: Number(row.cost_price ?? 0),
+    originalPrice: Number(row.original_price ?? 0),
+    promoPrice: Number(row.promo_price ?? 0),
+    appliedAt: (row.applied_at as string) ?? "",
+    lastSoldAt: (row.last_sold_at as string) ?? null,
+    daysIdle: Number(row.days_idle ?? 0),
+  }))
+}
+
 export type PromoVariant = {
   variantId: number
   sku: string

@@ -26,6 +26,17 @@ export const liftPromotionSchema = z.object({
   promotionId: z.number().int().positive(),
 })
 
+/**
+ * Reducing a running promotion. Same shape rules as applying one; the
+ * must-be-lower-than-the-promo-price rule needs the live promotion row, so it
+ * lives in the `reduce_promotion` RPC, not here.
+ */
+export const reducePromotionSchema = z.object({
+  variantId: z.number().int().positive(),
+  newPrice: money.refine((v) => v > 0, "Enter a promotion price."),
+  note: z.string().trim().max(200, "Keep the note under 200 characters.").nullable(),
+})
+
 export const slowMoverDaysSchema = z.object({
   // A day count, generous at the top so a shop can set a season if it wants.
   days: z

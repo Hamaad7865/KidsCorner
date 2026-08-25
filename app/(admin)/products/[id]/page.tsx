@@ -8,10 +8,12 @@ import { GenerateVariantsDialog } from "@/components/products/generate-variants-
 import { ProductForm } from "@/components/products/product-form"
 import { ProductThumb } from "@/components/products/product-thumb"
 import { VariantMatrix } from "@/components/products/variant-matrix"
+import { ApplyPromotionDialog } from "@/components/promotions/apply-promotion-dialog"
 import { ActiveBadge } from "@/components/settings/master-data-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { canManageCatalog } from "@/lib/auth/roles"
 import { requireAdminProfile } from "@/lib/auth/session"
 import {
   listVariantsWithoutBarcode,
@@ -21,6 +23,7 @@ import { formatPriceRange, formatQty } from "@/lib/format"
 import { getMasterData } from "@/lib/master-data/queries"
 import { getProduct } from "@/lib/products/queries"
 import { productsOnPromotion } from "@/lib/promotions/queries"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 
 export async function generateMetadata({
   params,
@@ -54,17 +57,24 @@ export default async function ProductDetailPage({
     barcodeless,
     barcodeSettings,
     onPromotion,
+    vatPolicy,
   ] = await Promise.all([
     getProduct(productId),
     getMasterData(),
     listVariantsWithoutBarcode(productId),
     readBarcodeSettings(),
     productsOnPromotion([productId]),
+    getCurrentVatPolicy(),
   ])
 
   if (!product) notFound()
 
   const isOnPromotion = onPromotion.has(productId)
+
+  // Putting a product on promotion is an owner/manager decision, the same bar
+  // the Promotions page applies — the RPC enforces it too; this only hides the
+  // button from somebody it would refuse.
+  const canPromote = canManageCatalog(profile.role)
 
   const printable = product.variants.some((variant) => variant.barcode)
 
@@ -196,6 +206,16 @@ export default async function ProductDetailPage({
               sizes={sizes}
               colours={colours}
             />
+            {/* Manual promotion: any product can be marked down, not only the
+                ones the slow-mover list catches. The dialog offers the
+                variants not already on promotion and floors each at its cost. */}
+            {canPromote ? (
+              <ApplyPromotionDialog
+                productId={product.id}
+                productName={product.name}
+                vatRate={vatPolicy.effectiveRate}
+              />
+            ) : null}
           </div>
         </div>
       </div>

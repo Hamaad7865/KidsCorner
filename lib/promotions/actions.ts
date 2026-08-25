@@ -21,6 +21,7 @@ import { loadProductForPromo, type PromoVariant } from "./queries"
 import {
   applyPromotionSchema,
   liftPromotionSchema,
+  reducePromotionSchema,
   slowMoverDaysSchema,
 } from "./schemas"
 
@@ -182,6 +183,95 @@ export async function liftPromotion(
 }
 
 /**
+ * Marking a running promotion down AGAIN — the second threshold's action.
+ *
+ * Deliberately not lift-then-reapply: that would end the promotion's history
+ * and forget the true original price. `reduce_promotion` edits the SAME
+ * promotion row, so `original_price` — what lifting restores and what the
+ * till strikes through — survives any number of reductions.
+ */
+export async function reducePromotion(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const denied = await requireManager()
+  if (denied) return denied
+
+  const parsed = reducePromotionSchema.safeParse({
+    variantId: idOf(formData, "variantId"),
+    newPrice: numberOf(formData, "newPrice", 0),
+    note: nullableTextOf(formData, "note"),
+  })
+  if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
+
+  const { variantId, newPrice, note } = parsed.data
+  const supabase = await createClient()
+
+  const { error } = await supabase.rpc("reduce_promotion" as never, {
+    p_variant_id: variantId,
+    p_new_price: newPrice,
+    p_note: note,
+  } as never)
+
+  // The RPC's own words — "cannot go below cost", "must be lower than the
+  // current promotion price" — are what the manager should read.
+  if (error) return fail(error.message)
+
+  revalidatePromos()
+  return formOk("Promotion reduced.")
+}
+
+/**
+ * One shop setting that counts days, saved owner-only and audited. Both
+ * thresholds — the slow-mover flag and the still-not-selling-on-promotion
+ * flag — are the same shape: a number in `settings`, a change worth a trail,
+ * a list behind it that re-runs the moment it is saved.
+ */
+async function saveDaysSetting(
+  key: string,
+  days: number,
+  summaryNoun: string,
+): Promise<FormState> {
+  const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", key)
+    .maybeSingle()
+  const before = existing?.value ?? null
+
+  const { data, error } = await supabase
+    .from("settings")
+    .update({ value: days })
+    .eq("key", key)
+    .select("key")
+
+  if (error) return fail(error.message)
+  if (data.length === 0) {
+    const { error: insertError } = await supabase
+      .from("settings")
+      .insert({ key, value: days })
+    if (insertError) return fail("Could not save the threshold. Sign in as the owner.")
+  }
+
+  if (Number(before) !== days) {
+    await logAudits(supabase, [
+      {
+        type: "setting.changed",
+        refType: "setting",
+        refId: key,
+        summary: `${summaryNoun}: ${before ?? "—"} → ${days} days`,
+        detail: { key, before, after: days },
+      },
+    ])
+  }
+
+  revalidatePath("/promotions")
+  return formOk("Threshold saved.")
+}
+
+/**
  * The slow-mover threshold. Owner-only, like every other shop setting, and
  * recorded on the audit trail the same way — it changes which products the shop
  * is told to act on, and leaves no other trace.
@@ -201,41 +291,28 @@ export async function setSlowMoverDays(
   })
   if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  const supabase = await createClient()
+  return saveDaysSetting("slow_mover_days", parsed.data.days, "Slow-mover threshold")
+}
 
-  const { data: existing } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "slow_mover_days")
-    .maybeSingle()
-  const before = existing?.value ?? null
-
-  const { data, error } = await supabase
-    .from("settings")
-    .update({ value: parsed.data.days })
-    .eq("key", "slow_mover_days")
-    .select("key")
-
-  if (error) return fail(error.message)
-  if (data.length === 0) {
-    const { error: insertError } = await supabase
-      .from("settings")
-      .insert({ key: "slow_mover_days", value: parsed.data.days })
-    if (insertError) return fail("Could not save the threshold. Sign in as the owner.")
+/**
+ * The second threshold: how long a variant may sit ON PROMOTION without a
+ * sale before it is flagged to be reduced again. Owner-only for the same
+ * reason the first one is.
+ */
+export async function setPromoStillDays(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const profile = await getSessionProfile()
+  if (!profile || !profile.isActive) return fail("Your session has expired.")
+  if (!canManageSettings(profile.role)) {
+    return fail("Only the owner can change the promotion threshold.")
   }
 
-  if (Number(before) !== parsed.data.days) {
-    await logAudits(supabase, [
-      {
-        type: "setting.changed",
-        refType: "setting",
-        refId: "slow_mover_days",
-        summary: `Slow-mover threshold: ${before ?? "—"} → ${parsed.data.days} days`,
-        detail: { key: "slow_mover_days", before, after: parsed.data.days },
-      },
-    ])
-  }
+  const parsed = slowMoverDaysSchema.safeParse({
+    days: intOf(formData, "days", 0),
+  })
+  if (!parsed.success) return fail(null, fieldErrorsOf(parsed.error))
 
-  revalidatePath("/promotions")
-  return formOk("Threshold saved.")
+  return saveDaysSetting("promo_still_days", parsed.data.days, "Promotion still-idle threshold")
 }
