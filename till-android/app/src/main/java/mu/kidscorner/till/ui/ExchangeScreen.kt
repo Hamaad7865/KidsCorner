@@ -109,10 +109,17 @@ fun ExchangeScreen(
     val count = returnQty.values.sum()
     val ready = creditTotal > 0 && newItems.value.isNotEmpty() && !busy
 
+    // Same four fields the sell screen's own catalogue search matches
+    // (groupsFor in SellScreen.kt) — a replacement is picked from the same
+    // catalogue, so it should be findable the same ways: by name, SKU, the
+    // shelf's product code, or a scanned barcode.
     val results = remember(query, catalog) {
         val q = query.trim().lowercase()
         if (q.length < 2) emptyList() else catalog.filter {
-            it.productName.lowercase().contains(q) || it.sku.lowercase().contains(q)
+            it.productName.lowercase().contains(q) ||
+                it.sku.lowercase().contains(q) ||
+                it.productCode.orEmpty().lowercase().contains(q) ||
+                it.barcode.orEmpty().lowercase().contains(q)
         }.take(6)
     }
 
