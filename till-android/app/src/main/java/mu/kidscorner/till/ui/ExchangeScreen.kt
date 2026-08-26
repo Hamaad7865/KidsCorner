@@ -100,6 +100,28 @@ fun ExchangeScreen(
     fun unitPaid(line: mu.kidscorner.till.data.SaleDetailLine): Double =
         if (line.qty > 0) round2((line.lineTotal / line.qty) * paidFactor) else 0.0
 
+    // Shared by the size-swap chips and the catalogue search below — adding a
+    // replacement is the same operation everywhere it can be started from.
+    fun addReplacement(v: CatalogVariant) {
+        val existing = newItems.value.firstOrNull { it.first.id == v.id }
+        newItems.value = if (existing == null) {
+            newItems.value + (v to 1)
+        } else {
+            newItems.value.map { (e, q) -> if (e.id == v.id) e to q + 1 else e to q }
+        }
+    }
+
+    // The everyday exchange: same product, same colour, a different size — a
+    // Large that no longer fits, back for a Small. Listed by size order so the
+    // run reads the way a size chart does, with the returned size itself left
+    // out (there is nothing to swap it for).
+    fun sameSizeSwaps(line: mu.kidscorner.till.data.SaleDetailLine): List<CatalogVariant> =
+        catalog.filter {
+            it.productName == line.productName &&
+                it.colourName == line.colourName &&
+                it.sizeLabel != line.sizeLabel
+        }.sortedBy { it.sizeSort }
+
     val creditTotal = round2(
         sale.lines.sumOf { line -> unitPaid(line) * (returnQty[line.id] ?: 0) },
     )
@@ -234,6 +256,23 @@ fun ExchangeScreen(
                                     color = if (picked > 0) Handoff.InkFigure else Handoff.Fainter,
                                 )
                             }
+                            // The one-tap path for the exchange this screen exists
+                            // for: this line is coming back, and the same product
+                            // in another size can go straight into Replacements
+                            // without typing a single letter into search.
+                            if (picked > 0) {
+                                val swaps = sameSizeSwaps(line)
+                                if (swaps.isNotEmpty()) {
+                                    Row(
+                                        Modifier.padding(start = 12.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        swaps.forEach { v ->
+                                            SizeSwapChip(v.sizeLabel) { addReplacement(v) }
+                                        }
+                                    }
+                                }
+                            }
                             Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
                         }
                     }
@@ -355,12 +394,7 @@ fun ExchangeScreen(
                             }
                             Text(formatRs(v.price), fontFamily = PlexMono, fontSize = 13.sp, color = Handoff.Muted)
                             OutlineKey("Add") {
-                                val existing = newItems.value.firstOrNull { it.first.id == v.id }
-                                newItems.value = if (existing == null) {
-                                    newItems.value + (v to 1)
-                                } else {
-                                    newItems.value.map { (e, q) -> if (e.id == v.id) e to q + 1 else e to q }
-                                }
+                                addReplacement(v)
                                 query = ""
                             }
                         }
@@ -555,6 +589,23 @@ private fun OutlineKey(label: String, muted: Boolean = false, onClick: () -> Uni
     ) {
         Box(Modifier.fillMaxHeight().padding(horizontal = 13.dp), Alignment.Center) {
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+}
+
+/** One size, one tap, straight into Replacements — the Large-for-a-Small swap. */
+@Composable
+private fun SizeSwapChip(sizeLabel: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = Handoff.AccentTint,
+        contentColor = Handoff.AccentSolid,
+        border = BorderStroke(1.dp, Handoff.AccentSolid),
+        modifier = Modifier.height(30.dp),
+    ) {
+        Box(Modifier.fillMaxHeight().padding(horizontal = 11.dp), Alignment.Center) {
+            Text(sizeLabel, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }
