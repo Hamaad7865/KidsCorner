@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -111,16 +112,22 @@ fun ExchangeScreen(
         }
     }
 
-    // The everyday exchange: same product, same colour, a different size — a
-    // Large that no longer fits, back for a Small. Listed by size order so the
-    // run reads the way a size chart does, with the returned size itself left
-    // out (there is nothing to swap it for).
-    fun sameSizeSwaps(line: mu.kidscorner.till.data.SaleDetailLine): List<CatalogVariant> =
+    // Every OTHER variant of the same product — any colour, any size, not just
+    // a different size in the one colour that was bought. A colourway can carry
+    // just one size in this catalogue (a dress in "Sea glass" only ever came in
+    // one), so narrowing to the returned colour was hiding this for exactly the
+    // products it needed to help with. Grouped by colour, then by size within
+    // it, so the run still reads the way a size chart does; the exact returned
+    // combination is left out, since there is nothing to swap it for.
+    fun sameProductVariants(line: mu.kidscorner.till.data.SaleDetailLine): List<CatalogVariant> =
         catalog.filter {
             it.productName == line.productName &&
-                it.colourName == line.colourName &&
-                it.sizeLabel != line.sizeLabel
-        }.sortedBy { it.sizeSort }
+                !(it.colourName == line.colourName && it.sizeLabel == line.sizeLabel)
+        }.sortedWith(compareBy({ it.colourName }, { it.sizeSort }))
+
+    /** "Navy · M" — falls back gracefully when a product has no colour or size at all. */
+    fun variantLabel(colourName: String, sizeLabel: String): String =
+        listOf(colourName, sizeLabel).filter { it.isNotBlank() && it != "—" }.joinToString(" · ")
 
     val creditTotal = round2(
         sale.lines.sumOf { line -> unitPaid(line) * (returnQty[line.id] ?: 0) },
@@ -257,18 +264,30 @@ fun ExchangeScreen(
                                 )
                             }
                             // The one-tap path for the exchange this screen exists
-                            // for: this line is coming back, and the same product
-                            // in another size can go straight into Replacements
-                            // without typing a single letter into search.
+                            // for: this line is coming back, and any other colour
+                            // or size of the same product can go straight into
+                            // Replacements without typing a letter into search.
                             if (picked > 0) {
-                                val swaps = sameSizeSwaps(line)
-                                if (swaps.isNotEmpty()) {
+                                val variants = sameProductVariants(line)
+                                if (variants.isNotEmpty()) {
+                                    Text(
+                                        "OTHER COLOURS & SIZES",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp,
+                                        color = Handoff.Muted3,
+                                        modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                                    )
                                     Row(
-                                        Modifier.padding(start = 12.dp),
+                                        Modifier
+                                            .padding(start = 12.dp, bottom = 12.dp)
+                                            .horizontalScroll(rememberScrollState()),
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     ) {
-                                        swaps.forEach { v ->
-                                            SizeSwapChip(v.sizeLabel) { addReplacement(v) }
+                                        variants.forEach { v ->
+                                            SizeSwapChip(variantLabel(v.colourName, v.sizeLabel)) {
+                                                addReplacement(v)
+                                            }
                                         }
                                     }
                                 }
