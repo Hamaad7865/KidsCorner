@@ -29,6 +29,8 @@ const bodySchema = z.object({
   paymentMethod: z.enum(["cash", "card", "juice", "myt_money", "bank"]),
   /** Cash handed over for the gap; change given from it. Cash only. */
   tendered: z.number().nonnegative().nullish().transform((v) => v ?? null),
+  /** Names this attempt so a retry replays instead of settling twice. */
+  idempotencyKey: z.string().trim().min(1).nullish().transform((v) => v ?? null),
   approval: z
     .object({ managerId: z.uuid(), pin: z.string() })
     .nullish()
@@ -82,11 +84,8 @@ export async function POST(request: Request) {
     )
   }
 
-  const { saleId, shiftId, deviceId, paymentMethod, tendered, approval, returnItems, newItems } = parsed.data
-
-  if (paymentMethod === "cash" && (tendered === null || tendered === undefined)) {
-    return apiError("Cash needs an amount tendered.", 400)
-  }
+  const { saleId, shiftId, deviceId, paymentMethod, tendered, approval, returnItems, newItems, idempotencyKey } =
+    parsed.data
 
   /**
    * The drawer, checked before anything else — same reason as refunds: the
@@ -122,9 +121,10 @@ export async function POST(request: Request) {
   // The migration ships in the same deploy that carries this route (the
   // pipeline applies migrations first), but the generated types only know
   // functions from their last regeneration — so the name is widened here.
-  const { data, error } = await session.supabase.rpc("create_exchange" as Parameters<
+  const { data, error } = await session.supabase.rpc("create_exchange_keyed" as Parameters<
     typeof session.supabase.rpc
   >[0], {
+    p_key: idempotencyKey,
     p_sale_id: saleId,
     p_shift_id: shiftId,
     p_cashier_id: session.user.id,
@@ -146,5 +146,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "The exchange did not complete." })
   }
 
-  return NextResponse.json({ ok: true, saleId: newSaleId })
+  // The gap this exchange actually settled — signed, so the till can tell a
+  // trade-up ("Rs X taken") from a trade-down ("Rs X given back") apart. One
+  // settlement row is always written for it, whichever direction it ran.
+  const { data: settlement } = await session.supabase
+    .from("sale_payments")
+    .select("amount")
+    .eq("sale_id", newSaleId)
+
+  const gap = (settlement ?? []).reduce((sum, row) => sum + Number(row.amount), 0)
+
+  return NextResponse.json({ ok: true, saleId: newSaleId, gap })
 }
