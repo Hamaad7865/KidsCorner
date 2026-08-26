@@ -2699,17 +2699,26 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearPrinterTest() = _state.update { it.copy(printerTestResult = null) }
 
+    // Exhaustive on purpose — no `else`. A missing screen here returns a null
+    // cashier, and every flow that reads it (postExchange, postRefund, …) then
+    // treats a completed action as a failure: an omitted `Exchanging` branch is
+    // exactly why every exchange reported "did not go through" while the server
+    // had already committed it. Listing the screens without a cashier explicitly
+    // means a NEW screen won't compile until it is placed on one side or the
+    // other, rather than defaulting to the wrong one.
     private fun cashierOf(screen: TillScreen): Cashier? = when (screen) {
+        is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.Selling -> screen.cashier
         is TillScreen.StockCheck -> screen.cashier
         is TillScreen.Deposits -> screen.cashier
         is TillScreen.Customers -> screen.cashier
         is TillScreen.Paying -> screen.cashier
-        is TillScreen.OpeningShift -> screen.cashier
-        is TillScreen.ClosingShift -> screen.cashier
-        is TillScreen.Refunding -> screen.cashier
         is TillScreen.Settings -> screen.cashier
-        else -> null
+        is TillScreen.Refunding -> screen.cashier
+        is TillScreen.Exchanging -> screen.cashier
+        is TillScreen.ClosingShift -> screen.cashier
+        // The till is between people on these — nobody is signed in.
+        TillScreen.Starting, TillScreen.DeviceSetup, TillScreen.Locked -> null
     }
 
     fun submitPin(cashier: Cashier, pin: String) = viewModelScope.launch {
