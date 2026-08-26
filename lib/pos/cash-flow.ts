@@ -314,7 +314,7 @@ export async function getDeviceCashFlow(
         .select(
           `id, credit_no, sale_id, shift_id, created_at, total, refund_method, reason,
            profiles!credit_notes_cashier_id_fkey ( full_name ),
-           sales ( sale_no )`,
+           sales!credit_notes_sale_id_fkey ( sale_no )`,
         )
         .in("shift_id", shiftIds)
         .order("created_at", { ascending: false })

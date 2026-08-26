@@ -57,7 +57,7 @@ export async function listSales(filters: {
        customers ( full_name ),
        sale_items ( qty ),
        sale_payments ( method ),
-       credit_notes ( id )`,
+       credit_notes!credit_notes_sale_id_fkey ( id )`,
     )
     .order("sale_date", { ascending: false })
     .order("id", { ascending: false })
@@ -203,7 +203,8 @@ export async function getSaleDetail(
            colours ( name, hex_code ) ) ),
        sale_payments ( id, method, amount, tendered ),
        sale_discounts ( label, kind, value, amount, approved_by ),
-       credit_notes ( id, credit_no, created_at, total, reason, refund_method ),
+       credit_notes!credit_notes_sale_id_fkey
+         ( id, credit_no, created_at, total, reason, refund_method ),
        receipt_prints ( id, printed_at, printed_by )`,
     )
     .eq("id", saleId)

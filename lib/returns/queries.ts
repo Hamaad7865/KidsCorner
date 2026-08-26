@@ -75,7 +75,8 @@ export const getSaleForReturn = cache(
          sale_items ( id, variant_id, qty, unit_price, discount, line_total,
            product_variants ( sku, products ( name ), sizes ( label ),
                               colours ( name, hex_code ) ) ),
-         credit_notes ( id, credit_no, created_at, total, reason, refund_method )`,
+         credit_notes!credit_notes_sale_id_fkey
+           ( id, credit_no, created_at, total, reason, refund_method )`,
         )
         .eq("id", saleId)
         .maybeSingle(),

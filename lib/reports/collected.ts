@@ -128,7 +128,7 @@ export async function getCollectedReport(
       .from("credit_notes")
       .select(
         `id, credit_no, created_at, total, refund_method,
-         sales ( id, sale_no, customers ( full_name ) )`,
+         sales!credit_notes_sale_id_fkey ( id, sale_no, customers ( full_name ) )`,
       )
       .gte("created_at", after)
       .lte("created_at", before)

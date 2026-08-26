@@ -191,7 +191,7 @@ export async function getSalesJournal(
         .select(
           `id, credit_no, created_at, vat_enabled, vat_rate, vat_amount, total, refund_method, reason,
            profiles!credit_notes_cashier_id_fkey ( full_name ),
-           sales ( sale_no, customers ( full_name ) )`,
+           sales!credit_notes_sale_id_fkey ( sale_no, customers ( full_name ) )`,
         )
         .gte("created_at", after)
         .lte("created_at", before)
