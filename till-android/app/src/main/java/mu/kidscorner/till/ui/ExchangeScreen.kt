@@ -65,8 +65,9 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * Nothing here decides money. `create_exchange` re-prices both sides: the
  * return at what the customer actually paid, the replacements at today's
  * list price read from `product_variants`. The figure on this screen is a
- * quote. It also never goes negative: when the credit beats the replacements,
- * the server refuses and the difference goes back through Returns instead.
+ * quote — and it settles in either direction: the customer pays when the
+ * replacements cost more, the shop pays back when they cost less, through
+ * whichever method is picked below.
  */
 @Composable
 fun ExchangeScreen(
@@ -106,7 +107,7 @@ fun ExchangeScreen(
     val newTotal = round2(newItems.value.sumOf { (v, q) -> v.price * q })
     val gap = round2(newTotal - creditTotal)
     val count = returnQty.values.sum()
-    val ready = creditTotal > 0 && newItems.value.isNotEmpty() && gap >= 0 && !busy
+    val ready = creditTotal > 0 && newItems.value.isNotEmpty() && !busy
 
     val results = remember(query, catalog) {
         val q = query.trim().lowercase()
@@ -372,14 +373,14 @@ fun ExchangeScreen(
                 .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 18.dp),
         ) {
             Text(
-                "CUSTOMER PAYS",
+                if (gap < 0) "REFUND TO CUSTOMER" else "CUSTOMER PAYS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.1.sp,
                 color = if (gap != 0.0 && count > 0) Handoff.ChangeLabel else Handoff.Muted3,
             )
             Text(
-                formatRs(gap.coerceAtLeast(0.0)),
+                formatRs(kotlin.math.abs(gap)),
                 fontFamily = PlexMono,
                 fontSize = 44.sp,
                 lineHeight = 48.4.sp,
@@ -397,16 +398,6 @@ fun ExchangeScreen(
                 color = Handoff.Muted3,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            if (gap < 0) {
-                Text(
-                    "The credit is bigger than the replacements. Give the change back through Return instead.",
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = Handoff.Danger,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
             Text(
                 "SETTLE THE GAP BY",
                 fontSize = 11.sp,
@@ -433,7 +424,7 @@ fun ExchangeScreen(
                 }
             }
 
-            if (method == "cash") {
+            if (method == "cash" && gap > 0) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -449,7 +440,7 @@ fun ExchangeScreen(
                         decorationBox = { inner ->
                             Box {
                                 if (tenderedText.isEmpty()) {
-                                    Text(gap.coerceAtLeast(0.0).toString(), fontSize = 15.sp, color = Handoff.Fainter)
+                                    Text(gap.toString(), fontSize = 15.sp, color = Handoff.Fainter)
                                 }
                                 inner()
                             }
@@ -473,7 +464,7 @@ fun ExchangeScreen(
             if (ready) {
                 Surface(
                     onClick = {
-                        val tendered = if (method == "cash") tenderedText.toDoubleOrNull() ?: gap else null
+                        val tendered = if (method == "cash" && gap > 0) tenderedText.toDoubleOrNull() ?: gap else null
                         onExchange(
                             returnQty.filterValues { it > 0 },
                             newItems.value.map { (v, q) -> v.id to q },
@@ -493,7 +484,7 @@ fun ExchangeScreen(
                     ) {
                         Text("Exchange", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Text(
-                            formatRs(gap.coerceAtLeast(0.0)),
+                            formatRs(kotlin.math.abs(gap)),
                             fontFamily = PlexMono,
                             fontSize = 21.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -513,11 +504,7 @@ fun ExchangeScreen(
                         CircularProgressIndicator(Modifier.size(26.dp), Handoff.AccentSolid, 2.dp)
                     } else {
                         Text(
-                            when {
-                                creditTotal <= 0 -> "Pick what is coming back"
-                                newItems.value.isEmpty() -> "Add what is going out"
-                                else -> "Replacements cost less than the credit"
-                            },
+                            if (creditTotal <= 0) "Pick what is coming back" else "Add what is going out",
                             fontSize = 15.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Handoff.BlockedText,

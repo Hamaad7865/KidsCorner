@@ -219,6 +219,19 @@ class ReceiptTest {
     }
 
     @Test
+    fun `a cash refund on an exchange prints as REFUND, not a negative figure`() {
+        val text = buildReceipt(
+            sale(payments = listOf(SaleDetailPayment(id = 1, method = "cash", amount = -100.0, tendered = null))),
+            shop,
+            PaperWidth.Mm80,
+        ).toPlainText(PaperWidth.Mm80)
+
+        assertTrue("expected a REFUND line:\n$text", text.contains("CASH REFUND"))
+        assertTrue("printed a bare negative figure:\n$text", !text.contains("-100.00"))
+        assertTrue("the refunded amount should read positive:\n$text", text.contains("100.00"))
+    }
+
+    @Test
     fun `an approved discount names its approver`() {
         val text = buildReceipt(
             sale(

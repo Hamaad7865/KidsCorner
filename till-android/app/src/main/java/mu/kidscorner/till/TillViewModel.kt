@@ -2098,11 +2098,21 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Names one exchange attempt so a lost response can be retried safely —
+     * the same pattern as `saleKey`. Rotated only after a confirmed success;
+     * a business-rule refusal never wrote a row under it (create_exchange
+     * raises before writing anything), so retrying with the same key on
+     * corrected input is exactly as safe as retrying with a new one.
+     */
+    private var exchangeKey: String = UUID.randomUUID().toString()
+
+    /**
      * Opens an exchange against a past sale. The same detail load a return
      * uses — the lines on it are what can come back.
      */
     fun openExchange(saleId: Int) = viewModelScope.launch {
         val cashier = cashierOf(_state.value.screen) ?: return@launch
+        exchangeKey = UUID.randomUUID().toString()
         _state.update { it.copy(saleDetailLoading = true, historyError = null) }
         repo.saleDetail(saleId)
             .onSuccess { response ->
@@ -2281,6 +2291,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 returnItems = items,
                 newItems = newItems.map { (variantId, qty) -> ExchangeItem(variantId, qty) },
                 deviceId = _state.value.deviceId,
+                idempotencyKey = exchangeKey,
             ),
         )
     }
@@ -2315,13 +2326,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             historyError = response.error ?: "The exchange did not go through.",
                         )
                     } else {
+                        exchangeKey = UUID.randomUUID().toString()
                         it.copy(
                             busy = false,
                             screen = TillScreen.Selling(cashier),
                             selectedSale = null,
                             pendingExchange = null,
                             needsApproval = false,
-                            toast = "Exchanged — ${formatRs(response.gap ?: 0.0)} taken",
+                            toast = exchangeToast(response.gap),
                         )
                     }
                 }
@@ -2335,6 +2347,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
             }
+    }
+
+    /** "Rs X taken" trading up, "Rs X given back" trading down, an even swap otherwise. */
+    private fun exchangeToast(gap: Double?): String = when {
+        gap == null || gap == 0.0 -> "Exchanged — even swap"
+        gap > 0 -> "Exchanged — ${formatRs(gap)} taken"
+        else -> "Exchanged — ${formatRs(-gap)} given back"
     }
 
     private suspend fun postRefund(request: RefundRequest) {
