@@ -83,11 +83,14 @@ import mu.kidscorner.till.print.DepositRefundSlipDoc
 import mu.kidscorner.till.print.DepositSlipDoc
 import mu.kidscorner.till.print.DepositSlipLine
 import mu.kidscorner.till.print.DepositTopUpSlipDoc
+import mu.kidscorner.till.print.ExchangeReceiptDoc
+import mu.kidscorner.till.print.ExchangeReceiptLine
 import mu.kidscorner.till.print.buildAccountPaymentSlip
 import mu.kidscorner.till.print.buildCreditNote
 import mu.kidscorner.till.print.buildDepositRefundSlip
 import mu.kidscorner.till.print.buildDepositSlip
 import mu.kidscorner.till.print.buildDepositTopUpSlip
+import mu.kidscorner.till.print.buildExchangeReceipt
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
 import mu.kidscorner.till.print.toPlainText
@@ -451,6 +454,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * for the same number — a resubmit, a recomposition — a no-op.
      */
     private val printedCreditNotes = mutableSetOf<String>()
+
+    /**
+     * The same once-only guard for an exchange's own receipt, keyed by the new
+     * sale number. An exchange moves money in one direction or the other, so its
+     * receipt — like a credit note — must print exactly once however many times
+     * the success path is re-entered.
+     */
+    private val printedExchanges = mutableSetOf<String>()
 
     private val _state = MutableStateFlow(
         TillState(printerDescribe = printerSettings.transport(app).describe),
@@ -2098,11 +2109,21 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
+     * Names one exchange attempt so a lost response can be retried safely —
+     * the same pattern as `saleKey`. Rotated only after a confirmed success;
+     * a business-rule refusal never wrote a row under it (create_exchange
+     * raises before writing anything), so retrying with the same key on
+     * corrected input is exactly as safe as retrying with a new one.
+     */
+    private var exchangeKey: String = UUID.randomUUID().toString()
+
+    /**
      * Opens an exchange against a past sale. The same detail load a return
      * uses — the lines on it are what can come back.
      */
     fun openExchange(saleId: Int) = viewModelScope.launch {
         val cashier = cashierOf(_state.value.screen) ?: return@launch
+        exchangeKey = UUID.randomUUID().toString()
         _state.update { it.copy(saleDetailLoading = true, historyError = null) }
         repo.saleDetail(saleId)
             .onSuccess { response ->
@@ -2281,6 +2302,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 returnItems = items,
                 newItems = newItems.map { (variantId, qty) -> ExchangeItem(variantId, qty) },
                 deviceId = _state.value.deviceId,
+                idempotencyKey = exchangeKey,
             ),
         )
     }
@@ -2297,9 +2319,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun postExchange(request: ExchangeRequest) {
         _state.update { it.copy(busy = true, historyError = null) }
+        // Captured before the success branch clears selectedSale, so the printed
+        // exchange receipt can name the sale the returns came from and value them
+        // at what was paid.
+        val returnedSale = _state.value.selectedSale
         repo.exchange(request)
             .onSuccess { response ->
                 val cashier = cashierOf(_state.value.screen)
+                val went = response.ok && cashier != null && response.saleId != null
                 _state.update {
                     if (response.needsApproval) {
                         it.copy(
@@ -2308,7 +2335,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             needsApproval = true,
                             historyError = response.error,
                         )
-                    } else if (!response.ok || cashier == null || response.saleId == null) {
+                    } else if (!went || cashier == null) {
                         it.copy(
                             busy = false,
                             pendingExchange = null,
@@ -2321,9 +2348,18 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             selectedSale = null,
                             pendingExchange = null,
                             needsApproval = false,
-                            toast = "Exchanged — ${formatRs(response.gap ?: 0.0)} taken",
                         )
                     }
+                }
+                // AFTER the update, never inside it. `MutableStateFlow.update` is
+                // a compare-and-set retry loop whose lambda can run more than
+                // once, and the key rotation, the toast and the print each have
+                // an effect that must fire exactly once — the same reasoning the
+                // refund path spells out.
+                if (went && !response.needsApproval) {
+                    exchangeKey = UUID.randomUUID().toString()
+                    toast(exchangeToast(response.gap))
+                    printExchangeReceipt(request, response, returnedSale)
                 }
             }
             .onFailure { cause ->
@@ -2336,6 +2372,104 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
     }
+
+    /** "Rs X taken" trading up, "Rs X given back" trading down, an even swap otherwise. */
+    private fun exchangeToast(gap: Double?): String = when {
+        gap == null || gap == 0.0 -> "Exchanged — even swap"
+        gap > 0 -> "Exchanged — ${formatRs(gap)} taken"
+        else -> "Exchanged — ${formatRs(-gap)} given back"
+    }
+
+    /**
+     * Prints the exchange's own receipt: what came back at what was paid, what
+     * went out at today's price, and the single gap between them.
+     *
+     * The returned side is valued from the ORIGINAL sale (captured before the
+     * screen cleared) at the same paid factor the exchange screen quoted; the
+     * new side and the VAT snapshot come from the replacement sale, fetched from
+     * the server so the paper matches the shop's own record. The credit subtotal
+     * is drawn as `new goods − gap` so the printed subtraction always foots with
+     * the money that actually moved, whichever way the gap ran.
+     *
+     * Guarded by [printedExchanges] so a recomposition or a resubmit cannot print
+     * a second copy of a document that moved money.
+     */
+    private fun printExchangeReceipt(
+        request: ExchangeRequest,
+        response: ExchangeResponse,
+        original: SaleDetail?,
+    ) {
+        val newSaleId = response.saleId ?: return
+        val gap = response.gap ?: 0.0
+
+        viewModelScope.launch {
+            val newSale = repo.saleDetail(newSaleId).getOrNull()?.sale
+            if (newSale == null) {
+                // The exchange is done and the sale is on the server; a receipt
+                // it could not fetch is a reprint from History, not a failure.
+                toast("Exchange saved — reprint its receipt from History")
+                return@launch
+            }
+            if (!printedExchanges.add(newSale.saleNo)) return@launch
+
+            val paidFactor = if (original != null && original.subtotal > 0)
+                original.total / original.subtotal else 1.0
+            val returnedLines = request.returnItems.mapNotNull { item ->
+                val line = original?.lines?.firstOrNull { it.id == item.saleItemId }
+                    ?: return@mapNotNull null
+                val unitPaid = if (line.qty > 0) round2((line.lineTotal / line.qty) * paidFactor) else 0.0
+                ExchangeReceiptLine(
+                    label = "${item.qty}  ${designationOf(line.productName, line.colourName, line.sizeLabel)}",
+                    amount = round2(unitPaid * item.qty),
+                )
+            }
+            val newLines = newSale.lines.map { line ->
+                ExchangeReceiptLine(
+                    label = "${line.qty}  ${designationOf(line.productName, line.colourName, line.sizeLabel)}",
+                    amount = line.lineTotal,
+                )
+            }
+
+            val shop = _state.value.shop
+            val lines = buildExchangeReceipt(
+                doc = ExchangeReceiptDoc(
+                    newSaleNo = newSale.saleNo,
+                    originalSaleNo = original?.saleNo,
+                    dateIso = newSale.saleDate,
+                    returned = returnedLines,
+                    replacements = newLines,
+                    creditTotal = round2(newSale.total - gap),
+                    newGoodsTotal = newSale.total,
+                    gap = gap,
+                    settlementMethod = request.paymentMethod,
+                    vatEnabled = newSale.vatEnabled,
+                    vatRate = newSale.vatRate,
+                    vatNumber = newSale.vatNumber,
+                    vatAmount = newSale.vatAmount,
+                    cashierName = newSale.cashierName ?: original?.cashierName,
+                ),
+                shop = ShopIdentity(
+                    name = shop?.shopName ?: "Kids Corner",
+                    address = shop?.shopAddress,
+                    phone = shop?.shopPhone,
+                ),
+                width = printerSettings.paper,
+            )
+
+            _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+
+            val result = printerSettings
+                .transport(getApplication())
+                .send(EscPos.encode(lines, printerSettings.paper))
+            if (result is PrintResult.Failed) {
+                toast("Exchange receipt did not print — reprint from History")
+            }
+        }
+    }
+
+    /** Product with its colour and size, dropping blanks and the em-dash filler. */
+    private fun designationOf(productName: String, colourName: String, sizeLabel: String): String =
+        listOf(productName, colourName, sizeLabel).filter { it.isNotBlank() && it != "—" }.joinToString(" ")
 
     private suspend fun postRefund(request: RefundRequest) {
         _state.update { it.copy(busy = true, historyError = null) }
@@ -2680,17 +2814,26 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearPrinterTest() = _state.update { it.copy(printerTestResult = null) }
 
+    // Exhaustive on purpose — no `else`. A missing screen here returns a null
+    // cashier, and every flow that reads it (postExchange, postRefund, …) then
+    // treats a completed action as a failure: an omitted `Exchanging` branch is
+    // exactly why every exchange reported "did not go through" while the server
+    // had already committed it. Listing the screens without a cashier explicitly
+    // means a NEW screen won't compile until it is placed on one side or the
+    // other, rather than defaulting to the wrong one.
     private fun cashierOf(screen: TillScreen): Cashier? = when (screen) {
+        is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.Selling -> screen.cashier
         is TillScreen.StockCheck -> screen.cashier
         is TillScreen.Deposits -> screen.cashier
         is TillScreen.Customers -> screen.cashier
         is TillScreen.Paying -> screen.cashier
-        is TillScreen.OpeningShift -> screen.cashier
-        is TillScreen.ClosingShift -> screen.cashier
-        is TillScreen.Refunding -> screen.cashier
         is TillScreen.Settings -> screen.cashier
-        else -> null
+        is TillScreen.Refunding -> screen.cashier
+        is TillScreen.Exchanging -> screen.cashier
+        is TillScreen.ClosingShift -> screen.cashier
+        // The till is between people on these — nobody is signed in.
+        TillScreen.Starting, TillScreen.DeviceSetup, TillScreen.Locked -> null
     }
 
     fun submitPin(cashier: Cashier, pin: String) = viewModelScope.launch {

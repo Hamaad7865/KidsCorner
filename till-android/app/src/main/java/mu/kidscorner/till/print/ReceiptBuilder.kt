@@ -212,13 +212,16 @@ fun buildReceipt(
         sale.payments
             .groupBy { methodLabel(it.method).uppercase() }
             .forEach { (label, group) ->
-                add(
-                    ReceiptLine.Text(
-                        "${group.size}   $label : " +
-                            suffixed(group.sumOf { it.amount }, currency),
-                        bold = true,
-                    ),
-                )
+                val amount = group.sumOf { it.amount }
+                // A negative settlement is money that LEFT the shop — the
+                // exchange screen's refund leg — and reads as a mistake if
+                // printed as a plain negative currency figure.
+                val text = if (amount < 0) {
+                    "${group.size}   $label REFUND : " + suffixed(-amount, currency)
+                } else {
+                    "${group.size}   $label : " + suffixed(amount, currency)
+                }
+                add(ReceiptLine.Text(text, bold = true))
             }
         val change = sale.payments.sumOf { (it.tendered ?: it.amount) - it.amount }
         if (change > 0) {

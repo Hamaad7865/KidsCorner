@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -65,8 +66,9 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * Nothing here decides money. `create_exchange` re-prices both sides: the
  * return at what the customer actually paid, the replacements at today's
  * list price read from `product_variants`. The figure on this screen is a
- * quote. It also never goes negative: when the credit beats the replacements,
- * the server refuses and the difference goes back through Returns instead.
+ * quote — and it settles in either direction: the customer pays when the
+ * replacements cost more, the shop pays back when they cost less, through
+ * whichever method is picked below.
  */
 @Composable
 fun ExchangeScreen(
@@ -99,6 +101,34 @@ fun ExchangeScreen(
     fun unitPaid(line: mu.kidscorner.till.data.SaleDetailLine): Double =
         if (line.qty > 0) round2((line.lineTotal / line.qty) * paidFactor) else 0.0
 
+    // Shared by the size-swap chips and the catalogue search below — adding a
+    // replacement is the same operation everywhere it can be started from.
+    fun addReplacement(v: CatalogVariant) {
+        val existing = newItems.value.firstOrNull { it.first.id == v.id }
+        newItems.value = if (existing == null) {
+            newItems.value + (v to 1)
+        } else {
+            newItems.value.map { (e, q) -> if (e.id == v.id) e to q + 1 else e to q }
+        }
+    }
+
+    // Every OTHER variant of the same product — any colour, any size, not just
+    // a different size in the one colour that was bought. A colourway can carry
+    // just one size in this catalogue (a dress in "Sea glass" only ever came in
+    // one), so narrowing to the returned colour was hiding this for exactly the
+    // products it needed to help with. Grouped by colour, then by size within
+    // it, so the run still reads the way a size chart does; the exact returned
+    // combination is left out, since there is nothing to swap it for.
+    fun sameProductVariants(line: mu.kidscorner.till.data.SaleDetailLine): List<CatalogVariant> =
+        catalog.filter {
+            it.productName == line.productName &&
+                !(it.colourName == line.colourName && it.sizeLabel == line.sizeLabel)
+        }.sortedWith(compareBy({ it.colourName }, { it.sizeSort }))
+
+    /** "Navy · M" — falls back gracefully when a product has no colour or size at all. */
+    fun variantLabel(colourName: String, sizeLabel: String): String =
+        listOf(colourName, sizeLabel).filter { it.isNotBlank() && it != "—" }.joinToString(" · ")
+
     val creditTotal = round2(
         sale.lines.sumOf { line -> unitPaid(line) * (returnQty[line.id] ?: 0) },
     )
@@ -106,12 +136,19 @@ fun ExchangeScreen(
     val newTotal = round2(newItems.value.sumOf { (v, q) -> v.price * q })
     val gap = round2(newTotal - creditTotal)
     val count = returnQty.values.sum()
-    val ready = creditTotal > 0 && newItems.value.isNotEmpty() && gap >= 0 && !busy
+    val ready = creditTotal > 0 && newItems.value.isNotEmpty() && !busy
 
+    // Same four fields the sell screen's own catalogue search matches
+    // (groupsFor in SellScreen.kt) — a replacement is picked from the same
+    // catalogue, so it should be findable the same ways: by name, SKU, the
+    // shelf's product code, or a scanned barcode.
     val results = remember(query, catalog) {
         val q = query.trim().lowercase()
         if (q.length < 2) emptyList() else catalog.filter {
-            it.productName.lowercase().contains(q) || it.sku.lowercase().contains(q)
+            it.productName.lowercase().contains(q) ||
+                it.sku.lowercase().contains(q) ||
+                it.productCode.orEmpty().lowercase().contains(q) ||
+                it.barcode.orEmpty().lowercase().contains(q)
         }.take(6)
     }
 
@@ -225,6 +262,35 @@ fun ExchangeScreen(
                                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                                     color = if (picked > 0) Handoff.InkFigure else Handoff.Fainter,
                                 )
+                            }
+                            // The one-tap path for the exchange this screen exists
+                            // for: this line is coming back, and any other colour
+                            // or size of the same product can go straight into
+                            // Replacements without typing a letter into search.
+                            if (picked > 0) {
+                                val variants = sameProductVariants(line)
+                                if (variants.isNotEmpty()) {
+                                    Text(
+                                        "OTHER COLOURS & SIZES",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 1.sp,
+                                        color = Handoff.Muted3,
+                                        modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                                    )
+                                    Row(
+                                        Modifier
+                                            .padding(start = 12.dp, bottom = 12.dp)
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        variants.forEach { v ->
+                                            SizeSwapChip(variantLabel(v.colourName, v.sizeLabel)) {
+                                                addReplacement(v)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
                         }
@@ -347,12 +413,7 @@ fun ExchangeScreen(
                             }
                             Text(formatRs(v.price), fontFamily = PlexMono, fontSize = 13.sp, color = Handoff.Muted)
                             OutlineKey("Add") {
-                                val existing = newItems.value.firstOrNull { it.first.id == v.id }
-                                newItems.value = if (existing == null) {
-                                    newItems.value + (v to 1)
-                                } else {
-                                    newItems.value.map { (e, q) -> if (e.id == v.id) e to q + 1 else e to q }
-                                }
+                                addReplacement(v)
                                 query = ""
                             }
                         }
@@ -372,14 +433,14 @@ fun ExchangeScreen(
                 .padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 18.dp),
         ) {
             Text(
-                "CUSTOMER PAYS",
+                if (gap < 0) "REFUND TO CUSTOMER" else "CUSTOMER PAYS",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.1.sp,
                 color = if (gap != 0.0 && count > 0) Handoff.ChangeLabel else Handoff.Muted3,
             )
             Text(
-                formatRs(gap.coerceAtLeast(0.0)),
+                formatRs(kotlin.math.abs(gap)),
                 fontFamily = PlexMono,
                 fontSize = 44.sp,
                 lineHeight = 48.4.sp,
@@ -397,16 +458,6 @@ fun ExchangeScreen(
                 color = Handoff.Muted3,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            if (gap < 0) {
-                Text(
-                    "The credit is bigger than the replacements. Give the change back through Return instead.",
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = Handoff.Danger,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            }
-
             Text(
                 "SETTLE THE GAP BY",
                 fontSize = 11.sp,
@@ -433,7 +484,7 @@ fun ExchangeScreen(
                 }
             }
 
-            if (method == "cash") {
+            if (method == "cash" && gap > 0) {
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -449,7 +500,7 @@ fun ExchangeScreen(
                         decorationBox = { inner ->
                             Box {
                                 if (tenderedText.isEmpty()) {
-                                    Text(gap.coerceAtLeast(0.0).toString(), fontSize = 15.sp, color = Handoff.Fainter)
+                                    Text(gap.toString(), fontSize = 15.sp, color = Handoff.Fainter)
                                 }
                                 inner()
                             }
@@ -473,7 +524,7 @@ fun ExchangeScreen(
             if (ready) {
                 Surface(
                     onClick = {
-                        val tendered = if (method == "cash") tenderedText.toDoubleOrNull() ?: gap else null
+                        val tendered = if (method == "cash" && gap > 0) tenderedText.toDoubleOrNull() ?: gap else null
                         onExchange(
                             returnQty.filterValues { it > 0 },
                             newItems.value.map { (v, q) -> v.id to q },
@@ -493,7 +544,7 @@ fun ExchangeScreen(
                     ) {
                         Text("Exchange", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Text(
-                            formatRs(gap.coerceAtLeast(0.0)),
+                            formatRs(kotlin.math.abs(gap)),
                             fontFamily = PlexMono,
                             fontSize = 21.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -513,11 +564,7 @@ fun ExchangeScreen(
                         CircularProgressIndicator(Modifier.size(26.dp), Handoff.AccentSolid, 2.dp)
                     } else {
                         Text(
-                            when {
-                                creditTotal <= 0 -> "Pick what is coming back"
-                                newItems.value.isEmpty() -> "Add what is going out"
-                                else -> "Replacements cost less than the credit"
-                            },
+                            if (creditTotal <= 0) "Pick what is coming back" else "Add what is going out",
                             fontSize = 15.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Handoff.BlockedText,
@@ -561,6 +608,23 @@ private fun OutlineKey(label: String, muted: Boolean = false, onClick: () -> Uni
     ) {
         Box(Modifier.fillMaxHeight().padding(horizontal = 13.dp), Alignment.Center) {
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+    }
+}
+
+/** One size, one tap, straight into Replacements — the Large-for-a-Small swap. */
+@Composable
+private fun SizeSwapChip(sizeLabel: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = Handoff.AccentTint,
+        contentColor = Handoff.AccentSolid,
+        border = BorderStroke(1.dp, Handoff.AccentSolid),
+        modifier = Modifier.height(30.dp),
+    ) {
+        Box(Modifier.fillMaxHeight().padding(horizontal = 11.dp), Alignment.Center) {
+            Text(sizeLabel, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 }

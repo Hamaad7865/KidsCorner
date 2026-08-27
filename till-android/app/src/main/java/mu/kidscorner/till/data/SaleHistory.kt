@@ -218,6 +218,8 @@ data class ExchangeRequest(
     val deviceId: Int? = null,
     /** Sent only when a sale past the 7-day window needs a manager. */
     val approval: Approval? = null,
+    /** Names this attempt so a retry after a lost response replays it. */
+    val idempotencyKey: String,
 )
 
 @Serializable
@@ -230,7 +232,7 @@ data class ExchangeResponse(
     val needsApproval: Boolean = false,
     /** The new sale the replacements landed on — its id, for reprinting. */
     val saleId: Int? = null,
-    /** What the customer paid (the gap). Never negative: see create_exchange. */
+    /** What the customer paid (positive) or was given back (negative). */
     val gap: Double? = null,
     val error: String? = null,
 )

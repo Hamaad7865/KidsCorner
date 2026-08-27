@@ -754,6 +754,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Refunding) {
         vm.closeRefund()
     }
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Exchanging) {
+        vm.closeExchange()
+    }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Settings) {
         vm.closeSettings()
     }
