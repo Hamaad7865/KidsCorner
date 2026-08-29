@@ -374,16 +374,24 @@ export type DashboardStats = {
   lowStockCount: number
   topSellers: TopSeller[]
   awaiting: AwaitingDelivery
-  /** Last seven shop-days, oldest first, for the chart's Week view. */
-  daily: { date: string; total: number }[]
+  /**
+   * Last seven shop-days, oldest first, for the chart's Week view.
+   *
+   * `prev` is what the same weekday took a week earlier, drawn behind the
+   * curve as the comparison line. Same weekday rather than the day before,
+   * for the reason given on `todayVsLastWeek`: takings swing hard by day, and
+   * a Saturday against a Friday compares nothing.
+   */
+  daily: { date: string; total: number; prev: number }[]
   /**
    * The last five shop-weeks, oldest first, for the chart's Month view.
    *
-   * Weeks rather than thirty daily bars: the design's grid is seven columns
-   * wide and a month of days in it is unreadable. A week is also the unit a
-   * shop actually compares — "last week was better than this one".
+   * Weeks rather than thirty daily points: a month of days squeezed into this
+   * panel is unreadable, and a week is the unit a shop actually compares —
+   * "last week was better than this one". `prev` is the week before this one,
+   * which is why the query reaches back six weeks to fill the oldest.
    */
-  weekly: { start: string; end: string; total: number }[]
+  weekly: { start: string; end: string; total: number; prev: number }[]
 }
 
 /** "14:32" on the shop's clock, for the like-for-like time-of-day cut. */
@@ -429,9 +437,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const supabase = await createClient()
   const today = shopToday()
 
-  // Thirty-five days back: the Month view shows five weeks, the Week view the
+  // Forty-two days back: the Month view shows five weeks, the Week view the
   // last seven of them, and the comparison figure the same weekday a week ago.
-  const days = recentShopDays(today, 35)
+  //
+  // Six weeks rather than five because the chart ghosts every period against
+  // the one before it. The oldest week is never drawn — it exists only to be
+  // the `prev` of the second, so the first plotted week has something to be
+  // compared against instead of a gap.
+  const days = recentShopDays(today, 42)
   const rangeStart = days[0]
   const chartDays = days.slice(-7)
   const weekAgo = days[days.length - 8]
@@ -452,10 +465,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       .gte("sale_date", startOfShopDay(rangeStart))
       .lte("sale_date", endOfShopDay(today))
       .eq("status", "completed")
-      // Five weeks rather than one, so the ceiling rises with it. At the
+      // Six weeks rather than one, so the ceiling rises with it. At the
       // shop's ~21 sales a day this is roughly a 5x margin; a truncated scan
       // would understate the chart rather than fail loudly, so it is set high.
-      .limit(6000),
+      // Raised from 6000 with the range, to keep that margin where it was.
+      .limit(7200),
     supabase
       .from("low_stock_variants")
       .select("variant_id", { count: "exact", head: true }),
@@ -541,10 +555,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   }
 
   // Same helper as the range above, so labels and buckets cannot drift apart.
-  const daily = chartDays.map((date) => ({ date, total: byDay.get(date) ?? 0 }))
+  // `days` runs oldest-first and ends today, so the day a week before
+  // `chartDays[i]` is always fourteen back from the end plus i.
+  const daily = chartDays.map((date, i) => ({
+    date,
+    total: byDay.get(date) ?? 0,
+    prev: byDay.get(days[days.length - 14 + i]!) ?? 0,
+  }))
 
-  // Five buckets of seven, newest-aligned so the last one always ends today.
-  const weekly = Array.from({ length: 5 }, (_, block) => {
+  // Six buckets of seven, newest-aligned so the last one always ends today.
+  const buckets = Array.from({ length: 6 }, (_, block) => {
     const slice = days.slice(block * 7, block * 7 + 7)
     return {
       start: slice[0]!,
@@ -552,6 +572,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       total: slice.reduce((sum, date) => sum + (byDay.get(date) ?? 0), 0),
     }
   })
+
+  // Drop the oldest and hand each surviving week the one before it. Five weeks
+  // are plotted; the sixth was fetched only to fill this column.
+  const weekly = buckets
+    .slice(1)
+    .map((week, i) => ({ ...week, prev: buckets[i]!.total }))
 
   const weekTotal = daily.reduce((sum, d) => sum + d.total, 0)
 
