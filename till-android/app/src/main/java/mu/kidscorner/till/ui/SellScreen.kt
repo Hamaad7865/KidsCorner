@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -296,25 +297,19 @@ fun SellScreen(
     // The search box is the till's default focus: a barcode scanner acts as a
     // keyboard, so anything typed anywhere has to land here.
     //
-    // Focused, but the ON-SCREEN keyboard is pushed straight back down. The
-    // counter's scanner is a hardware keyboard; a soft keyboard springing up
-    // over the basket every time the field takes focus would cover the very
-    // thing the cashier is checking, and there is nothing to type on it. It
-    // still opens on a deliberate tap, which is when somebody actually wants
-    // to search by name.
+    // Focus alone must NEVER summon the on-screen keyboard: the field itself
+    // sets showKeyboardOnFocus = false, and the keyboard opens only on a
+    // deliberate tap (see SearchField). The old hide()-after-focus lost that
+    // race on real hardware and the keyboard kept springing up over the
+    // basket.
     //
     // Skipped while Sale complete covers the screen: completing a sale clears
     // `lines` to empty in the same instant it shows that overlay, which used
-    // to refire this — requesting focus here triggers Android's own automatic
-    // show-on-focus, and hide() right after it does not reliably win that race
-    // on real hardware, so the keyboard could flash up over a screen with
-    // nothing to type into. Keyed on saleOutcomeShowing too, so dismissing the
+    // to refire this. Keyed on saleOutcomeShowing too, so dismissing the
     // overlay still refocuses for the next sale.
-    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(picker, lines.size, saleOutcomeShowing) {
         if (picker == null && !saleOutcomeShowing) {
             runCatching { search.requestFocus() }
-            keyboard?.hide()
         }
     }
 
@@ -623,6 +618,14 @@ private fun SearchField(
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Strict IME rule: the keyboard opens only on a deliberate tap on this
+    // field — never from auto-focus. Scanner input still lands here because
+    // focus and the IME are independent of each other.
+    val taps = remember { MutableInteractionSource() }
+    LaunchedEffect(taps) {
+        taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
+    }
 
     Box(
         modifier
@@ -653,8 +656,12 @@ private fun SearchField(
                 color = Handoff.Ink,
             ),
             cursorBrush = SolidColor(Handoff.Accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Done,
+                showKeyboardOnFocus = false,
+            ),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+            interactionSource = taps,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 46.dp, end = 56.dp)
