@@ -25,6 +25,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -112,10 +113,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     var recallQuery by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // Strict IME rule: opening any overlay drops focus first. Otherwise
     // dismissing it hands focus back to whatever held it — on this terminal's
     // IME that return alone summons the keyboard over a screen nobody typed in.
+    // Focus loss alone does not move this IME either, so every jump that
+    // leaves a text field also hides it explicitly (scan recall and receipt
+    // viewing below).
     LaunchedEffect(overlay) {
         if (overlay != Overlay.None) focusManager.clearFocus(force = true)
     }
@@ -126,6 +131,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
      */
     val recallSale: (String) -> Unit = { saleNo ->
         recallQuery = saleNo
+        keyboard?.hide()
         vm.recallAndPreview(saleNo)
         overlay = Overlay.Txns
     }
@@ -454,18 +460,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             RefundDoneDialog(refund = refund, onDismiss = vm::dismissRefundDone)
         }
 
-        // Only when there is no done screen to carry it — a reprint from
-        // history, or the Z. During a sale the slip belongs ON the completion
-        // screen, where the cashier and the customer are both already looking.
-        if (state.outcome == null) state.receiptPreview?.let { preview ->
-            ReceiptPreviewDialog(
-                preview = preview,
-                paper = vm.printer.paper,
-                onDismiss = vm::dismissPreview,
-                onPrintAgain = state.previewSaleId?.let { id -> { vm.printReceipt(id) } },
-            )
-        }
-
         // `atComplete` takes the WHOLE screen in the handoff, not an overlay
         // panel — so it is drawn last inside the Box and covers everything.
         state.outcome?.let { outcome ->
@@ -535,7 +529,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             initialQuery = recallQuery ?: "",
             error = state.historyError,
             onSearch = vm::searchHistory,
-            onViewReceipt = { vm.previewReceipt(it) },
+            onViewReceipt = { keyboard?.hide(); vm.previewReceipt(it) },
             onReprint = { vm.printReceipt(it) },
             onGiftReceipt = { vm.printReceipt(it, gift = true) },
             onReturn = { overlay = Overlay.None; vm.openRefund(it) },
@@ -750,6 +744,20 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 },
             )
         }
+    }
+
+    // The receipt slip draws ABOVE every overlay: viewing one from Past sales
+    // must not land it underneath the list it came from. Only when there is
+    // no done screen to carry it — during a sale the slip belongs ON the
+    // completion screen, where the cashier and the customer are both already
+    // looking.
+    if (state.outcome == null) state.receiptPreview?.let { preview ->
+        ReceiptPreviewDialog(
+            preview = preview,
+            paper = vm.printer.paper,
+            onDismiss = vm::dismissPreview,
+            onPrintAgain = state.previewSaleId?.let { id -> { vm.printReceipt(id) } },
+        )
     }
 
     // Back closes whatever is open, then steps back from payment, and does
