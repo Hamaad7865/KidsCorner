@@ -19,6 +19,7 @@ import { PAYMENT_METHOD_LABELS, isPaymentMethod } from "@/lib/db-enums"
 import { formatDateTime, formatRs } from "@/lib/format"
 import { receiptTaxView } from "@/lib/receipts/tax-view"
 import { getSaleDetail } from "@/lib/sales/queries"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 
 export const metadata: Metadata = { title: "Sale" }
 
@@ -46,16 +47,20 @@ export default async function SaleDetailPage({
 
   const refunded = sale.creditNotes.reduce((sum, c) => sum + c.total, 0)
   const paid = sale.payments.reduce((sum, p) => sum + p.amount, 0)
-  // The sale's frozen VAT identity — a VAT invoice keeps its number and rate
-  // even after the shop later disables VAT; a disabled sale reads "Not VAT
-  // registered" even after the shop registers.
-  const tax = receiptTaxView({
-    vatEnabled: sale.vatEnabled,
-    vatRate: sale.vatRate,
-    vatNumber: sale.vatNumber,
-    vatAmount: sale.vatAmount,
-    total: sale.total,
-  })
+  // Display follows the CURRENT toggle like every other surface: switched
+  // off, no VAT shows even for a sale rung up registered. The figures stay
+  // the sale's own.
+  const policy = await getCurrentVatPolicy().catch(() => null)
+  const tax = receiptTaxView(
+    {
+      vatEnabled: sale.vatEnabled,
+      vatRate: sale.vatRate,
+      vatNumber: sale.vatNumber,
+      vatAmount: sale.vatAmount,
+      total: sale.total,
+    },
+    policy ? { enabled: policy.enabled } : undefined,
+  )
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">

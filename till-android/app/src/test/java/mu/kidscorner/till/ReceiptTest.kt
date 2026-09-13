@@ -496,17 +496,40 @@ class ReceiptTest {
     )
 
     @Test
-    fun `a VAT-enabled sale prints a VAT invoice with the frozen number and breakdown`() {
-        // The shop identity passed in carries a DIFFERENT number and the sale is
-        // still printed from its own frozen snapshot — a reprint must not adopt
-        // today's registration.
+    fun `a VAT-enabled sale prints a VAT invoice with the issuer number up top`() {
+        // The header carries the shop's CURRENT registration; the frozen
+        // number rides in the footer only when it differs.
         for (width in PaperWidth.entries) {
             val text = buildReceipt(enabledSale(), shop.copy(vatNumber = "VAT99999999"), width)
                 .toPlainText(width)
             assertTrue("no VAT INVOICE label on ${width.label}", text.contains("VAT INVOICE"))
+            assertTrue("issuer number missing on ${width.label}", text.contains("VAT99999999"))
             assertTrue("frozen number missing on ${width.label}", text.contains("20123456"))
-            assertFalse("adopted the shop's current number on ${width.label}", text.contains("99999999"))
             assertTrue("VAT amount missing on ${width.label}", text.contains("147.58"))
+        }
+    }
+
+    @Test
+    fun `the frozen number is not repeated when it matches the header`() {
+        val text = buildReceipt(enabledSale(), shop.copy(vatNumber = "VAT20123456"), PaperWidth.Mm80)
+            .toPlainText(PaperWidth.Mm80)
+        assertTrue(text.contains("VAT20123456"))
+        assertFalse(text.contains("VAT number :"))
+    }
+
+    @Test
+    fun `a switched-off toggle prints a plain receipt even for a VAT-enabled sale`() {
+        // Display follows the CURRENT toggle: off hides every VAT word, the
+        // block, and both numbers — whatever the sale rang up under.
+        for (width in PaperWidth.entries) {
+            val text = buildReceipt(enabledSale(), shop, width, vatCurrentlyEnabled = false)
+                .toPlainText(width)
+            assertTrue("no RECEIPT label on ${width.label}", text.contains("RECEIPT"))
+            assertFalse("says VAT INVOICE on ${width.label}", text.contains("VAT INVOICE"))
+            assertFalse("leaked 'VAT' on ${width.label}", text.contains("VAT"))
+            assertFalse("leaked frozen number on ${width.label}", text.contains("20123456"))
+            assertFalse("leaked header number on ${width.label}", text.contains("12345678"))
+            assertTrue("total missing on ${width.label}", text.contains("Total:"))
         }
     }
 

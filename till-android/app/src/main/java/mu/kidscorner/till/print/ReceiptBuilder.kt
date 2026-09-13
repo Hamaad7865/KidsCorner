@@ -35,6 +35,11 @@ data class ShopIdentity(
  * `gift` prints the same receipt with every figure removed — what was bought
  * and where it came from, but not what it cost. It still carries the sale
  * number, because the whole point is that the recipient can exchange it.
+ *
+ * `vatCurrentlyEnabled` is the shop's CURRENT VAT toggle, not the sale's
+ * frozen snapshot: switched off, every receipt prints plain — no VAT block,
+ * no number, no VAT-invoice wording — whatever the sale rang up under.
+ * Switched on, a sale frozen as a VAT invoice prints its figures and number.
  */
 fun buildReceipt(
     sale: SaleDetail,
@@ -43,8 +48,11 @@ fun buildReceipt(
     reprintNumber: Int = 1,
     currency: String = "Rs",
     gift: Boolean = false,
+    vatCurrentlyEnabled: Boolean = true,
 ): List<ReceiptLine> = buildList {
     val w = width.columns
+    // Display follows the toggle; the FIGURES stay frozen on the sale.
+    val showVat = sale.vatEnabled && vatCurrentlyEnabled
 
     // ── identity ────────────────────────────────────────────────────────────
     // Carfectionist splits the address on its first comma into two centred
@@ -59,6 +67,14 @@ fun buildReceipt(
     shop.phone?.takeIf { it.isNotBlank() }?.let {
         add(ReceiptLine.Text("Tel $it", Align.Centre))
     }
+    // The issuer's CURRENT registration number, Carfectionist-style — on a VAT
+    // invoice only. A plain receipt carries no VAT wording at all, header
+    // included. The sale's frozen number rides in the footer instead, so the
+    // two never contradict on a reprint.
+    val headerVatNumber = shop.vatNumber?.takeIf { it.isNotBlank() }?.let { "VAT${it.removePrefix("VAT").trim()}" }
+    if (showVat && headerVatNumber != null) {
+        add(ReceiptLine.Text(headerVatNumber, Align.Centre))
+    }
     add(ReceiptLine.Rule)
 
     // A sale that has been voided or refunded says so before anything else.
@@ -70,13 +86,13 @@ fun buildReceipt(
     }
 
     // ── the numbered sale block ─────────────────────────────────────────────
-    // The document type is the sale's own frozen status, never today's setting:
-    // a VAT invoice while the sale was rung up registered, a plain receipt
-    // otherwise. Explicit — an enabled zero-total sale is still a VAT invoice.
+    // The document type follows the CURRENT toggle first: switched off, even
+    // a sale rung up registered prints as a plain receipt. The frozen status
+    // decides only what the figures underneath may show.
     add(ReceiptLine.Text("No. ${sale.saleNo}", Align.Centre, bold = true))
     add(
         ReceiptLine.Text(
-            "${if (sale.vatEnabled) "VAT INVOICE" else "RECEIPT"} ${sale.saleNo}",
+            "${if (showVat) "VAT INVOICE" else "RECEIPT"} ${sale.saleNo}",
             Align.Centre,
             bold = true,
         ),
@@ -191,9 +207,10 @@ fun buildReceipt(
         }
     }
     add(ReceiptLine.Text("Total: " + suffixed(sale.total, currency), Align.Centre, bold = true))
-    // The exclusive figure is a VAT-invoice concept, so it is printed only when
-    // the sale actually carried VAT — a plain receipt shows the total and stops.
-    if (sale.lines.isNotEmpty() && sale.vatEnabled) {
+    // The exclusive figure is a VAT-invoice concept, so it is printed only
+    // when the toggle currently says VAT — a plain receipt shows the total
+    // and stops.
+    if (sale.lines.isNotEmpty() && showVat) {
         add(
             ReceiptLine.Text(
                 "excl. VAT : " + suffixed(sale.total - sale.vatAmount, currency),
@@ -231,10 +248,10 @@ fun buildReceipt(
     }
 
     // ── tax breakdown ───────────────────────────────────────────────────────
-    // Only on a VAT invoice: a plain receipt from an unregistered shop carries
-    // no VAT, tax or exclusive wording at all. Printed in the reference's shape
+    // Only when the toggle currently says VAT: a plain receipt carries no
+    // VAT, tax or exclusive wording at all. Printed in the reference's shape
     // so a second rate would slot in beside it rather than need a new section.
-    if (sale.lines.isNotEmpty() && sale.vatEnabled) {
+    if (sale.lines.isNotEmpty() && showVat) {
         val base = sale.total - sale.vatAmount
         add(ReceiptLine.Text("VAT : " + suffixed(sale.vatAmount, currency)))
         val both = "excl. VAT = " + suffixed(base, currency) +
@@ -270,12 +287,15 @@ fun buildReceipt(
     if (reprintNumber > 1) {
         add(ReceiptLine.Text("Duplicata $reprintNumber", Align.Centre))
     }
-    // The registration number frozen on the sale, not the shop's current one:
-    // a VAT invoice reprinted after the shop disabled VAT still shows the number
-    // it was issued under, and a plain receipt shows none.
-    if (sale.vatEnabled) {
+    // The registration number frozen on the sale — but only while the toggle
+    // is currently on, and never twice: when it matches the issuer number in
+    // the header above, that line already says it.
+    if (showVat) {
         sale.vatNumber?.takeIf { it.isNotBlank() }?.let {
-            add(ReceiptLine.Text("VAT number : ${it.removePrefix("VAT").trim()}", Align.Centre))
+            val frozen = "VAT${it.removePrefix("VAT").trim()}"
+            if (frozen != headerVatNumber) {
+                add(ReceiptLine.Text("VAT number : ${it.removePrefix("VAT").trim()}", Align.Centre))
+            }
         }
     }
     sale.cashierName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
@@ -315,6 +335,12 @@ internal fun wrapText(text: String, columns: Int): List<String> {
     }
     if (line.isNotEmpty()) out += line.toString()
     return out
+}
+
+/** "01/09 10:00" from an ISO timestamp — short, so tender rows fit 58mm paper. */
+internal fun shortDate(iso: String): String {
+    if (iso.length < 16) return iso
+    return iso.substring(8, 10) + "/" + iso.substring(5, 7) + " " + iso.substring(11, 16)
 }
 
 /** "29 Jul 2026 14:32" from an ISO timestamp, sliced rather than parsed. */

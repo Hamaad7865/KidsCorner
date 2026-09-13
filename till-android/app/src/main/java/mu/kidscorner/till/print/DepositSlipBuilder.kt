@@ -16,6 +16,10 @@ data class DepositSlipDoc(
     /** Frozen at deposit time by the server, exactly as it will be charged. */
     val items: List<DepositSlipLine>,
     val total: Double,
+    /** What this visit handed over. Zero when the order opened with no payment. */
+    val paidNow: Double = 0.0,
+    /** Every payment on the order including this visit's, oldest first. */
+    val payments: List<DepositSlipPayment> = emptyList(),
     val balance: Double,
     /** Optional promise date, YYYY-MM-DD. Absent prints no line at all. */
     val collectByIso: String? = null,
@@ -28,6 +32,15 @@ data class DepositSlipLine(
     val qty: Int,
     val unitPrice: Double,
     val discount: Double,
+    /** Already handed over on an earlier visit. Zero prints no line about it. */
+    val collectedQty: Int = 0,
+)
+
+/** One dated tender on a deposit order — what was paid, when, and how. */
+data class DepositSlipPayment(
+    val dateIso: String,
+    val method: String,
+    val amount: Double,
 )
 
 /** The slip after a top-up: same order, new running figures. */
@@ -35,8 +48,13 @@ data class DepositTopUpSlipDoc(
     val orderNo: String,
     val customerName: String,
     val dateIso: String,
+    /** The held goods with what is already collected, so a later visit's slip
+     * still says what the money is for. */
+    val items: List<DepositSlipLine> = emptyList(),
     val method: String,
     val amountPaidNow: Double,
+    /** Every payment on the order including this visit's, oldest first. */
+    val payments: List<DepositSlipPayment> = emptyList(),
     val totalPaid: Double,
     val balance: Double,
     val collectByIso: String? = null,
@@ -75,7 +93,7 @@ fun buildDepositSlip(
     shop.phone?.takeIf { it.isNotBlank() }?.let { add(ReceiptLine.Text("Tel $it", Align.Centre)) }
     add(ReceiptLine.Rule)
 
-    add(ReceiptLine.Text("DEPOSIT", Align.Centre, bold = true))
+    add(ReceiptLine.Text("DEPOSIT INVOICE", Align.Centre, bold = true))
     add(ReceiptLine.Text(doc.orderNo, Align.Centre))
     wrapText("Customer : ${doc.customerName}", width.columns).forEach {
         add(ReceiptLine.Text(it, Align.Centre))
@@ -105,9 +123,19 @@ fun buildDepositSlip(
                 ),
             )
         }
+        // Partial collection: what is already home never prints as still owed.
+        if (line.collectedQty > 0) {
+            add(ReceiptLine.Text("    collected ${line.collectedQty} of ${line.qty}"))
+        }
     }
     add(ReceiptLine.Rule)
     add(ReceiptLine.Columns("Total", suffixed(doc.total, currency)))
+    // Every tender so far, dated — the second visit's slip says when the
+    // first payment happened, the third says when both did.
+    renderPaymentHistory(doc.payments, currency)
+    if (doc.paidNow > 0.0) {
+        add(ReceiptLine.Columns("Paid now", suffixed(doc.paidNow, currency)))
+    }
     add(
         ReceiptLine.Text(
             "Balance due : " + suffixed(doc.balance, currency),
@@ -149,6 +177,22 @@ fun buildDepositTopUpSlip(
     add(ReceiptLine.Text(readableDate(doc.dateIso), Align.Centre))
     add(ReceiptLine.Rule)
 
+    // What the money is for: the held goods and what of them is already home.
+    // A later visit's slip must still name the goods, or it is just a number.
+    for (line in doc.items) {
+        val collected = if (line.collectedQty > 0) " (${line.collectedQty} collected)" else ""
+        wrapText("  ${line.description}$collected", width.columns).forEach {
+            add(ReceiptLine.Text(it, Align.Left))
+        }
+        add(
+            ReceiptLine.Columns(
+                "    ${line.qty} x ${plainAmount(line.unitPrice)}",
+                suffixed(line.qty * line.unitPrice - line.discount, currency),
+            ),
+        )
+    }
+    if (doc.items.isNotEmpty()) add(ReceiptLine.Rule)
+
     add(
         ReceiptLine.Text(
             "Paid ${methodLabel(doc.method)} : " + suffixed(doc.amountPaidNow, currency),
@@ -157,6 +201,7 @@ fun buildDepositTopUpSlip(
         ),
     )
     add(ReceiptLine.Rule)
+    renderPaymentHistory(doc.payments, currency)
     add(ReceiptLine.Columns("Total paid :", plainAmount(doc.totalPaid)))
     add(
         ReceiptLine.Text(
@@ -171,6 +216,25 @@ fun buildDepositTopUpSlip(
     add(ReceiptLine.Rule)
     doc.cashierName?.let { add(ReceiptLine.Text(it, Align.Centre)) }
     add(ReceiptLine.Feed())
+}
+
+/** Every tender so far, dated oldest first — Carfectionist's payment rows. */
+private fun MutableList<ReceiptLine>.renderPaymentHistory(
+    payments: List<DepositSlipPayment>,
+    currency: String,
+) {
+    if (payments.isEmpty()) return
+    for (p in payments) {
+        // Short date so the row fits 58mm paper; a refund leg reads as money
+        // back, never as a negative payment.
+        val text = if (p.amount < 0) {
+            "${shortDate(p.dateIso)}  ${methodLabel(p.method)} REFUND : " +
+                suffixed(-p.amount, currency)
+        } else {
+            "${shortDate(p.dateIso)}  ${methodLabel(p.method)} : " + suffixed(p.amount, currency)
+        }
+        add(ReceiptLine.Text(text))
+    }
 }
 
 /** Printed after a cancellation: what came back to whom. */

@@ -82,6 +82,7 @@ import mu.kidscorner.till.print.CreditNoteDoc
 import mu.kidscorner.till.print.DepositRefundSlipDoc
 import mu.kidscorner.till.print.DepositSlipDoc
 import mu.kidscorner.till.print.DepositSlipLine
+import mu.kidscorner.till.print.DepositSlipPayment
 import mu.kidscorner.till.print.DepositTopUpSlipDoc
 import mu.kidscorner.till.print.ExchangeReceiptDoc
 import mu.kidscorner.till.print.ExchangeReceiptLine
@@ -1618,6 +1619,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     customerPhone = customer.phone,
                     lines = current.lines,
                     total = response.total,
+                    paidNow = round2(amount),
+                    paidMethod = method,
                     balance = response.balance,
                     collectByIso = collectByIso,
                     note = note,
@@ -1669,9 +1672,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     topUpKey = UUID.randomUUID().toString()
                     _state.update { it.copy(depositBusy = false, depositError = null) }
-                    val detail = _state.value.selectedDeposit?.deposit
-                    if (detail != null) {
-                        printDepositTopUpSlip(detail, method, round2(amount), response.paid, response.balance)
+                    // The held detail still lacks this visit's payment (the
+                    // refetch below has not run yet), so it is appended by hand.
+                    _state.value.selectedDeposit?.let { selected ->
+                        printDepositTopUpSlip(selected, method, round2(amount), response.paid, response.balance)
                     }
                     toast("Payment recorded · balance ${formatRs(response.balance)}")
                     selectDeposit(orderId)
@@ -1847,6 +1851,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 vatNumber = shop?.vatNumber,
             ),
             width = printerSettings.paper,
+            vatCurrentlyEnabled = shop?.vatEnabled ?: true,
         )
         _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
         val result = printerSettings
@@ -1863,6 +1868,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         customerPhone: String?,
         lines: List<CartLine>,
         total: Double,
+        paidNow: Double,
+        paidMethod: String,
         balance: Double,
         collectByIso: String?,
         note: String?,
@@ -1878,6 +1885,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     DepositSlipLine(it.productName + " " + it.variantLabel, it.qty, it.unitPrice, it.discount)
                 },
                 total = total,
+                paidNow = paidNow,
+                // The first tender: this visit's payment is the whole history.
+                payments = if (paidNow > 0.0) {
+                    listOf(DepositSlipPayment(nowIso(), paidMethod, paidNow))
+                } else {
+                    emptyList()
+                },
                 balance = balance,
                 collectByIso = collectByIso,
                 note = note,
@@ -1900,20 +1914,27 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun printDepositTopUpSlip(
-        detail: DepositDto,
+        selected: DepositDetailResponse,
         method: String,
         amountNow: Double,
         paidTotal: Double,
         balance: Double,
     ) = viewModelScope.launch {
         val shop = _state.value.shop
+        val detail = selected.deposit ?: return@launch
         val lines = buildDepositTopUpSlip(
             doc = DepositTopUpSlipDoc(
                 orderNo = detail.orderNo,
                 customerName = detail.customerName,
                 dateIso = nowIso(),
+                items = selected.items.map {
+                    DepositSlipLine(it.description, it.qty, it.unitPrice, it.discount, it.collectedQty)
+                },
                 method = method,
                 amountPaidNow = amountNow,
+                payments = selected.payments.map {
+                    DepositSlipPayment(it.createdAt, it.method, it.amount)
+                } + DepositSlipPayment(nowIso(), method, amountNow),
                 totalPaid = paidTotal,
                 balance = balance,
                 collectByIso = detail.collectBy,
@@ -2653,6 +2674,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             width = printerSettings.paper,
             reprintNumber = recorded.printCount ?: 1,
             gift = gift,
+            vatCurrentlyEnabled = shop?.vatEnabled ?: true,
         )
 
         val result = printerSettings
@@ -2753,6 +2775,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             // The preview shows the copy that *would* come next, so a cashier
             // sees the REPRINT banner before committing to it.
             reprintNumber = sale.prints.size + 1,
+            vatCurrentlyEnabled = shop?.vatEnabled ?: true,
         )
 
         _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }

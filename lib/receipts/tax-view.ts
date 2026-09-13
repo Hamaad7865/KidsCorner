@@ -2,10 +2,11 @@ import { round2 } from "@/lib/format"
 
 /**
  * The frozen VAT fields any receipt-shaped view reads. Structural so both the
- * browser receipt's raw sales row and the SaleDetail model satisfy it.
+ * browser receipt's raw sales row and the SaleDetail model satisfy it. The
+ * FIGURES stay frozen; whether they display also consults today's toggle.
  */
 export type FrozenVatSale = {
-  /** The status frozen on the sale — never today's shop setting. */
+  /** The status frozen on the sale. */
   vatEnabled: boolean
   /** The effective rate at sale time, as a fraction (0.15). */
   vatRate: number
@@ -18,16 +19,21 @@ export type FrozenVatSale = {
 }
 
 /**
- * How a receipt should present the sale's VAT — derived from the sale's frozen
- * snapshot, never the current setting.
+ * How a receipt should present the sale's VAT.
  *
- * A VAT-enabled sale is a VAT invoice: it carries the frozen registration
- * number and a contained-VAT breakdown (net + VAT = gross), because Kids Corner
- * prices include VAT. A disabled sale is a plain receipt with none of that.
+ * Display follows the CURRENT shop toggle first: switched off, every document
+ * renders plain — no block, no number, no VAT-invoice wording — whatever the
+ * sale rang up under. The FIGURES underneath stay frozen on the sale.
  *
- * `isVatInvoice` mirrors the frozen `vatEnabled` flag exactly and is never
- * inferred from `vatAmount > 0`, so an enabled zero-total sale stays a VAT
- * invoice and a disabled sale can never sprout a VAT line.
+ * A VAT-enabled sale with the toggle on is a VAT invoice: it carries the
+ * frozen registration number and a contained-VAT breakdown (net + VAT =
+ * gross), because Kids Corner prices include VAT. Anything else is a plain
+ * receipt with none of that.
+ *
+ * `isVatInvoice` is never inferred from `vatAmount > 0`, so an enabled
+ * zero-total sale stays a VAT invoice and a disabled sale can never sprout a
+ * VAT line. `current` defaults to enabled so callers without a policy read
+ * keep the old frozen-only behaviour.
  */
 export type ReceiptTaxView = {
   isVatInvoice: boolean
@@ -52,10 +58,13 @@ function percentLabel(rate: number): string {
   return `${(rate * 100).toFixed(2).replace(/\.?0+$/, "")}%`
 }
 
-export function receiptTaxView(sale: FrozenVatSale): ReceiptTaxView {
+export function receiptTaxView(
+  sale: FrozenVatSale,
+  current: { enabled: boolean } = { enabled: true },
+): ReceiptTaxView {
   const gross = round2(sale.total)
 
-  if (!sale.vatEnabled) {
+  if (!sale.vatEnabled || !current.enabled) {
     return {
       isVatInvoice: false,
       documentLabel: "RECEIPT",

@@ -82,4 +82,33 @@ describe("receiptTaxView", () => {
     expect(receiptTaxView({ vatEnabled: true, vatRate: 0.125, vatNumber: "V", vatAmount: 0, total: 0 }).rateLabel).toBe("12.5%")
     expect(receiptTaxView({ vatEnabled: true, vatRate: 0.2, vatNumber: "V", vatAmount: 0, total: 0 }).rateLabel).toBe("20%")
   })
+
+  it("renders plain when the current toggle is off, whatever the sale rang up under", () => {
+    const view = receiptTaxView(
+      {
+        vatEnabled: true,
+        vatRate: 0.15,
+        vatNumber: "VAT20123456",
+        vatAmount: 30,
+        total: 230,
+      },
+      { enabled: false },
+    )
+    expect(view.isVatInvoice).toBe(false)
+    expect(view.documentLabel).toBe("RECEIPT")
+    expect(view.vatNumber).toBeNull()
+    expect(view.vatAmount).toBe(0)
+    expect(view.netAmount).toBe(230)
+  })
+
+  it("keeps the old frozen-only behaviour when no current toggle is passed", () => {
+    const view = receiptTaxView({
+      vatEnabled: true,
+      vatRate: 0.15,
+      vatNumber: "VAT20123456",
+      vatAmount: 30,
+      total: 230,
+    })
+    expect(view.isVatInvoice).toBe(true)
+  })
 })

@@ -9,6 +9,7 @@ import { changeDue } from "@/lib/pos/payments"
 import { getShopIdentity } from "@/lib/pos/queries"
 import { receiptTaxView } from "@/lib/receipts/tax-view"
 import { createClient } from "@/lib/supabase/server"
+import { getCurrentVatPolicy } from "@/lib/vat/policy"
 
 export const metadata: Metadata = { title: "Receipt" }
 
@@ -63,16 +64,27 @@ export default async function ReceiptPage({
   if (!sale) notFound()
 
   const shop = typeof shopName?.value === "string" ? shopName.value : "Kids Corner"
-  // The document identity comes entirely from the sale's frozen VAT snapshot,
-  // never today's setting: a VAT invoice with its frozen number and breakdown,
-  // or a plain receipt with neither.
-  const tax = receiptTaxView({
-    vatEnabled: sale.vat_enabled,
-    vatRate: Number(sale.vat_rate),
-    vatNumber: sale.vat_number,
-    vatAmount: Number(sale.vat_amount),
-    total: Number(sale.total),
-  })
+  // Display follows the CURRENT toggle: switched off, this renders plain no
+  // matter what the sale rang up under. A policy read that fails keeps the
+  // old behaviour rather than blanking a receipt mid-shift.
+  const policy = await getCurrentVatPolicy().catch(() => null)
+  // The document identity comes from the sale's frozen snapshot, gated by
+  // today's toggle: a VAT invoice with its frozen number and breakdown, or a
+  // plain receipt with neither. When the toggle is on but the frozen number
+  // is missing (older sales), the current policy number stands in so the
+  // registration is in place.
+  const tax = receiptTaxView(
+    {
+      vatEnabled: sale.vat_enabled,
+      vatRate: Number(sale.vat_rate),
+      vatNumber: sale.vat_number,
+      vatAmount: Number(sale.vat_amount),
+      total: Number(sale.total),
+    },
+    policy ? { enabled: policy.enabled } : undefined,
+  )
+  const vatNumber =
+    tax.vatNumber ?? (tax.isVatInvoice ? (policy?.vatNumber ?? null) : null)
   const payments = sale.sale_payments ?? []
   // The shared answer, not a third one: changeDue sums per-row
   // greatest(tendered - amount, 0) over every rail, exactly the Z report's
@@ -97,9 +109,9 @@ export default async function ReceiptPage({
           <h1 className="text-sm font-bold uppercase">{shop}</h1>
           {identity.address ? <p>{identity.address}</p> : <p>Mauritius</p>}
           {identity.phone ? <p>{identity.phone}</p> : null}
-          {/* Only a VAT invoice carries a registration number, and it is the one
-              frozen on the sale — not the shop's current number. */}
-          {tax.isVatInvoice && tax.vatNumber ? <p>VAT {tax.vatNumber}</p> : null}
+          {/* Only a VAT invoice carries a registration number: the frozen one,
+              falling back to the current policy number so it is in place. */}
+          {tax.isVatInvoice && vatNumber ? <p>VAT {vatNumber}</p> : null}
           {/* The document type: a VAT invoice or a plain receipt, decided by the
               sale's frozen status. */}
           <p className="mt-1 font-bold uppercase">{tax.documentLabel}</p>
