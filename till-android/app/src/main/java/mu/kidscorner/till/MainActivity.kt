@@ -407,6 +407,8 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 onBack = vm::closeSettings,
                 onOpenPrinter = { overlay = Overlay.Printer },
                 onTestPrint = vm::testPrinter,
+                onTestDrawer = vm::openCashDrawer,
+                drawerReady = state.printerConfigured,
                 onSetPaper = vm::setPaper,
                 onSetPref = vm::setPref,
                 onShareDiagnostics = vm::shareDiagnostics,

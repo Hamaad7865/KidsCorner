@@ -75,6 +75,9 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPrinter: () -> Unit,
     onTestPrint: () -> Unit,
+    onTestDrawer: () -> Unit = {},
+    /** The drawer fires through the printer, so it is ready exactly when the printer is. */
+    drawerReady: Boolean = false,
     onSetPaper: (PaperWidth) -> Unit,
     onSetPref: (String, Boolean) -> Unit,
     onShareDiagnostics: () -> Unit = {},
@@ -121,11 +124,11 @@ fun SettingsScreen(
             // the far corner, greyed, next to none of them. It says it itself
             // until there is a drawer to open.
             Surface(
-                onClick = { },
-                enabled = false,
+                onClick = onTestDrawer,
+                enabled = drawerReady,
                 shape = RoundedCornerShape(11.dp),
-                color = Handoff.Blocked,
-                contentColor = Handoff.BlockedText,
+                color = if (drawerReady) Handoff.ScanButton else Handoff.Blocked,
+                contentColor = if (drawerReady) Handoff.ScanGlyph else Handoff.BlockedText,
                 modifier = Modifier.height(48.dp),
             ) {
                 Row(
@@ -135,7 +138,7 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Default.Inbox, null, Modifier.size(17.dp))
                     Text(
-                        "Open drawer — none connected",
+                        if (drawerReady) "Open drawer" else "Open drawer — none connected",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -161,8 +164,33 @@ fun SettingsScreen(
                     model = printerLabel,
                     testLabel = "Test print",
                 ),
-                Periph("Cash drawer", Icons.Default.Inbox, Color(0xFFFFF3DF), Color(0xFF8A5A12)),
-                Periph("Barcode scanner", Icons.Default.QrCodeScanner, Color(0xFFE7F0FA), Color(0xFF2E5F8A)),
+                // The drawer has no cable of its own: it fires through the
+                // receipt printer's drawer port, so it is live exactly when
+                // the printer is. Its test key pops it.
+                Periph(
+                    "Cash drawer",
+                    Icons.Default.Inbox,
+                    Color(0xFFFFF3DF),
+                    Color(0xFF8A5A12),
+                    live = printerConfigured,
+                    on = printerConfigured,
+                    model = if (printerConfigured) printerLabel else "",
+                    testLabel = "Pop drawer",
+                    testOverride = onTestDrawer,
+                ),
+                // A wedge scanner needs no driver: it types as a keyboard, so
+                // there is nothing to set up and nothing to test from here —
+                // tap any search box and scan.
+                Periph(
+                    "Barcode scanner",
+                    Icons.Default.QrCodeScanner,
+                    Color(0xFFE7F0FA),
+                    Color(0xFF2E5F8A),
+                    live = true,
+                    on = true,
+                    model = "Keyboard wedge — no setup",
+                    showTest = false,
+                ),
                 Periph("Card terminal", Icons.Default.CreditCard, Color(0xFFEEEAFA), Color(0xFF5B4B9E)),
                 Periph("Customer display", Icons.Default.Monitor, Handoff.Well, Handoff.Muted),
                 Periph("Label printer", Icons.Default.Label, Color(0xFFFDECE6), Color(0xFFB4552F)),
@@ -298,6 +326,10 @@ private data class Periph(
     val on: Boolean = false,
     val model: String = "",
     val testLabel: String = "",
+    /** When set, the card's test key runs this instead of the shared printer test. */
+    val testOverride: (() -> Unit)? = null,
+    /** False where there is nothing to pulse — the wedge scanner just types. */
+    val showTest: Boolean = true,
 )
 
 private data class Pref(
@@ -391,13 +423,16 @@ private fun PeripheralCard(
                 Toggle(on = card.live && card.on, enabled = card.live, onClick = onToggle)
             }
 
+            // A live card with nothing to pulse (the wedge scanner) needs no
+            // second row at all — an empty one would read as a missing button.
+            if ((card.live && card.showTest) || !card.live) {
             Row(
                 Modifier.padding(top = 11.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                if (card.live) {
+                if (card.live && card.showTest) {
                     Surface(
-                        onClick = onTest,
+                        onClick = { card.testOverride?.invoke() ?: onTest() },
                         shape = RoundedCornerShape(11.dp),
                         color = Handoff.Surface,
                         contentColor = Handoff.InkStrong,
@@ -419,7 +454,7 @@ private fun PeripheralCard(
                             Chip(option.label, paper == option) { onSetPaper(option) }
                         }
                     }
-                } else {
+                } else if (!card.live) {
                     Text(
                         "No driver on this till yet.",
                         fontSize = 12.sp,
@@ -427,6 +462,7 @@ private fun PeripheralCard(
                         modifier = Modifier.padding(top = 14.dp),
                     )
                 }
+            }
             }
         }
     }
