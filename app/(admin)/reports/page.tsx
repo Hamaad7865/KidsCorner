@@ -624,21 +624,19 @@ export default async function ReportsPage({
           <Section title="Methods">
             <SimpleTable
               head={["Method", "Bills settled", "Total excl tax", "Total incl tax"]}
-              rows={[
-                ...journal.sections.byMethod.map((m) => [
-                  PAYMENT_METHOD_LABELS[m.method as keyof typeof PAYMENT_METHOD_LABELS] ?? m.method,
-                  String(m.bills),
-                  formatRs(m.excl),
-                  formatRs(m.incl),
-                ]),
-                [
-                  "Total",
-                  String(journal.sections.billsSettled),
-                  formatRs(
-                    journal.sections.byMethod.reduce((sum, m) => sum + m.excl, 0),
-                  ),
-                  formatRs(journal.sections.totalReceived),
-                ],
+              rows={journal.sections.byMethod.map((m) => [
+                PAYMENT_METHOD_LABELS[m.method as keyof typeof PAYMENT_METHOD_LABELS] ?? m.method,
+                String(m.bills),
+                formatRs(m.excl),
+                formatRs(m.incl),
+              ])}
+              foot={[
+                "Total",
+                String(journal.sections.billsSettled),
+                formatRs(
+                  journal.sections.byMethod.reduce((sum, m) => sum + m.excl, 0),
+                ),
+                formatRs(journal.sections.totalReceived),
               ]}
               empty="No money received in this period."
             />
@@ -647,25 +645,23 @@ export default async function ReportsPage({
           <Section title="Taxes">
             <SimpleTable
               head={["Label", "Rate", "Tax", "Discount", "Excluding tax", "With tax"]}
-              rows={[
-                ...journal.sections.taxes.map((t) => [
-                  t.label,
-                  t.rate > 0 ? `${t.rate * 100}%` : "—",
-                  formatRs(t.tax),
-                  t.discount > 0 ? formatRs(t.discount) : "—",
-                  formatRs(t.excl),
-                  formatRs(t.incl),
-                ]),
-                [
-                  "Total",
-                  "",
-                  formatRs(journal.totals.vat),
-                  formatRs(
-                    journal.sections.taxes.reduce((sum, t) => sum + t.discount, 0),
-                  ),
-                  formatRs(journal.totals.net),
-                  formatRs(journal.sections.totalReceived),
-                ],
+              rows={journal.sections.taxes.map((t) => [
+                t.label,
+                t.rate > 0 ? `${t.rate * 100}%` : "—",
+                formatRs(t.tax),
+                t.discount > 0 ? formatRs(t.discount) : "—",
+                formatRs(t.excl),
+                formatRs(t.incl),
+              ])}
+              foot={[
+                "Total",
+                "",
+                formatRs(journal.totals.vat),
+                formatRs(
+                  journal.sections.taxes.reduce((sum, t) => sum + t.discount, 0),
+                ),
+                formatRs(journal.totals.net),
+                formatRs(journal.sections.totalReceived),
               ]}
               empty="No taxable takings in this period."
             />
@@ -681,9 +677,13 @@ export default async function ReportsPage({
                         `Settled earlier bills (${journal.sections.settledEarlier.bills})`,
                         formatRs(journal.sections.settledEarlier.amount),
                       ],
-                      ["Total", formatRs(journal.sections.settledEarlier.amount)],
                     ]
                   : []
+              }
+              foot={
+                journal.sections.settledEarlier.bills > 0
+                  ? ["Total", formatRs(journal.sections.settledEarlier.amount)]
+                  : undefined
               }
               empty="No earlier bills settled in this period."
             />
@@ -692,21 +692,19 @@ export default async function ReportsPage({
           <Section title="Categories">
             <SimpleTable
               head={["Label", "Qty", "%", "Excluding tax", "With tax"]}
-              rows={[
-                ...journal.sections.categories.map((c) => [
-                  c.label,
-                  String(c.qty),
-                  `${c.pct}%`,
-                  formatRs(c.excl),
-                  formatRs(c.incl),
-                ]),
-                [
-                  "Total",
-                  "",
-                  "",
-                  formatRs(journal.totals.net),
-                  formatRs(journal.sections.totalReceived),
-                ],
+              rows={journal.sections.categories.map((c) => [
+                c.label,
+                String(c.qty),
+                `${c.pct}%`,
+                formatRs(c.excl),
+                formatRs(c.incl),
+              ])}
+              foot={[
+                "Total",
+                "",
+                "",
+                formatRs(journal.totals.net),
+                formatRs(journal.sections.totalReceived),
               ]}
               empty="No categorised takings in this period."
             />
@@ -715,21 +713,19 @@ export default async function ReportsPage({
           <Section title="Cashiers">
             <SimpleTable
               head={["Label", "Bills settled", "Excluding tax", "With tax"]}
-              rows={[
-                ...journal.sections.users.map((u) => [
-                  u.name,
-                  String(u.bills),
-                  formatRs(u.excl),
-                  formatRs(u.incl),
-                ]),
-                [
-                  "Total",
-                  String(journal.sections.billsSettled),
-                  formatRs(
-                    journal.sections.users.reduce((sum, u) => sum + u.excl, 0),
-                  ),
-                  formatRs(journal.sections.totalReceived),
-                ],
+              rows={journal.sections.users.map((u) => [
+                u.name,
+                String(u.bills),
+                formatRs(u.excl),
+                formatRs(u.incl),
+              ])}
+              foot={[
+                "Total",
+                String(journal.sections.billsSettled),
+                formatRs(
+                  journal.sections.users.reduce((sum, u) => sum + u.excl, 0),
+                ),
+                formatRs(journal.sections.totalReceived),
               ]}
               empty="No cashier takings in this period."
             />
@@ -893,7 +889,10 @@ function Stat({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <h2 className="font-heading text-base font-medium">{title}</h2>
+      <h2 className="font-heading flex items-center gap-2 text-sm font-semibold tracking-wide uppercase">
+        <span aria-hidden className="bg-primary h-4 w-1 rounded-full" />
+        {title}
+      </h2>
       {children}
     </section>
   )
@@ -902,19 +901,25 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function SimpleTable({
   head,
   rows,
+  foot,
   empty,
 }: {
   head: string[]
   rows: string[][]
+  /** Footer row (e.g. Total), shaded and bold so it reads apart from data. */
+  foot?: string[]
   empty: string
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/60 hover:bg-muted/60">
             {head.map((h, i) => (
-              <TableHead key={h} className={i === 0 ? undefined : "text-right"}>
+              <TableHead
+                key={h}
+                className={`text-muted-foreground text-xs font-medium tracking-wide uppercase ${i === 0 ? "" : "text-right"}`}
+              >
                 {h}
               </TableHead>
             ))}
@@ -946,6 +951,18 @@ function SimpleTable({
               </TableRow>
             ))
           )}
+          {foot ? (
+            <TableRow className="bg-muted/40 hover:bg-muted/40 font-semibold">
+              {foot.map((cell, j) => (
+                <TableCell
+                  key={j}
+                  className={j === 0 ? "" : "text-right tabular-nums"}
+                >
+                  {cell}
+                </TableCell>
+              ))}
+            </TableRow>
+          ) : null}
         </TableBody>
       </Table>
     </div>
