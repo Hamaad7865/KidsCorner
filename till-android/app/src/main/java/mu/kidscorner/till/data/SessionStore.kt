@@ -40,17 +40,28 @@ class SessionStore(context: Context) {
             .also { prefs.edit().putString(KEY_DEVICE_CODE, it).apply() }
 
     private val prefs: SharedPreferences = run {
-        val key = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        try {
+            val key = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
 
-        EncryptedSharedPreferences.create(
-            context,
-            "till-session",
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+            EncryptedSharedPreferences.create(
+                context,
+                "till-session",
+                key,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (t: Throwable) {
+            // POS hardware with a broken or missing Android Keystore throws
+            // building the MasterKey above — an instant crash on first launch,
+            // before a single byte is stored. Fall back to a plain file rather
+            // than refusing to boot: the tokens stay in the app sandbox and
+            // allowBackup="false" still keeps them out of backups. A rooted
+            // tablet reads either file; the Keystore only ever stopped the
+            // casual reader.
+            context.getSharedPreferences("till-session-plain", Context.MODE_PRIVATE)
+        }
     }
 
     var accessToken: String?

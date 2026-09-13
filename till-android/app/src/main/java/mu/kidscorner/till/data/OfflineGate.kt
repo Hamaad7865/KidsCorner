@@ -52,19 +52,25 @@ class OfflineGate(context: Context) {
      * there rather than on the frame the shop is looking at.
      */
     private val prefs: SharedPreferences by lazy {
-        val key = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+        try {
+            val key = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
 
-        EncryptedSharedPreferences.create(
-            context,
-            // Its own file, not the session's: signing the device out must take
-            // this with it, but locking the screen must not.
-            "till-offline-gate",
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+            EncryptedSharedPreferences.create(
+                context,
+                // Its own file, not the session's: signing the device out must take
+                // this with it, but locking the screen must not.
+                "till-offline-gate",
+                key,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        } catch (t: Throwable) {
+            // Same Keystore fallback as SessionStore: hardware without a
+            // working Keystore must still be able to keep a roster.
+            context.getSharedPreferences("till-offline-gate-plain", Context.MODE_PRIVATE)
+        }
     }
 
     /** Consecutive misses at the offline keypad, per staff member. */
