@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic"
  * back office's Sales list opens it in a new tab to reprint a past sale; the
  * selling itself happens on the tablet till, which prints its own paper.
  *
- * `requireProfile` gates it to signed-in staff, and the proxy maps `/receipt`
+ * `requireProfile` gates it to signed-in staff, and the middleware maps `/receipt`
  * to the `sales` module, so a role that cannot see sales cannot reprint one.
  */
 export default async function ReceiptPage({
@@ -47,7 +47,7 @@ export default async function ReceiptPage({
          vat_enabled, vat_rate, vat_number,
          customers ( full_name ),
          profiles ( full_name ),
-         sale_items ( qty, unit_price, discount, line_total,
+         sale_items ( qty, unit_price, discount, line_total, description, variant_id,
            product_variants ( sku, products ( name ), sizes ( label ), colours ( name ) ) ),
          sale_payments ( method, amount, tendered )`,
       )
@@ -74,10 +74,11 @@ export default async function ReceiptPage({
     total: Number(sale.total),
   })
   const payments = sale.sale_payments ?? []
-  // The shared answer, not a third one. This page used to total the tendered
-  // figures across EVERY payment — a card row carrying a tendered value would
-  // have counted as cash handed over — and subtract the cash owed. Both tills
-  // and this receipt now agree by construction.
+  // The shared answer, not a third one: changeDue sums per-row
+  // greatest(tendered - amount, 0) over every rail, exactly the Z report's
+  // per-method `change` definition — so this reprint, the web till and the Z
+  // agree by construction. (The tablet till still measures cash-only per row;
+  // its update is tracked separately.)
   const change = changeDue(
     payments.map((p) => ({
       method: p.method,
@@ -125,13 +126,22 @@ export default async function ReceiptPage({
           <tbody>
             {(sale.sale_items ?? []).map((item, index) => {
               const variant = item.product_variants
+              // A custom line has no variant — its description IS the name.
+              // Without this every gift-wrap/alteration row renders as "Item".
+              const isCustom =
+                item.variant_id == null || variant == null
+              const name = isCustom
+                ? (item.description?.trim() || "Custom item")
+                : (variant?.products?.name ?? "Item")
               return (
                 <tr key={index} className="align-top">
                   <td className="pb-1">
-                    <div>{variant?.products?.name ?? "Item"}</div>
-                    <div className="opacity-70">
-                      {variant?.sizes?.label} / {variant?.colours?.name}
-                    </div>
+                    <div>{name}</div>
+                    {!isCustom ? (
+                      <div className="opacity-70">
+                        {variant?.sizes?.label} / {variant?.colours?.name}
+                      </div>
+                    ) : null}
                     <div className="opacity-70">
                       {item.qty} x {formatRs(Number(item.unit_price))}
                       {Number(item.discount) > 0

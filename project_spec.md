@@ -1,5 +1,14 @@
 # Kids Corner — POS + Back Office (Project Spec)
 
+> Historical record — the original build brief, kept as written. It has
+> drifted in three places: selling moved from a web `(pos)/pos` screen to the
+> Android tablet till (`till-android/`), so the web app is back office only
+> (cashiers land on `/login`, not `/pos`); routing lives in `middleware.ts`,
+> not `proxy.ts`, for the Cloudflare adapter; and the schema has grown past
+> `001_initial_schema.sql` through `supabase/migrations/` (currently through
+> 047) with `supabase/catch-up.sql` as the runnable snapshot. Where this file
+> and the code disagree, the code wins.
+
 Single Next.js app containing a web back office (admin) and a tablet POS,
 backed by Supabase. Built for a small kids' clothing & shoe shop in
 Mauritius. Currency MUR (Rs), VAT 15% (prices are VAT-inclusive).

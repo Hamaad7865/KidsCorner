@@ -1,10 +1,12 @@
 import { cache } from "react"
 
+import { canSeeCostPrice } from "@/lib/auth/roles"
 import {
   SIZE_TYPES,
   isGender,
   isSizeType,
   type Gender,
+  type Role,
   type SizeType,
 } from "@/lib/db-enums"
 import { createClient } from "@/lib/supabase/server"
@@ -181,8 +183,17 @@ export type ProductDetail = {
  * `cache()` dedupes this across a single request. The detail route calls it
  * from both `generateMetadata` and the page body, which Next runs in the same
  * pass — without this that is two identical round trips per page view.
+ *
+ * Cost price is owner/manager only (spec: Design system, canSeeCostPrice).
+ * Pass the caller's role and a caller who may not see cost gets every
+ * variant's costPrice as 0 — stripped at the query boundary so no consumer
+ * can leak what it was never given. `role` is part of the cache key (via
+ * `cache()`'s arguments), so an owner-priced result is never served to a
+ * cashier from a shared request cache. Omitted, the figures come back whole
+ * for the back-office callers that already gate on requireAdminProfile.
  */
-export const getProduct = cache(async (id: number): Promise<ProductDetail | null> => {
+export const getProduct = cache(
+  async (id: number, role?: Role | null): Promise<ProductDetail | null> => {
   const supabase = await createClient()
 
   const { data, error } = await supabase
@@ -202,6 +213,12 @@ export const getProduct = cache(async (id: number): Promise<ProductDetail | null
 
   if (error) throw error
   if (!data) return null
+
+  // Cost is money the shop pays, not money it charges: a caller without the
+  // role for it gets zeros, decided once here rather than at every render
+  // site. The list query above needs no such gate — it never selects
+  // cost_price in the first place.
+  const showCost = role === undefined || role === null ? true : canSeeCostPrice(role)
 
   const rows = data.product_variants ?? []
   const sizeTypes = new Set<SizeType>()
@@ -229,7 +246,7 @@ export const getProduct = cache(async (id: number): Promise<ProductDetail | null
       colourId: row.colour_id,
       sku: row.sku,
       barcode: row.barcode,
-      costPrice: Number(row.cost_price),
+      costPrice: showCost ? Number(row.cost_price) : 0,
       sellingPrice: Number(row.selling_price),
       qtyOnHand: row.qty_on_hand,
       reorderLevel: row.reorder_level,

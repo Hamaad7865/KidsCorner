@@ -20,6 +20,19 @@
 const ITERATIONS = 100_000
 const KEY_BITS = 256
 
+/**
+ * Upper bound accepted when *verifying* a stored hash.
+ *
+ * The stored string names its own iteration count, so without a ceiling a
+ * crafted `pin_code` value (e.g. `pbkdf2$2000000000$...`) would make the
+ * server burn unbounded PBKDF2 work on a single sign-in attempt — a CPU
+ * denial-of-service reachable from the lock screen. Above this the hash is
+ * rejected outright rather than computed. The ceiling matches what this
+ * module mints and what lib/pos/device-verifier.ts enforces, and it matches
+ * Cloudflare Workers' own Web Crypto cap, so no legitimate hash exceeds it.
+ */
+const MAX_VERIFY_ITERATIONS = 100_000
+
 function toBase64(bytes: ArrayBuffer): string {
   return Buffer.from(new Uint8Array(bytes)).toString("base64")
 }
@@ -62,6 +75,10 @@ export async function verifyPin(pin: string, stored: string | null): Promise<boo
 
   const iterations = Number(parts[1])
   if (!Number.isInteger(iterations) || iterations < 1) return false
+  // Fail closed past the ceiling: a stored count above it is either crafted
+  // (CPU DoS — see MAX_VERIFY_ITERATIONS) or minted for a runtime that cannot
+  // recompute it here. Either way it must not verify.
+  if (iterations > MAX_VERIFY_ITERATIONS) return false
 
   const salt = new Uint8Array(Buffer.from(parts[2], "base64"))
   const key = await crypto.subtle.importKey(

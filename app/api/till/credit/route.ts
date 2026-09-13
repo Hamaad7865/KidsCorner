@@ -6,6 +6,7 @@ import { logAudit } from "@/lib/activity/audit"
 import { outstandingCharges } from "@/lib/credit/aging"
 import { STATEMENT_LIMIT } from "@/lib/credit/queries"
 import { formatRs, round2 } from "@/lib/format"
+import { assertShiftOpenFor } from "@/lib/pos/shift-core"
 
 /**
  * The sales that make up a customer's tab, for the till's account-payment view.
@@ -136,6 +137,26 @@ export async function POST(request: Request) {
   }
 
   const { customerId, amount, method, shiftId, reason } = parsed.data
+
+  /**
+   * The drawer, checked before anything is read or written.
+   *
+   * `settle_customer_credit` only reaches `record_till_movement` — which
+   * refuses a closed shift itself — for a CASH payment. A card, Juice or bank
+   * settlement naming a closed shift, or another till's open drawer, would
+   * otherwise land silently, and its cash-less half would still attribute
+   * the money to that drawer. Same gate as the refund route; a null shift
+   * (back-office, no drawer) skips it, exactly as there.
+   */
+  if (shiftId != null) {
+    const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
+      role: session.user.role,
+      // This route carries no device id, so only existence and openness are
+      // enforced — the same half a pre-registry till gets.
+      deviceId: null,
+    })
+    if (!reachable.ok) return apiError(reachable.error, 403)
+  }
 
   // Verify the named receipts against the ledger before anything is recorded.
   // Same read and same oldest-first reduction as the GET above, so what the

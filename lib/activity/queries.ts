@@ -112,7 +112,7 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
       supabase
         .from("stock_movements")
         .select(
-          "id, qty, movement_type, notes, created_at, profiles ( full_name )," +
+          "id, qty, movement_type, reference_type, notes, created_at, profiles ( full_name )," +
             " product_variants ( sku, products ( name ) )",
         )
         .order("created_at", { ascending: false })
@@ -227,6 +227,7 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
       id: number
       qty: number
       movement_type: string
+      reference_type: string | null
       notes: string | null
       created_at: string
       profiles?: { full_name?: string } | null
@@ -238,12 +239,17 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
 
     const name = mv.product_variants?.products?.name ?? "an item"
     const sku = mv.product_variants?.sku
+    // Transfers ride on movement_type='adjustment' with
+    // reference_type='transfer' (transfer_stock, migrations 006/029) — the
+    // reference is the identity, not the movement type. Filtering or titling
+    // by movement_type alone would file both legs as plain adjustments.
+    const title = mv.reference_type === "transfer" ? "Stock transfer" : `Stock ${mv.movement_type}`
     events.push({
       id: `mv-${mv.id}`,
       at: mv.created_at,
       actorName: who(mv),
       category: "stock",
-      title: `Stock ${mv.movement_type}`,
+      title,
       detail: `${mv.qty > 0 ? "+" : ""}${mv.qty} · ${name}${sku ? ` (${sku})` : ""}${
         mv.notes ? ` — ${mv.notes}` : ""
       }`,

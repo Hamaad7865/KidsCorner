@@ -5,10 +5,13 @@ Next.js app, two faces: a tablet till and a web back office, over Supabase.
 
 Currency MUR (Rs), VAT 15%, prices VAT-inclusive.
 
-See [PROJECT_SPEC.md](project_spec.md) for the full brief — it is the source of
-truth. The database schema in
-[supabase/migrations/001_initial_schema.sql](supabase/migrations/001_initial_schema.sql)
-is fixed; build against it, never edit it.
+See [project_spec.md](project_spec.md) for the original brief — it is a
+historical record, not the source of truth. The spec still describes a web
+`(pos)/pos` sell screen and a `001`-only schema; both have drifted: selling
+moved to the Android tablet till (`till-android/`), the web app is back office
+only, and the schema has grown through `supabase/migrations/` (currently
+through 047). Build against the migrations and `supabase/catch-up.sql`, never
+edit `001_initial_schema.sql`.
 
 ## Status: all nine phases built
 
@@ -73,8 +76,8 @@ node scripts/generate-catchup.mjs
 ```
 
 It ends with a SELECT that reports what was built. Expect **33 tables, 5 views,
-52 functions, 48 policies** — and, more importantly, `definers_unpinned` **0**,
-`views_with_invoker` **5**, and `anon_can_execute` **2**. Any other answer on the
+55 functions, 52 policies** — and, more importantly, `definers_unpinned` **0**,
+`views_with_invoker` **4**, and `anon_can_execute` **2**. Any other answer on the
 security figures means the publishable key reaches further into the database
 than it should.
 
@@ -126,7 +129,9 @@ npm run dev
 ```
 
 Sign in at <http://localhost:3000/login>. An owner or manager lands on
-`/dashboard`; a cashier lands on `/pos`.
+`/dashboard`. There is no web sell screen anymore — selling happens on the
+Android tablet till, and a cashier session in the browser is sent back to
+`/login` with a note rather than into the back office.
 
 The dashboard reads `settings.shop_name` and counts the seeded master data, so
 it doubles as a connection check — if those numbers appear, session, RLS and
@@ -141,29 +146,33 @@ Two tiers, per the spec:
 2. **Cashier PIN** (phase 8) — app-level state on top of that session, so
    cashiers can swap mid-shift. Every sale records `cashier_id`.
 
-Routing rules live in [`proxy.ts`](proxy.ts):
+Routing rules live in [`middleware.ts`](middleware.ts):
 
 | Path | Rule |
 | --- | --- |
 | `/login` | Public. Redirects to the role's landing page if already signed in. |
-| `/pos`, `/pos/*` | Any authenticated role, cashiers included. |
-| `/dashboard`, `/products`, `/import`, `/stock`, `/purchases`, `/customers`, `/sales`, `/suppliers`, `/settings` | Owner and manager only. |
-| `/` | Redirects to `/dashboard` or `/pos` by role. |
+| `/dashboard`, `/point-of-sale`, `/products`, `/import`, `/stock`, `/purchases`, `/customers`, `/sales`, `/suppliers`, `/reports`, `/settings` | Owner and manager only. Cashier sessions are bounced to `/login`. |
+| `/receipt/*` | Signed-in staff, gated to roles that can see `sales`. |
+| `/` | Redirects to `/dashboard` (owner/manager) or `/login` (cashier). |
 
-The proxy is a routing convenience, not the security boundary — **RLS is**. Each
+The middleware is a routing convenience, not the security boundary — **RLS is**. Each
 layout independently calls `requireProfile()` / `requireAdminProfile()`, so a
 page never renders for the wrong role even if a request bypasses the matcher.
 
-### Why `proxy.ts` and not `middleware.ts`
+### Why `middleware.ts` and not `proxy.ts`
 
-Next 16 renamed the file convention: `middleware.ts` still works but logs a
-deprecation warning on every build, and the two cannot coexist. The exported
-function must be named `proxy`, and it always runs on the Node.js runtime —
-route segment config such as `export const runtime` is rejected in this file.
+Next 16 renamed the file convention to `proxy.ts` and runs it on the Node.js
+runtime. The Cloudflare adapter refuses that — "Node.js middleware is not
+currently supported" — because it looks for an edge entry in the middleware
+manifest and a proxy compiles to a Node function instead. Next also refuses to
+put a `proxy.ts` on the edge runtime, so the two cannot be reconciled under the
+new name. The deprecated `middleware.ts` convention still accepts
+`runtime: "experimental-edge"`, which is what the adapter needs. See the note
+at the top of `middleware.ts`.
 
 ### Cost of the role lookup
 
-The proxy reads `profiles.role` on every matched request. That is one extra
+The middleware reads `profiles.role` on every matched request. That is one extra
 query per page load — fine at shop scale. If it ever matters, move `role` into a
 custom JWT claim with a Supabase auth hook and read it off `getClaims()` instead.
 

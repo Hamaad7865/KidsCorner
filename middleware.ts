@@ -60,11 +60,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Without credentials there is no session to reason about. Let everything
-  // through so `npm run dev` still renders and the login page can explain what
-  // is missing, rather than redirect-looping on a broken client.
+  // Without credentials there is no session to reason about — and without a
+  // session every route is unauthenticated. Serve only the sign-in page (which
+  // explains what is missing) and bounce everything else to it, rather than
+  // letting all routes through: fail-open here would expose every back-office
+  // page the moment an env var went missing.
   if (!isSupabaseConfigured) {
-    return NextResponse.next()
+    if (isPublicPath(pathname)) return NextResponse.next()
+    console.warn("[proxy] Supabase is not configured — serving /login only.")
+    const url = request.nextUrl.clone()
+    url.pathname = LOGIN_PATH
+    url.search = ""
+    if (pathname !== "/") url.searchParams.set("next", `${pathname}${search}`)
+    return NextResponse.redirect(url)
   }
 
   const { supabase, applySession } = createProxyClient(request)
@@ -108,12 +116,16 @@ export async function middleware(request: NextRequest) {
     userId = data?.claims?.sub ?? null
   } catch (error) {
     // Only non-AuthError throws reach here — a WebCrypto DOMException on a
-    // malformed JWK, a SyntaxError on a corrupted token cookie. Go through
-    // proceed() rather than a bare NextResponse.next(): getClaims() loads the
-    // session before it verifies, so a rotation may already be buffered, and
-    // dropping it is the classic cause of random logouts.
+    // malformed JWK, a SyntaxError on a corrupted token cookie. Fail CLOSED:
+    // an unreadable session is not an authenticated one, so public paths pass
+    // through and everything else bounces to /login (with ?next= preserved),
+    // exactly as if nobody were signed in. Go through redirectTo rather than
+    // a bare response so a rotation already buffered by getClaims() is still
+    // flushed — dropping it is the classic cause of random logouts.
     console.error("[proxy] could not resolve session:", error)
-    return proceed()
+    if (isPublicPath(pathname)) return proceed()
+    const next = `${pathname}${search}`
+    return redirectTo(LOGIN_PATH, next === "/" ? undefined : { next })
   }
 
   if (!userId) {
@@ -140,8 +152,14 @@ export async function middleware(request: NextRequest) {
     if (result.error) throw result.error
     profile = result.data
   } catch (error) {
+    // Fail CLOSED: a profile that cannot be read is not a profile that may
+    // pass. An outage here used to proceed() and let the request through to
+    // layouts that would then treat it as signed-out anyway — except for the
+    // window where they did not. Public paths still pass so /login renders.
     console.error("[proxy] could not read profile:", error)
-    return proceed()
+    if (isPublicPath(pathname)) return proceed()
+    const next = `${pathname}${search}`
+    return redirectTo(LOGIN_PATH, next === "/" ? undefined : { next })
   }
 
   // Signed in, but not usable staff. Send them to /login, which explains why and
@@ -192,16 +210,20 @@ export async function middleware(request: NextRequest) {
   // being reached by typing its URL.
   const moduleKey = moduleForPath(pathname)
   if (moduleKey && moduleKey !== "pos") {
-    const { data: access } = await supabase
+    const { data: access, error: accessError } = await supabase
       .from("module_access")
       .select("can_view")
       .eq("role", profile.role)
       .eq("module", moduleKey)
       .maybeSingle()
 
-    // Only an explicit `false` blocks. A missing row, or a database that has
-    // not had migration 006 applied, leaves behaviour exactly as it was.
-    if (access?.can_view === false) {
+    // Fail CLOSED on a read error: an outage must deny, not admit. (A missing
+    // row — no error, null data — still allows, exactly as before: only an
+    // explicit `false`, or the inability to prove otherwise, blocks.)
+    if (accessError) {
+      console.error("[proxy] could not read module_access:", accessError)
+    }
+    if (accessError || access?.can_view === false) {
       // An export is not a page: bouncing a fetch to the till would download
       // the till's HTML as a .csv rather than refusing it.
       if (pathname.startsWith("/api/")) {

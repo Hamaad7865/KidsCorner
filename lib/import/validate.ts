@@ -318,15 +318,36 @@ export function validateRows(
     flagVariantConflict(rows, "Cost Price", (row) => row.costPrice)
     flagVariantConflict(rows, "Sell Price", (row) => row.sellPrice)
     flagVariantConflict(rows, "Barcode", (row) => row.barcode ?? "")
+    // Exact duplicates double-add: the commit records one stock movement per
+    // row, so the same variant at the SAME location on two rows adds both
+    // quantities. Split locations (Shop + Warehouse) are the legitimate
+    // pattern and stay quiet — only a repeated location is flagged.
+    const byLocation = new Map<string, ValidatedRow[]>()
+    for (const row of rows) {
+      const group = byLocation.get(row.location) ?? []
+      group.push(row)
+      byLocation.set(row.location, group)
+    }
+    for (const [location, dupes] of byLocation) {
+      if (dupes.length < 2) continue
+      const message =
+        `This variant appears ${dupes.length} times for ${location} — ` +
+        `quantities would be added twice. Keep one row per location.`
+      dupes.forEach((row) => addError(row, message))
+    }
   }
 
   // Shelf location belongs to the product rather than an individual variant.
   // Blank cells are intentionally ignored so old spreadsheets, or sheets that
   // fill the value only once, can coexist with a non-empty shelf value.
+  // Keyed by category:name — the commit (importChunk) identifies a product by
+  // name WITHIN its category, so two categories may hold same-named products
+  // without merging. Grouping by name alone here flagged cross-category rows
+  // as conflicts the commit would never merge (and missed nothing it would).
   const products = new Map<string, ValidatedRow[]>()
   for (const row of validated) {
     if (!row.productName) continue
-    const key = normaliseKey(row.productName)
+    const key = [normaliseKey(row.categoryName), normaliseKey(row.productName)].join(":")
     const group = products.get(key) ?? []
     group.push(row)
     products.set(key, group)

@@ -26,6 +26,13 @@ type BalanceRow = {
  * Preserves the active-location list even where the stock view has no row.
  * The Android UI needs that distinction so Warehouse can read zero rather
  * than disappear and look as though it was not checked.
+ *
+ * Two cases both mean zero, explicitly:
+ *  - a view row with qty_on_hand = 0 (migration 046 keeps zero-net rows
+ *    instead of dropping them with HAVING) — kept, never filtered out;
+ *  - no view row at all (a variant+location pair with no movements yet) —
+ *    the location still renders with an empty quantity list, which the
+ *    caller reads as zero rather than as unchecked.
  */
 export function groupStockByLocation(
   locations: LocationRow[],
@@ -35,8 +42,11 @@ export function groupStockByLocation(
 
   for (const row of balances) {
     if (row.location_id === null || row.variant_id === null) continue
+    // Zero is a real answer: a location netted to exactly zero stays in the
+    // list so "empty" never collapses into "missing".
+    const qty = row.qty_on_hand ?? 0
     const group = quantities.get(row.location_id) ?? []
-    group.push({ variantId: row.variant_id, qty: row.qty_on_hand ?? 0 })
+    group.push({ variantId: row.variant_id, qty })
     quantities.set(row.location_id, group)
   }
 

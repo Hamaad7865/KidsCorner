@@ -2230,6 +2230,14 @@ export type Database = {
       pin_lock_state: { Args: { p_profile_id: string }; Returns: number }
       receive_purchase: { Args: { p_purchase_id: number }; Returns: undefined }
       record_receipt_print: { Args: { p_sale_id: number }; Returns: number }
+      record_stock_count: {
+        Args: {
+          p_counted_qty: number
+          p_reason?: string
+          p_variant_id: number
+        }
+        Returns: number
+      }
       record_stock_movement: {
         Args: {
           p_notes?: string

@@ -69,6 +69,11 @@ const transferSchema = z.object({
  * one statement. That matters: two separate movements could half-fail and leave
  * units that exist in neither place. The shop-wide `qty_on_hand` is deliberately
  * unchanged — the goods have not left the shop, only the shelf.
+ *
+ * Both legs are `movement_type = 'adjustment'` with `reference_type =
+ * 'transfer'` (migrations 006/029) — the reference is the identity. Reports
+ * must filter/title on `reference_type` for transfers, never on
+ * `movement_type`, or both legs read as plain adjustments.
  */
 export async function transferStock(
   _prev: FormState,
@@ -186,17 +191,13 @@ export async function searchVariants(query: string): Promise<VariantSearchResult
 /**
  * Records a stock-take correction.
  *
- * The user enters what they *counted*; the delta is derived server-side and
- * applied through the RPC, which increments atomically. That is deliberately
- * safer than writing an absolute figure — a concurrent sale between the read
- * and the write is preserved rather than overwritten.
- *
- * It is not fully serialisable, though: the read of `qty_on_hand` and the RPC
- * call are two statements, so two people stock-taking the *same* variant within
- * the same instant could each compute a delta from the same starting number.
- * Closing that needs a single RPC that reads and writes under a row lock. For a
- * one-shop back office the window is not worth another migration, but the
- * limitation is real rather than absent.
+ * The user enters what they *counted*; the delta is derived inside the
+ * `record_stock_count` RPC (migration 045), which locks the variant row
+ * (SELECT ... FOR UPDATE), computes counted - current, and records the
+ * movement in the same transaction. A concurrent sale or a second
+ * stock-take of the same variant serialises on that lock instead of
+ * overwriting it — the read-then-write window the previous two-statement
+ * version left open is gone.
  */
 export async function recordAdjustment(
   _prev: FormState,
@@ -218,29 +219,19 @@ export async function recordAdjustment(
   const { countedQty, reason } = parsed.data
   const supabase = await createClient()
 
-  const { data: variant, error: readError } = await supabase
-    .from("product_variants")
-    .select("qty_on_hand")
-    .eq("id", variantId)
-    .maybeSingle()
-
-  if (readError) return fail(readError.message)
-  if (!variant) return fail("That variant no longer exists.")
-
-  const delta = countedQty - variant.qty_on_hand
-  if (delta === 0) {
-    return fail(`The counted quantity already matches the system (${countedQty}).`)
-  }
-
-  const { error } = await supabase.rpc("record_stock_movement", {
+  // Atomic: no prior SELECT. The RPC returns the applied delta, or 0 when
+  // the count already matches — which is reported, not written.
+  const { data: delta, error } = await supabase.rpc("record_stock_count", {
     p_variant_id: variantId,
-    p_type: "adjustment",
-    p_qty: delta,
-    p_reference_type: "manual_adjustment",
-    p_notes: reason,
+    p_counted_qty: countedQty,
+    p_reason: reason,
   })
 
   if (error) {
+    // The variant vanished between the type-ahead and the save.
+    if (/no longer exists/i.test(error.message)) {
+      return fail("That variant no longer exists.")
+    }
     // The stock floor from migration 009. Reachable if the count is taken
     // against a variant that sells down before the adjustment is saved.
     if (error.code === "23514" && /qty_on_hand_non_negative/.test(error.message)) {
@@ -249,6 +240,10 @@ export async function recordAdjustment(
       )
     }
     return fail(error.message)
+  }
+
+  if (delta === 0 || delta === null) {
+    return fail(`The counted quantity already matches the system (${countedQty}).`)
   }
 
   revalidatePath("/stock")

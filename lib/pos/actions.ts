@@ -416,9 +416,15 @@ export async function completeSale(
   // The web has no device registry entry — the back office is not a till — so
   // the ownership half of the gate is moot here; every role that can reach this
   // action is admin anyway. Openness is what the gate still catches.
+  //
+  // Fail closed on a missing role: defaulting to "owner" here used to hand
+  // every drawer in the shop to a session whose profile could not be read.
   const profile = await getSessionProfile()
+  if (!profile) {
+    return { ok: false, error: "Session expired, sign in again." }
+  }
   const result = await commitSale(await createClient(), user, parsed.data, {
-    role: profile?.role ?? "owner",
+    role: profile.role,
     deviceId: null,
   })
 

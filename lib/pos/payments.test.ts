@@ -81,9 +81,17 @@ describe("changeDue", () => {
     expect(changeDue([cash(1_000, 500)])).toBe(0)
   })
 
-  it("ignores non-cash rows entirely", () => {
-    // A card payment cannot produce change from the drawer.
-    expect(changeDue([{ method: "card", amount: 1_000, tendered: 5_000 }])).toBe(0)
+  it("counts over-tendering on any rail, like the Z does", () => {
+    // The Z's per-method `change` sums greatest(tendered - amount, 0) over ALL
+    // methods, so this helper does too — a card row carrying a tendered figure
+    // above its amount is change owed, not money taken.
+    expect(changeDue([{ method: "card", amount: 1_000, tendered: 5_000 }])).toBe(4_000)
+  })
+
+  it("counts nothing for a row with no tendered figure", () => {
+    // Null means "not recorded", not zero handed over — it contributes nothing
+    // rather than eating another row's change.
+    expect(changeDue([{ method: "card", amount: 1_000, tendered: null }])).toBe(0)
   })
 
   it("does not let over-tendering on cash offset a card row", () => {

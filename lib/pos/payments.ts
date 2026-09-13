@@ -57,26 +57,28 @@ export function withPayment<M extends string>(
 /**
  * Change handed back.
  *
- * Only cash produces change, and over-tendering on one row does not offset
- * another — a customer who hands over a note for part of a split does not get
- * the card portion back in coins.
+ * The SAME answer as the Z report's per-method `change` figure
+ * (`greatest(coalesce(tendered, amount) - amount, 0)`, summed): over-tendering
+ * on ANY rail counts, a row with no tendered figure contributes nothing, and
+ * rows never offset each other — a customer who hands over a note for part of
+ * a split does not get the card portion back in coins, and an under-tendered
+ * row cannot cancel another row's note.
  *
- * Measured PER ROW, which is what that sentence has always meant and what the
- * tablet till has always done. It used to total the tendered figures and
- * subtract the total cash owed, and those two differ the moment one cash row
- * carries no tendered figure: its amount was subtracted from another row's
- * note. Two cash rows of Rs 500, one taken without a tendered figure and one
- * paid with a Rs 1,000 note, came out as no change due instead of Rs 500.
+ * Measured PER ROW, not as total-tendered minus total-owed: two cash rows of
+ * Rs 500, one taken without a tendered figure and one paid with a Rs 1,000
+ * note, owe Rs 500 change — totalling first would net the first row's amount
+ * against the second row's note and answer zero.
  *
- * Nothing writes that shape today — both tills always record a tendered
- * figure on cash — so this is a latent disagreement rather than a wrong
- * receipt in the wild. It is still worth being the same answer as the tablet,
- * because this is the function that exists to BE the answer.
+ * NOTE for the Android till (left to its owner): ReceiptBuilder.kt still
+ * measures change cash-only per row. Any card/juice row carrying a tendered
+ * figure above its amount will read higher here and on the Z than on the
+ * tablet's paper until it adopts this definition.
  */
 export function changeDue(payments: Payment<string>[]): number {
-  const given = payments
-    .filter((p) => p.method === "cash" && p.tendered !== null)
-    .reduce((sum, p) => sum + Math.max(0, (p.tendered ?? 0) - p.amount), 0)
+  const given = payments.reduce(
+    (sum, p) => sum + Math.max(0, (p.tendered ?? p.amount) - p.amount),
+    0,
+  )
   return round2(given)
 }
 

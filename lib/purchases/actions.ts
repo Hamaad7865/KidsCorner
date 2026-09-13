@@ -189,12 +189,23 @@ export async function savePurchase(
   const byVariant = new Map<number, { qty: number; unitCost: number }>()
   for (const line of lines) {
     const existing = byVariant.get(line.variantId)
-    if (existing) existing.qty += line.qty
-    else byVariant.set(line.variantId, { qty: line.qty, unitCost: line.unitCost })
+    if (existing) {
+      // Weighted average, kept at full precision until the boundaries below
+      // round it once: keeping the first line's cost and dropping the second
+      // understated the header and the stored cost price whenever two lines
+      // for one variant arrived at different costs.
+      const qty = existing.qty + line.qty
+      existing.unitCost =
+        (existing.qty * existing.unitCost + line.qty * line.unitCost) / qty
+      existing.qty = qty
+    } else byVariant.set(line.variantId, { qty: line.qty, unitCost: line.unitCost })
   }
 
+  // Sum of the STORED line values, not the raw products: each row is written
+  // with round2(unit_cost) and line_total is GENERATED AS qty * unit_cost held
+  // to 2dp, so the header matches the lines exactly.
   const total = round2(
-    [...byVariant.values()].reduce((sum, l) => sum + l.qty * l.unitCost, 0),
+    [...byVariant.values()].reduce((sum, l) => sum + round2(l.qty * round2(l.unitCost)), 0),
   )
 
   const supabase = await createClient()

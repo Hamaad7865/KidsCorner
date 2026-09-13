@@ -567,11 +567,15 @@ describe("commitSale VAT policy handoff", () => {
       supabase,
       { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
       input,
+      // The shift gate fails closed without a caller role — the sale must say
+      // who is asking, not inherit "owner" by default.
+      { role: "owner", deviceId: null },
     )
     await commitSale(
       supabase,
       { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
       input,
+      { role: "owner", deviceId: null },
     )
 
     const saleCalls = rpc.mock.calls.filter(([name]) =>

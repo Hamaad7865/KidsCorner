@@ -41,7 +41,9 @@ export default async function PointOfSalePage() {
             {data.devices.filter((d) => d.isActive).length} open
           </p>
         </div>
-        <Button variant="outline" render={<Link href="/pos" />}>
+        {/* Selling happens on the Android tablet till — this button stays in
+            the back office, on the till overview. */}
+        <Button variant="outline" render={<Link href="/point-of-sale" />}>
           <Monitor aria-hidden />
           Open the till
         </Button>

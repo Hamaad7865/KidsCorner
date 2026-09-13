@@ -160,16 +160,15 @@ export default async function DevicePage({
                     <div className="text-muted-foreground mt-1 text-xl font-semibold">
                       Closed
                     </div>
-                    {/* The web till is one click away, so the sentence that
-                        names it is the link. "Opens from the tablet" stays
-                        plain — nothing here can reach the tablet. */}
+                    {/* Selling happens on the tablet till; the back office
+                        overview is the closest page this app can link to. */}
                     <div className="text-muted-foreground text-xs">
                       {device.isBackOffice ? (
                         <Link
-                          href="/pos"
+                          href="/point-of-sale"
                           className="hover:text-brand-700 underline-offset-2 hover:underline"
                         >
-                          Open it from the web till
+                          Open it from the till overview
                         </Link>
                       ) : (
                         "Opens from the tablet"

@@ -1480,6 +1480,23 @@ begin
     end loop;
 
     v_total := v_subtotal - coalesce(p_discount, 0);
+
+    -- Balanced like the till. TypeScript refuses an unbalanced sale before
+    -- calling, but this function is reachable by any authenticated client, so
+    -- the rule lives here too. Compared in cents — each row rounded, exactly
+    -- what sale_payments stores — with the same cent of slack the till
+    -- allows, and before anything is inserted so a refusal burns no sale
+    -- number.
+    if abs(
+        coalesce((
+            select sum(pg_catalog.round((payment->>'amount')::numeric, 2))
+            from pg_catalog.jsonb_array_elements(p_payments) as payment
+        ), 0) - pg_catalog.round(v_total, 2)
+    ) > 0.001 then
+        raise check_violation using
+            message = 'Sale payments do not match the sale total';
+    end if;
+
     v_vat_amount := case
         when v_policy.enabled then
             pg_catalog.round(v_total - v_total / (1 + v_effective_rate), 2)
@@ -2608,6 +2625,52 @@ BEGIN
 END;
 $function$;
 
+-- Migration 045: atomic stock count. Locks the variant row, derives the delta
+-- from the counted figure, and records it in one transaction so concurrent
+-- counts of the same variant serialise instead of overwriting each other.
+CREATE OR REPLACE FUNCTION public.record_stock_count(p_variant_id integer, p_counted_qty integer, p_reason text DEFAULT NULL::text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+    v_current INT;
+    v_delta   INT;
+BEGIN
+    IF p_counted_qty IS NULL OR p_counted_qty < 0 THEN
+        RAISE EXCEPTION 'A counted quantity cannot be negative';
+    END IF;
+    IF p_counted_qty > 1000000 THEN
+        RAISE EXCEPTION 'That quantity is unrealistically large';
+    END IF;
+    IF coalesce(btrim(p_reason), '') = '' OR length(btrim(p_reason)) < 3 THEN
+        RAISE EXCEPTION 'Give a reason — this is the only record of why the count changed';
+    END IF;
+
+    SELECT qty_on_hand INTO v_current
+      FROM product_variants
+     WHERE id = p_variant_id
+     FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'That variant no longer exists.';
+    END IF;
+
+    v_delta := p_counted_qty - v_current;
+
+    IF v_delta = 0 THEN
+        RETURN 0;
+    END IF;
+
+    PERFORM record_stock_movement(
+        p_variant_id, 'adjustment', v_delta,
+        'manual_adjustment', NULL, btrim(p_reason));
+
+    RETURN v_delta;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.record_till_movement(p_shift_id integer, p_amount numeric, p_reason text)
  RETURNS bigint
  LANGUAGE plpgsql
@@ -2620,6 +2683,7 @@ DECLARE
     v_float         NUMERIC;
     v_cash_in       NUMERIC;
     v_movements     NUMERIC;
+    v_cash_refund   NUMERIC;
     v_available     NUMERIC;
 BEGIN
     IF p_amount IS NULL OR p_amount = 0 THEN
@@ -2639,17 +2703,26 @@ BEGIN
         RAISE EXCEPTION 'Shift % is already closed', p_shift_id;
     END IF;
 
+    -- Completed AND refunded: a fully-returned ticket still took cash
+    -- across this counter (migration 031 established this for z_totals);
+    -- the giving back is v_cash_refund's job below, exactly once.
     SELECT coalesce(sum(sp.amount), 0) INTO v_cash_in
     FROM sale_payments sp
     JOIN sales s ON s.id = sp.sale_id
     WHERE s.shift_id = p_shift_id
-      AND s.status = 'completed'
+      AND s.status IN ('completed', 'refunded')
       AND sp.method = 'cash';
 
     SELECT coalesce(sum(amount), 0) INTO v_movements
     FROM till_movements WHERE shift_id = p_shift_id;
 
-    v_available := v_float + v_cash_in + v_movements;
+    -- Cash handed back comes straight out of this drawer. Only cash:
+    -- a card or Juice refund reverses on its own rail.
+    SELECT coalesce(sum(total), 0) INTO v_cash_refund
+    FROM credit_notes
+    WHERE shift_id = p_shift_id AND refund_method = 'cash';
+
+    v_available := v_float + v_cash_in + v_movements - v_cash_refund;
 
     IF p_amount < 0 AND (v_available + p_amount) < 0 THEN
         RAISE EXCEPTION 'Only % is in the drawer; cannot take out %',
@@ -3348,7 +3421,14 @@ BEGIN
 
     -- The shop's configured rate, used only for a sale whose own rate cannot be
     -- implied (a fully discounted ticket, where total and VAT are both zero).
-    v_default_vat := 0; -- compatibility variable; frozen output is merged below
+    -- Read from settings, falling back to the current VAT policy and then the
+    -- historical 15%: a frozen 0 here would snap every wobble to a 0% band.
+    SELECT coalesce((value #>> '{}')::NUMERIC, 0.15) INTO v_default_vat
+      FROM settings WHERE key = 'vat_rate';
+    IF v_default_vat IS NULL THEN
+        SELECT max(configured_rate) INTO v_default_vat FROM vat_policies WHERE enabled;
+    END IF;
+    IF v_default_vat IS NULL THEN v_default_vat := 0.15; END IF;
 
     -- ── The tickets in scope. Only 'completed': a voided or refunded ticket
     -- must not be expected in the drawer. Bounded by p_as_at so the report is
@@ -3689,8 +3769,9 @@ SELECT sm.location_id,
      JOIN products p ON p.id = pv.product_id
      JOIN sizes s ON s.id = pv.size_id
      JOIN colours c ON c.id = pv.colour_id
-  GROUP BY sm.location_id, sl.name, sm.variant_id, pv.sku, p.id, p.name, s.label, c.name, c.hex_code
- HAVING sum(sm.qty) <> 0;
+   GROUP BY sm.location_id, sl.name, sm.variant_id, pv.sku, p.id, p.name, s.label, c.name, c.hex_code;
+-- Migration 046: no HAVING — zero-net rows are kept so "empty" stays
+-- distinguishable from "never stocked".
 
 
 -- ==========================================================================

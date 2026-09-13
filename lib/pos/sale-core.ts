@@ -847,10 +847,12 @@ const saleItemSchema = z
  * total — and it makes a deposit fall out for free, because cash 200 + credit
  * 300 is a balanced 500 sale with no special case in the pricing path.
  *
- * What it is NOT is unconditional. `settleCreditTender` refuses it without an
- * attached customer, without an account, on a held account, and over the limit,
- * and a trigger on `sale_payments` refuses the same four things again for any
- * client that finds another way in.
+  * What it is NOT is unconditional. `settleCreditTender` refuses it without an
+  * attached customer, without an open account, or on a held account, and a
+  * trigger on `sale_payments` refuses the same three things again for any
+  * client that finds another way in. There is deliberately no ceiling:
+  * migration 20260821090000 retired per-customer limits, so an open account
+  * may run a tab of any size.
  */
 const paymentSchema = z.object({
   method: z.enum(["cash", "card", "juice", "myt_money", "bank", "credit"]),
@@ -982,11 +984,19 @@ export async function commitSale(
   // Unlike movements and closes there is no database backstop here — those RPCs
   // raise on a closed shift themselves; this one does not — so the gate runs
   // for every role, including an owner's.
+  //
+  // Fail closed when the caller cannot be placed: defaulting a missing role to
+  // "owner" used to let any session whose role was unreadable reach any open
+  // drawer. assertShiftOpenFor already refuses an unrecognised role; reaching
+  // it always with a verified one is what makes that refusal reachable.
+  if (!caller || !isRole(caller.role)) {
+    return { ok: false, error: "Session expired, sign in again." }
+  }
   const reachable = await assertShiftOpenFor(supabase, input.shiftId, {
-    // No caller (or no device id): the ownership half is skipped, matching a
-    // pre-registry build. Existence and openness are never skipped.
-    role: caller?.role ?? "owner",
-    deviceId: caller?.deviceId ?? null,
+    // No device id: the ownership half is skipped, matching a pre-registry
+    // build. Existence and openness are never skipped.
+    role: caller.role,
+    deviceId: caller.deviceId ?? null,
   })
   if (!reachable.ok) return { ok: false, error: reachable.error }
 
@@ -1000,19 +1010,36 @@ export async function commitSale(
   // id that is not a profile at all; a deactivated account, or an owner with no
   // PIN who cannot appear on the lock screen, both sail through.
   //
-  // Narrowed here to the same set the lock screen offers. It does not make the
-  // assertion trustworthy — only a server-side cashier session bound to the PIN
-  // check would — but it stops a sale being attributed to anyone who could not
-  // have rung it up.
+  // Narrowed here to the same set the lock screen offers, and then to the
+  // caller's own hand: attributing a sale to SOMEBODY ELSE needs either a
+  // caller who may reach any drawer (owner/manager) or the named cashier's own
+  // manager approval on this sale. It does not make the assertion trustworthy
+  // — only a server-side cashier session bound to the PIN check would — but it
+  // stops a sale being hung on anyone who could not have rung it up, or on a
+  // colleague behind their back.
   if (input.cashierId !== null && input.cashierId !== user.id) {
     const { data: claimed } = await supabase
       .from("profiles")
-      .select("id, pin_code, is_active")
+      .select("id, role, pin_code, is_active")
       .eq("id", input.cashierId)
       .maybeSingle()
 
-    if (!claimed || !claimed.is_active || !claimed.pin_code) {
+    if (!claimed || !claimed.is_active || !claimed.pin_code || !isRole(claimed.role)) {
       return { ok: false, error: "That cashier cannot ring up a sale on this till." }
+    }
+
+    const callerRole = caller && isRole(caller.role) ? caller.role : null
+    if (!callerRole) {
+      return { ok: false, error: "Session expired, sign in again." }
+    }
+    // The approval's PIN is verified by settleDiscounts whenever the sale
+    // carries anything needing approval; matching the managerId here binds
+    // the attribution to that verified check rather than to a bare assertion.
+    if (!isAdminRole(callerRole) && input.approval?.managerId !== claimed.id) {
+      return {
+        ok: false,
+        error: "That sale names a different cashier — switch cashier at the till first.",
+      }
     }
   }
 
@@ -1037,7 +1064,12 @@ export async function commitSale(
   const discount = settled.total
   const total = round2(basket - discount)
 
-  const paid = round2(input.payments.reduce((sum, p) => sum + p.amount, 0))
+  // Sum of the STORED values: commitSale forwards round2(amount) per row and
+  // sale_payments.amount is held to 2dp, so the ledger keeps the rounded
+  // figures. Summing the raw floats first can sit 1c above or below the stored
+  // sum (33.333 + 33.333 rounds to 66.67 raw but stores 33.33 + 33.33 =
+  // 66.66), refusing a correctly-paid sale — or accepting a short one.
+  const paid = round2(input.payments.reduce((sum, p) => sum + round2(p.amount), 0))
   if (paid + 0.001 < total) {
     return {
       ok: false,

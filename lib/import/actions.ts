@@ -119,11 +119,11 @@ export async function findExistingBarcodes(
  * Lowercased on the way out — matching product codes is case-insensitive, so
  * every caller can compare without having to fold case itself.
  *
- * The query itself stays an exact-case `IN`, same as `findExistingBarcodes` —
- * PostgREST cannot filter on `lower(product_code)` without a view, so a code
- * that is taken but differs only in case slips past this pre-check. The
- * database's unique index still catches it at commit time; this is a
- * best-effort early warning, not the actual guarantee.
+ * The query itself is case-insensitive: an `or()` of `ilike` equalities, one
+ * per code (`ilike` without wildcards matches case-insensitively). The
+ * previous exact-case `IN` let a code taken as "PC-1023" slip past a sheet
+ * value of "pc-1023", and the database's unique index then aborted the commit
+ * mid-chunk. This pre-check now agrees with the index.
  */
 export async function findExistingProductCodes(
   codes: string[],
@@ -135,12 +135,18 @@ export async function findExistingProductCodes(
   const supabase = await createClient()
   const found: string[] = []
 
-  for (let i = 0; i < codes.length; i += 200) {
-    const slice = codes.slice(i, i + 200)
+  for (let i = 0; i < codes.length; i += 50) {
+    const slice = codes.slice(i, i + 50)
+    // Quoted like the variant search: strip inner quotes so the value cannot
+    // terminate the filter early. No % wildcards — a bare ilike is an
+    // exact-but-caseless match.
+    const orFilter = slice
+      .map((code) => `product_code.ilike."${code.replace(/["]/g, "")}"`)
+      .join(",")
     const { data, error } = await supabase
       .from("products")
       .select("product_code")
-      .in("product_code", slice)
+      .or(orFilter)
     if (error) {
       return { ok: false, error: "Existing product codes could not be checked. Try again." }
     }
@@ -265,6 +271,60 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
       }
     }
     requestedLocationIds.set(row, locationId)
+  }
+
+  // Two-phase commit, phase 1: validate everything that can be checked
+  // before any row is written. supabase-js has no multi-statement transaction,
+  // so a mid-chunk database failure can still leave earlier rows committed —
+  // that is best-effort, and `skipped[]` reports exactly which rows did not
+  // land so the remainder can be retried. What this phase guarantees is that
+  // no row is written when the CHUNK ITSELF is incoherent (a code claimed by
+  // two products, a barcode claimed by two variants): those abort before the
+  // first insert rather than half-importing.
+  {
+    const codeOwner = new Map<string, { key: string; rowNumber: number; raw: string }>()
+    const barcodeOwner = new Map<string, { key: string; rowNumber: number }>()
+    for (const row of rows) {
+      if (row.quantity < 0) {
+        return {
+          ...result,
+          ok: false,
+          error: `Spreadsheet row ${row.rowNumber} has a negative quantity.`,
+        }
+      }
+      if (row.costPrice < 0 || row.sellPrice < 0) {
+        return {
+          ...result,
+          ok: false,
+          error: `Spreadsheet row ${row.rowNumber} has a negative price.`,
+        }
+      }
+      if (row.productCode) {
+        const folded = row.productCode.trim().toLowerCase()
+        const key = `${row.categoryId}:${row.productName.trim().toLowerCase()}`
+        const owner = codeOwner.get(folded)
+        if (owner && owner.key !== key) {
+          return {
+            ...result,
+            ok: false,
+            error: `Product code ${row.productCode.trim()} is on two different products (rows ${owner.rowNumber} and ${row.rowNumber}).`,
+          }
+        }
+        if (!owner) codeOwner.set(folded, { key, rowNumber: row.rowNumber, raw: row.productCode.trim() })
+      }
+      if (row.barcode) {
+        const key = `${row.categoryId}:${row.productName.trim().toLowerCase()}:${row.sizeId}:${row.colourId}`
+        const owner = barcodeOwner.get(row.barcode)
+        if (owner && owner.key !== key) {
+          return {
+            ...result,
+            ok: false,
+            error: `Barcode ${row.barcode} is on two different variants (rows ${owner.rowNumber} and ${row.rowNumber}).`,
+          }
+        }
+        if (!owner) barcodeOwner.set(row.barcode, { key, rowNumber: row.rowNumber })
+      }
+    }
   }
 
   // Spare barcodes for rows whose Barcode column was blank. Reserved once for
@@ -496,6 +556,32 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
       }
       result.variantsCreated += 1
     } else {
+      // Stock BEFORE prices. The previous order updated prices first, so a
+      // failed stock movement left the variant repriced without its stock —
+      // a partial row that reads as a clean price change. Recording stock
+      // first means a stock failure skips the row before prices are touched.
+      if (row.quantity > 0) {
+        const { error: movementError } = await supabase.rpc(
+          "record_stock_movement_at",
+          {
+            p_variant_id: variantId,
+            p_type: "import",
+            p_qty: row.quantity,
+            p_location_id: requestedLocationIds.get(row)!,
+            p_reference_type: "excel_import",
+            p_notes: `Imported from spreadsheet row ${row.rowNumber}`,
+          },
+        )
+        if (movementError) {
+          result.skipped.push({
+            rowNumber: row.rowNumber,
+            reason: `Variant kept but stock was not added: ${movementError.message}`,
+          })
+          continue
+        }
+        result.stockAdded += row.quantity
+      }
+
       const { error: updateError } = await supabase
         .from("product_variants")
         .update({
@@ -509,8 +595,11 @@ export async function importChunk(rows: CommitRow[]): Promise<ChunkResult> {
         continue
       }
       result.variantsUpdated += 1
+      continue
     }
 
+    // New variants only: prices were set at insert, so only the movement
+    // remains. (Existing variants are handled — and `continue`d — above.)
     if (row.quantity > 0) {
       const { error: movementError } = await supabase.rpc(
         "record_stock_movement_at",

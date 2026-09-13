@@ -371,6 +371,23 @@ export async function generateVariants(
       )
     if (clashError) return fail(describeDbError(clashError))
     for (const row of clashes ?? []) takenSkus.add(row.sku)
+
+    // The suffixed fallback (`${base}-${sizeId}-${colourId}` below) must be
+    // collision-free too — but the exact-match query above cannot see it. A
+    // previous batch may already own that suffixed SKU, or an unrelated
+    // product's base SKU may equal it. So every distinct base prefix is
+    // expanded with a `like "base%"` and all hits join the taken set before
+    // the batch is assembled. Slugs are [A-Z0-9-] by construction, so the
+    // prefix carries no LIKE wildcards of its own.
+    const bases = [...new Set(planned.map((p) => p.baseSku))]
+    for (const base of bases) {
+      const { data: prefixed, error: prefixError } = await supabase
+        .from("product_variants")
+        .select("sku")
+        .like("sku", `${base}%`)
+      if (prefixError) return fail(describeDbError(prefixError))
+      for (const row of prefixed ?? []) takenSkus.add(row.sku)
+    }
   }
 
   const rows: {

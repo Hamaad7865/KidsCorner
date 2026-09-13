@@ -221,7 +221,9 @@ export default async function StockPage({
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {TYPE_LABELS[row.movementType]}
+                            {row.referenceType === "transfer"
+                              ? "Transfer"
+                              : TYPE_LABELS[row.movementType]}
                           </Badge>
                         </TableCell>
                         {/* Split into two columns rather than one signed
@@ -471,6 +473,8 @@ function referenceOf(row: { referenceType: string | null; referenceId: number | 
         ? "PO"
         : row.referenceType === "credit_note"
           ? "CN"
-          : row.referenceType.slice(0, 3).toUpperCase()
+          : row.referenceType === "transfer"
+            ? "TR"
+            : row.referenceType.slice(0, 3).toUpperCase()
   return `${prefix}-${row.referenceId}`
 }
