@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -2643,7 +2644,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             },
         )
 
-        val recorded = repo.recordPrint(saleId).getOrNull()
+        // The two fetches are independent — the print count and the detail —
+        // so they fly together and the preview waits about one round trip,
+        // not two. Either failing alone still reads the same as before.
+        val recordedAsync = async { repo.recordPrint(saleId).getOrNull() }
+        val saleAsync = async { repo.saleDetail(saleId).getOrNull()?.sale }
+
+        val recorded = recordedAsync.await()
         if (recorded == null || !recorded.ok) {
             _state.update {
                 it.copy(
@@ -2654,7 +2661,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             return@launch
         }
 
-        val sale = repo.saleDetail(saleId).getOrNull()?.sale
+        val sale = saleAsync.await()
         if (sale == null) {
             _state.update {
                 it.copy(printing = false, historyError = "Could not load that receipt.")
@@ -3106,11 +3113,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Throw the drawer open.
      *
-     * Fired when a cashier picks Cash, not when the sale completes: they need
-     * it open to take the notes and count the change BEFORE confirming, which
-     * is the order the counter actually works in. A drawer opened for a sale
-     * that then goes on a card is a drawer that closes again unused, which
-     * costs nothing.
+     * Fired as a cash sale completes — and always when change is due, whatever
+     * the switch says, because the coins the cashier owes live in it. Also on
+     * the Actions screen's manual button, for payouts and no-sale opens.
      *
      * Failures are swallowed. A shop with no drawer wired to the printer must
      * not get an error every time it takes cash.
@@ -3853,19 +3858,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     // replay this sale instead of ringing up the next one.
                     saleKey = UUID.randomUUID().toString()
 
-                    // "Print receipt automatically" — the switch has existed
-                    // on the settings screen since it was built and nothing
-                    // read it, so a till set to print automatically printed
-                    // nothing until somebody tapped Print.
-                    //
-                    // Only for a sale that reached the server: printReceipt
-                    // needs the sale number to fetch and to record the print
-                    // against, and a queued sale has neither yet. Those still
-                    // print from Past sales once the queue drains.
-                    val printedId = result.saleId
-                    if (printedId != null && printerSettings.autoPrint) {
-                        printReceipt(printedId)
-                    }
                     _state.update {
                         it.copy(
                             busy = false,
@@ -3899,6 +3891,20 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                      * with no printer must still be able to sell.
                      */
                     outcome.saleId?.let { printReceipt(it, auto = true) }
+
+                    // The drawer pops as the sale completes, before the paper
+                    // is even out: on cash — always when change is due, because
+                    // the coins live in it — and on other rails per its own
+                    // switch. Fired fire-and-forget alongside the print, never
+                    // waiting for it. Failures are swallowed inside: a shop
+                    // with no drawer wired to the printer sells exactly the same.
+                    val hasCash = payments.any { it.method == "cash" }
+                    val hasNonCash = payments.any { it.method != "cash" }
+                    if ((hasCash && (printerSettings.drawerOnCash || change > 0.0)) ||
+                        (hasNonCash && printerSettings.drawerOnCard)
+                    ) {
+                        openCashDrawer()
+                    }
 
                     // Stock moved, so the cached quantities are now wrong.
                     refreshCatalog()

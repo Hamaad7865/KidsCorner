@@ -7,7 +7,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Box
@@ -37,7 +36,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -64,11 +62,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
@@ -288,30 +283,17 @@ fun SellScreen(
     /** The line most recently added, for the design's "Added" badge. */
     var justAdded by remember { mutableStateOf<Int?>(null) }
 
-    val search = remember { FocusRequester() }
-
     LaunchedEffect(justAdded) {
         if (justAdded != null) { delay(1_600); justAdded = null }
     }
 
-    // The search box is the till's default focus: a barcode scanner acts as a
-    // keyboard, so anything typed anywhere has to land here.
-    //
-    // Focus alone must NEVER summon the on-screen keyboard: the field itself
-    // sets showKeyboardOnFocus = false, and the keyboard opens only on a
-    // deliberate tap (see SearchField). The old hide()-after-focus lost that
-    // race on real hardware and the keyboard kept springing up over the
-    // basket.
-    //
-    // Skipped while Sale complete covers the screen: completing a sale clears
-    // `lines` to empty in the same instant it shows that overlay, which used
-    // to refire this. Keyed on saleOutcomeShowing too, so dismissing the
-    // overlay still refocuses for the next sale.
-    LaunchedEffect(picker, lines.size, saleOutcomeShowing) {
-        if (picker == null && !saleOutcomeShowing) {
-            runCatching { search.requestFocus() }
-        }
-    }
+    // Strict IME rule: NOTHING here takes focus on its own. An earlier design
+    // kept the search box focused for the hardware scanner and suppressed the
+    // keyboard with showKeyboardOnFocus = false — but this terminal's IME
+    // shows itself on every focus gain regardless, so focus itself is what had
+    // to go. The keyboard now appears only when a textbox is tapped. Scanner
+    // input lands once the cashier has tapped the search field; focus then
+    // stays until something else takes it.
 
     // `scanHit` — when what has been typed IS a barcode, the design drops the
     // fuzzy matches entirely (`matches = isCode ? [] : …`) and shows one row
@@ -378,13 +360,13 @@ fun SellScreen(
             onCloseTill = onCloseTill,
         )
 
-        // ── the scan bar: full width, always focused, and on top ──────────
+        // ── the scan bar: full width, and on top ────────────────────────────
         //
-        // A hardware scanner is a keyboard, so this holds focus and anything
-        // typed anywhere lands here. It spans the till because it is the till's
-        // primary input, not a field in a corner of a browsing pane — and it
-        // sits directly under the chrome, where the eye starts, rather than at
-        // the foot where it reads as a status bar.
+        // Deliberately NOT auto-focused: this terminal's IME shows itself on
+        // every focus gain, so any programmatic focus summons the keyboard.
+        // The keyboard appears only when this field is tapped; a scanner still
+        // works once the field has been tapped, and focus stays until
+        // something else takes it.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -398,7 +380,6 @@ fun SellScreen(
                         onValueChange = { query = it },
                         onSubmit = ::submitSearch,
                         onClear = { query = "" },
-                        focusRequester = search,
                         modifier = Modifier.weight(1f),
                     )
                     ScanButton(onClick = ::submitSearch)
@@ -614,18 +595,9 @@ private fun SearchField(
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onClear: () -> Unit,
-    focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val keyboard = LocalSoftwareKeyboardController.current
-    // Strict IME rule: the keyboard opens only on a deliberate tap on this
-    // field — never from auto-focus. Scanner input still lands here because
-    // focus and the IME are independent of each other.
-    val taps = remember { MutableInteractionSource() }
-    LaunchedEffect(taps) {
-        taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
-    }
 
     Box(
         modifier
@@ -656,16 +628,11 @@ private fun SearchField(
                 color = Handoff.Ink,
             ),
             cursorBrush = SolidColor(Handoff.Accent),
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Done,
-                showKeyboardOnFocus = false,
-            ),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
-            interactionSource = taps,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 46.dp, end = 56.dp)
-                .focusRequester(focusRequester)
                 .onFocusChanged { focused = it.isFocused },
             decorationBox = { inner ->
                 if (value.isEmpty()) {

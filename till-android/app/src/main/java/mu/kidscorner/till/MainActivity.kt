@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -110,6 +111,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     // opened the ordinary way, so a stale recall never filters a fresh list.
     var recallQuery by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+
+    // Strict IME rule: opening any overlay drops focus first. Otherwise
+    // dismissing it hands focus back to whatever held it — on this terminal's
+    // IME that return alone summons the keyboard over a screen nobody typed in.
+    LaunchedEffect(overlay) {
+        if (overlay != Overlay.None) focusManager.clearFocus(force = true)
+    }
 
     /**
      * A scanned receipt code: the history dialog opens already searching for

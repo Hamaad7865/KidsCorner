@@ -220,12 +220,14 @@ fun SettingsScreen(
                         Pref(
                             "drawerOnCash", "Pop drawer on cash sales",
                             "Opens as the sale completes", drawerOnCash,
-                            blockedBecause = "No cash drawer on this till yet",
+                            blockedBecause =
+                                if (printerConfigured) null else "Set up the receipt printer first",
                         ),
                         Pref(
                             "drawerOnCard", "Pop drawer on card sales",
                             "Off for card-only tills", drawerOnCard,
-                            blockedBecause = "No cash drawer on this till yet",
+                            blockedBecause =
+                                if (printerConfigured) null else "Set up the receipt printer first",
                         ),
                         Pref(
                             "roundCash", "Round cash to nearest Rs 5",

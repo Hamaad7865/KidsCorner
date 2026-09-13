@@ -3,8 +3,6 @@ package mu.kidscorner.till.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,15 +39,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -74,14 +69,10 @@ fun StockCheckScreen(
 ) {
     var query by remember { mutableStateOf("") }
     var showingResults by remember { mutableStateOf(false) }
-    val focus = remember { FocusRequester() }
+    // Strict IME rule, same as the sell screen: nothing here takes focus on
+    // its own — this terminal's IME shows itself on every focus gain, so the
+    // keyboard appears only when this field is tapped.
     val keyboard = LocalSoftwareKeyboardController.current
-    // Strict IME rule, same as the sell screen: the field holds focus for the
-    // hardware scanner, but the keyboard opens only on a deliberate tap.
-    val taps = remember { MutableInteractionSource() }
-    LaunchedEffect(taps) {
-        taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
-    }
     val matches = remember(query, catalog) { stockCheckMatches(query, catalog) }
     val selected = remember(state.productId, catalog) {
         state.productId?.let { productId -> productFrom(productId, catalog) }
@@ -101,13 +92,6 @@ fun StockCheckScreen(
         } else {
             showingResults = true
         }
-    }
-
-    LaunchedEffect(Unit) {
-        focus.requestFocus()
-        // Focus for the hardware scanner, without the IME: with
-        // showKeyboardOnFocus = false below, taking focus never summons the
-        // keyboard, so there is no hide() race to lose on real hardware.
     }
 
     Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
@@ -158,15 +142,11 @@ fun StockCheckScreen(
                     query = it
                     showingResults = it.isNotBlank()
                 },
-                modifier = Modifier.weight(1f).focusRequester(focus),
+                modifier = Modifier.weight(1f),
                 singleLine = true,
-                interactionSource = taps,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 placeholder = { Text("Product name, code or barcode") },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Search,
-                    showKeyboardOnFocus = false,
-                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { submit() }),
             )
             Button(onClick = ::submit, modifier = Modifier.height(56.dp)) {
@@ -175,10 +155,7 @@ fun StockCheckScreen(
                 Text("Search")
             }
             OutlinedButton(
-                onClick = {
-                    focus.requestFocus()
-                    if (query.isNotBlank()) submit()
-                },
+                onClick = { if (query.isNotBlank()) submit() },
                 modifier = Modifier.height(56.dp),
             ) {
                 Icon(Icons.Default.QrCodeScanner, contentDescription = null)
