@@ -3,6 +3,8 @@ package mu.kidscorner.till.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -39,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,10 +72,14 @@ fun StockCheckScreen(
 ) {
     var query by remember { mutableStateOf("") }
     var showingResults by remember { mutableStateOf(false) }
-    // Strict IME rule, same as the sell screen: nothing here takes focus on
-    // its own — this terminal's IME shows itself on every focus gain, so the
-    // keyboard appears only when this field is tapped.
+    // Strict IME rule, same as the sell screen: focus gains must never summon
+    // the keyboard, so the field suppresses show-on-focus and summons it
+    // explicitly on a tap. Scanner input still lands whenever it holds focus.
     val keyboard = LocalSoftwareKeyboardController.current
+    val taps = remember { MutableInteractionSource() }
+    LaunchedEffect(taps) {
+        taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
+    }
     val matches = remember(query, catalog) { stockCheckMatches(query, catalog) }
     val selected = remember(state.productId, catalog) {
         state.productId?.let { productId -> productFrom(productId, catalog) }
@@ -144,9 +151,13 @@ fun StockCheckScreen(
                 },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
+                interactionSource = taps,
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 placeholder = { Text("Product name, code or barcode") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardOptions = KeyboardOptions(
+                    imeAction = ImeAction.Search,
+                    showKeyboardOnFocus = false,
+                ),
                 keyboardActions = KeyboardActions(onSearch = { submit() }),
             )
             Button(onClick = ::submit, modifier = Modifier.height(56.dp)) {

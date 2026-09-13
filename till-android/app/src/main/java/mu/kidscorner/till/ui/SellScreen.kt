@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -64,6 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -264,6 +267,13 @@ fun SellScreen(
      * underneath the overlay every time.
      */
     saleOutcomeShowing: Boolean = false,
+    /**
+     * False while any overlay covers this screen. An unfocusable field cannot
+     * regain focus through the restore Compose performs when lists underneath
+     * recompose — on this terminal's IME every such regain summons the
+     * keyboard over a screen nobody typed in.
+     */
+    searchFocusable: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
@@ -385,6 +395,7 @@ fun SellScreen(
                         onValueChange = { query = it },
                         onSubmit = ::submitSearch,
                         onClear = { query = "" },
+                        focusable = searchFocusable,
                         modifier = Modifier.weight(1f),
                     )
                     ScanButton(onClick = ::submitSearch)
@@ -600,9 +611,20 @@ private fun SearchField(
     onValueChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onClear: () -> Unit,
+    focusable: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Tap-only IME: focus gains must never summon the keyboard — this
+    // terminal's IME shows itself on every one, including the focus-restore
+    // Compose performs when a list underneath recomposes — so the field
+    // suppresses show-on-focus and summons it explicitly on a tap. Scanner
+    // input still lands here whenever the field holds focus.
+    val taps = remember { MutableInteractionSource() }
+    LaunchedEffect(taps) {
+        taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
+    }
 
     Box(
         modifier
@@ -633,11 +655,16 @@ private fun SearchField(
                 color = Handoff.Ink,
             ),
             cursorBrush = SolidColor(Handoff.Accent),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Done,
+                showKeyboardOnFocus = false,
+            ),
             keyboardActions = KeyboardActions(onDone = { onSubmit() }),
+            interactionSource = taps,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 46.dp, end = 56.dp)
+                .focusProperties { canFocus = focusable }
                 .onFocusChanged {
                     focused = it.isFocused
                     android.util.Log.d("TillIme", "sell-search focus=${it.isFocused}")

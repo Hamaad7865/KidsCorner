@@ -283,6 +283,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                             vm.searchHistory("")
                         },
                         saleOutcomeShowing = state.outcome != null,
+                        searchFocusable = overlay == Overlay.None,
                     )
                 }
             }

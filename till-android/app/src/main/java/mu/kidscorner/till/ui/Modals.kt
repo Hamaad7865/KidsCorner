@@ -3,6 +3,8 @@ package mu.kidscorner.till.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
@@ -657,6 +660,15 @@ fun HandoffField(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val ime = LocalSoftwareKeyboardController.current
+    // Tap-only IME, shop-wide rule: focus gains must never summon the
+    // keyboard (this terminal's IME shows itself on every one, including the
+    // focus-restore Compose performs when a list underneath recomposes), so
+    // the field suppresses show-on-focus and summons it explicitly on a tap.
+    val taps = remember { MutableInteractionSource() }
+    LaunchedEffect(taps) {
+        taps.interactions.collect { if (it is PressInteraction.Press) ime?.show() }
+    }
 
     Row(
         Modifier
@@ -688,12 +700,17 @@ fun HandoffField(
                 fontFamily = if (mono) PlexMono else null,
             ),
             cursorBrush = SolidColor(Handoff.Accent),
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard, imeAction = imeAction),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = keyboard,
+                imeAction = imeAction,
+                showKeyboardOnFocus = false,
+            ),
             keyboardActions = KeyboardActions(
                 onDone = { onImeAction?.invoke() },
                 onGo = { onImeAction?.invoke() },
                 onSearch = { onImeAction?.invoke() },
             ),
+            interactionSource = taps,
             modifier = Modifier.weight(1f).onFocusChangedCompat { focused = it },
             decorationBox = { inner ->
                 if (value.isEmpty()) {
