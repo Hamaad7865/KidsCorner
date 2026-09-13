@@ -77,6 +77,7 @@ fun SettingsScreen(
     onTestPrint: () -> Unit,
     onSetPaper: (PaperWidth) -> Unit,
     onSetPref: (String, Boolean) -> Unit,
+    onShareDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
@@ -248,6 +249,38 @@ fun SettingsScreen(
                                 if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
+                    }
+                }
+            }
+
+            // Support shortcut: the log this device wrote, shareable to whoever
+            // is fixing it. Needs no cable and no developer options.
+            Surface(
+                onClick = onShareDiagnostics,
+                shape = RoundedCornerShape(13.dp),
+                color = Handoff.Surface,
+                contentColor = Handoff.InkStrong,
+                border = BorderStroke(1.dp, Handoff.LineSoft),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 11.dp),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(Icons.Default.Monitor, contentDescription = null, Modifier.size(18.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Send diagnostic log",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Handoff.Ink,
+                        )
+                        Text(
+                            "Sends what the app logged to the shop's records — for support, when something misbehaves.",
+                            fontSize = 12.sp,
+                            color = Handoff.Muted3,
+                        )
                     }
                 }
             }

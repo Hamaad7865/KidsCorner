@@ -638,7 +638,10 @@ private fun SearchField(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 46.dp, end = 56.dp)
-                .onFocusChanged { focused = it.isFocused },
+                .onFocusChanged {
+                    focused = it.isFocused
+                    android.util.Log.d("TillIme", "sell-search focus=${it.isFocused}")
+                },
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text(

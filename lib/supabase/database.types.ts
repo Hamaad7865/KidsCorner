@@ -1735,6 +1735,36 @@ export type Database = {
         }
         Relationships: []
       }
+      till_diagnostics: {
+        Row: {
+          android_release: string
+          app_version: string
+          created_at: string
+          device_id: number | null
+          device_model: string
+          id: number
+          log: string
+        }
+        Insert: {
+          android_release?: string
+          app_version?: string
+          created_at?: string
+          device_id?: number | null
+          device_model?: string
+          id?: number
+          log?: string
+        }
+        Update: {
+          android_release?: string
+          app_version?: string
+          created_at?: string
+          device_id?: number | null
+          device_model?: string
+          id?: number
+          log?: string
+        }
+        Relationships: []
+      }
       till_movements: {
         Row: {
           amount: number

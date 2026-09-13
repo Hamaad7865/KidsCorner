@@ -1,6 +1,8 @@
 package mu.kidscorner.till
 
 import android.app.Application
+import android.os.Build
+import java.util.concurrent.TimeUnit
 import android.media.AudioManager
 import android.media.ToneGenerator
 import androidx.lifecycle.AndroidViewModel
@@ -37,6 +39,7 @@ import mu.kidscorner.till.data.DepositItemInput
 import mu.kidscorner.till.data.DepositPaymentInput
 import mu.kidscorner.till.data.DepositSummaryRow
 import mu.kidscorner.till.data.DepositTopUpRequest
+import mu.kidscorner.till.data.DiagnosticsRequest
 import mu.kidscorner.till.data.DepositCancelRequest
 import mu.kidscorner.till.data.DepositCollectRequest
 import mu.kidscorner.till.data.DepositPickLine
@@ -2848,6 +2851,40 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun dismissPreview() = _state.update { it.copy(receiptPreview = null, previewSaleId = null) }
+
+    /**
+     * Sends this device's own log to the shop's records — no cable, no
+     * developer options. `logcat -d` without privileges returns this UID's
+     * own lines, which is all a support conversation needs: our focus/IME
+     * traces plus any stack the app threw. Needs the line; diagnostics can
+     * wait for it, so this is never queued.
+     */
+    fun shareDiagnostics() {
+        viewModelScope.launch {
+            toast("Sending diagnostic log…")
+            val log = runCatching {
+                val proc = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "3000")
+                    .redirectErrorStream(true)
+                    .start()
+                proc.waitFor(10, TimeUnit.SECONDS)
+                proc.inputStream.bufferedReader().readText().takeLast(50_000)
+            }.getOrDefault("(log unavailable)")
+            repo.sendDiagnostics(
+                DiagnosticsRequest(
+                    appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                    androidRelease = Build.VERSION.RELEASE ?: "",
+                    log = log,
+                    deviceId = _state.value.deviceId,
+                ),
+            ).onSuccess { response ->
+                if (response.ok) toast("Diagnostic log sent")
+                else toast(response.error ?: "The log could not be sent.")
+            }.onFailure { cause ->
+                toast(cause.message ?: "The log could not be sent.")
+            }
+        }
+    }
 
     // ------------------------------------------------------------- printer
 

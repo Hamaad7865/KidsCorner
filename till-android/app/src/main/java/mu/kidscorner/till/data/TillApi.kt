@@ -575,6 +575,13 @@ class TillApi(private val http: HttpClient) {
     suspend fun recordPrint(token: String, saleId: Int): PrintResponse =
         http.post("$origin/api/till/sales/$saleId/print") { bearer(token) }.decode()
 
+    suspend fun sendDiagnostics(token: String, request: DiagnosticsRequest): DiagnosticsResponse =
+        http.post("$origin/api/till/diagnostics") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.decode()
+
     suspend fun refund(token: String, request: RefundRequest): RefundResponse =
         http.post("$origin/api/till/refund") {
             bearer(token)

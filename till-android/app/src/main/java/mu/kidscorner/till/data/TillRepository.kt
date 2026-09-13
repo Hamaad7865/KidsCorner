@@ -258,6 +258,10 @@ class TillRepository(
 
     suspend fun recordPrint(saleId: Int): Result<PrintResponse> = authed { api.recordPrint(it, saleId) }
 
+    /** Sends the device's own log to the shop's records. Never queued: diagnostics can wait for the line. */
+    suspend fun sendDiagnostics(request: DiagnosticsRequest): Result<DiagnosticsResponse> =
+        authed { api.sendDiagnostics(it, request) }
+
     /**
      * A return. Never queued offline, unlike a sale.
      *

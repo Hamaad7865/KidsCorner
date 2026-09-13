@@ -198,6 +198,23 @@ data class PrintResponse(
     val error: String? = null,
 )
 
+/** A diagnostic log on its way to the shop's own records. */
+@Serializable
+data class DiagnosticsRequest(
+    val appVersion: String = "",
+    val deviceModel: String = "",
+    val androidRelease: String = "",
+    val log: String = "",
+    val deviceId: Int? = null,
+)
+
+@Serializable
+data class DiagnosticsResponse(
+    val ok: Boolean,
+    val id: Long? = null,
+    val error: String? = null,
+)
+
 // ─────────────────────────────────────────────────────────────── exchanges ──
 
 /**
