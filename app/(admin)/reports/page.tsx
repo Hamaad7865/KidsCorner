@@ -33,6 +33,7 @@ import {
   shopToday,
 } from "@/lib/format"
 import { DailySummaryTable } from "@/components/reports/daily-summary-table"
+import { JournalMethods } from "@/components/reports/journal-methods"
 import { getDailySummary } from "@/lib/reports/daily-summary"
 import {
   ALL_SECTIONS,
@@ -622,24 +623,7 @@ export default async function ReportsPage({
           </div>
 
           <Section title="Methods">
-            <SimpleTable
-              head={["Method", "Bills settled", "Total excl tax", "Total incl tax"]}
-              rows={journal.sections.byMethod.map((m) => [
-                PAYMENT_METHOD_LABELS[m.method as keyof typeof PAYMENT_METHOD_LABELS] ?? m.method,
-                String(m.bills),
-                formatRs(m.excl),
-                formatRs(m.incl),
-              ])}
-              foot={[
-                "Total",
-                String(journal.sections.billsSettled),
-                formatRs(
-                  journal.sections.byMethod.reduce((sum, m) => sum + m.excl, 0),
-                ),
-                formatRs(journal.sections.totalReceived),
-              ]}
-              empty="No money received in this period."
-            />
+            <JournalMethods methods={journal.sections.byMethod} />
           </Section>
 
           <Section title="Taxes">
@@ -656,11 +640,11 @@ export default async function ReportsPage({
               foot={[
                 "Total",
                 "",
-                formatRs(journal.totals.vat),
+                formatRs(journal.sections.taxes.reduce((sum, t) => sum + t.tax, 0)),
                 formatRs(
                   journal.sections.taxes.reduce((sum, t) => sum + t.discount, 0),
                 ),
-                formatRs(journal.totals.net),
+                formatRs(journal.sections.taxes.reduce((sum, t) => sum + t.excl, 0)),
                 formatRs(journal.sections.totalReceived),
               ]}
               empty="No taxable takings in this period."
@@ -703,7 +687,9 @@ export default async function ReportsPage({
                 "Total",
                 "",
                 "",
-                formatRs(journal.totals.net),
+                formatRs(
+                  journal.sections.categories.reduce((sum, c) => sum + c.excl, 0),
+                ),
                 formatRs(journal.sections.totalReceived),
               ]}
               empty="No categorised takings in this period."
@@ -721,7 +707,7 @@ export default async function ReportsPage({
               ])}
               foot={[
                 "Total",
-                String(journal.sections.billsSettled),
+                String(journal.sections.users.reduce((sum, u) => sum + u.bills, 0)),
                 formatRs(
                   journal.sections.users.reduce((sum, u) => sum + u.excl, 0),
                 ),

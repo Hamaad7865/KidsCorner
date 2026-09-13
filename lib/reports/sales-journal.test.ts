@@ -308,7 +308,11 @@ describe("buildJournalSections", () => {
     )
     expect(s.taxes).toEqual([
       { label: "15%", rate: 0.15, tax: 150, discount: 100, excl: 1_000, incl: 1_150 },
+      { label: "No VAT event", rate: 0, tax: 0, discount: 0, excl: 200, incl: 200 },
     ])
+    // Taxes now covers everything received, not just the taxable slice.
+    const taxIncl = s.taxes.reduce((sum, t) => sum + t.incl, 0)
+    expect(taxIncl).toBe(s.totalReceived)
     const catTotal = s.categories.reduce((sum, c) => sum + c.incl, 0)
     expect(catTotal).toBe(s.totalReceived)
   })
@@ -323,5 +327,52 @@ describe("buildJournalSections", () => {
       { method: "card", bills: 1, amount: 575 },
     ])
     expect(s.users).toEqual([{ name: "Priya", bills: 2, excl: 1_500, incl: 1_725 }])
+  })
+
+  it("drills each method down to its documents, which foot to the row", () => {
+    const s = buildJournalSections(
+      [
+        leg(),
+        leg({ saleNo: "S-2", gross: 575, net: 500, vat: 75, customerName: "Anil" }),
+        leg({
+          doc: "deposit",
+          saleNo: "D-9",
+          method: "card",
+          gross: 200,
+          net: 200,
+          vat: 0,
+          vatEnabled: false,
+          vatRate: 0,
+          categories: [],
+        }),
+      ],
+      "2026-09-12T00:00:00+04:00",
+    )
+    const cash = s.byMethod.find((m) => m.method === "cash")!
+    expect(cash.bills).toBe(2)
+    expect(cash.breakdown).toEqual([
+      { ref: "S-1", customer: "Marie", excl: 1_000, incl: 1_150 },
+      { ref: "S-2", customer: "Anil", excl: 500, incl: 575 },
+    ])
+    // A deposit is money on a method but not a bill settled.
+    const card = s.byMethod.find((m) => m.method === "card")!
+    expect(card.bills).toBe(0)
+    expect(card.breakdown).toEqual([
+      { ref: "D-9", customer: "Marie", excl: 200, incl: 200 },
+    ])
+    for (const m of s.byMethod) {
+      const incl = m.breakdown.reduce((sum, b) => sum + b.incl, 0)
+      expect(incl).toBe(m.incl)
+    }
+  })
+
+  it("settles a same-day bill stored in UTC in this period, not earlier", () => {
+    // 20:01 on the 13th in UTC is 00:01 on the 14th in the shop (+04) — after
+    // the period opens, though the UTC date string sorts before it.
+    const s = buildJournalSections(
+      [leg({ saleDate: "2026-09-13T20:01:00+00:00" })],
+      "2026-09-14T00:00:00.000+04:00",
+    )
+    expect(s.settledEarlier).toEqual({ bills: 0, amount: 0 })
   })
 })

@@ -101,7 +101,14 @@ export type JournalSections = {
   totalReceived: number
   clients: number
   avgTicket: number
-  byMethod: { method: string; bills: number; excl: number; incl: number }[]
+  byMethod: {
+    method: string
+    bills: number
+    excl: number
+    incl: number
+    /** The documents that made up this method's takings, for the drill-down. */
+    breakdown: { ref: string; customer: string | null; excl: number; incl: number }[]
+  }[]
   taxes: { label: string; rate: number; tax: number; discount: number; excl: number; incl: number }[]
   payments: { method: string; bills: number; amount: number }[]
   settledEarlier: { bills: number; amount: number }
@@ -385,16 +392,21 @@ export function buildJournalSections(
   ).size
 
   // Bills are sales settled — deposits and settlements are money without one.
+  const saleBills = (group: JournalLeg[]) =>
+    new Set(group.filter((l) => l.doc === "sale").map((l) => l.saleNo)).size
   const billNos = [...new Set(legs.filter((l) => l.doc === "sale").map((l) => l.saleNo))]
 
   const byMethod = [...groupBy(legs, (l) => l.method)].map(([method, group]) => ({
     method,
-    bills: new Set(group.map((l) => l.saleNo)).size,
+    bills: saleBills(group),
     excl: round2(group.reduce((sum, l) => sum + l.net, 0)),
     incl: round2(group.reduce((sum, l) => sum + l.gross, 0)),
+    breakdown: billBreakdown(group),
   }))
 
-  const taxes = [...groupBy(legs.filter((l) => l.vatEnabled), (l) => String(l.vatRate))].map(
+  // Every band VAT applied to, plus one that gathers the money no VAT touched,
+  // so the section foots to what was received rather than to the taxable slice.
+  const taxed = [...groupBy(legs.filter((l) => l.vatEnabled), (l) => String(l.vatRate))].map(
     ([rateKey, group]) => {
       const rate = Number(rateKey)
       return {
@@ -407,14 +419,34 @@ export function buildJournalSections(
       }
     },
   )
+  const untaxed = legs.filter((l) => !l.vatEnabled)
+  const taxes = untaxed.length
+    ? [
+        ...taxed,
+        {
+          label: "No VAT event",
+          rate: 0,
+          tax: 0,
+          discount: round2(untaxed.reduce((sum, l) => sum + l.discountShare, 0)),
+          excl: round2(untaxed.reduce((sum, l) => sum + l.net, 0)),
+          incl: round2(untaxed.reduce((sum, l) => sum + l.gross, 0)),
+        },
+      ]
+    : taxed
 
   const payments = [...groupBy(legs, (l) => l.method)].map(([method, group]) => ({
     method,
-    bills: new Set(group.map((l) => l.saleNo)).size,
+    bills: saleBills(group),
     amount: round2(group.reduce((sum, l) => sum + l.gross, 0)),
   }))
 
-  const earlier = legs.filter((l) => l.saleDate < periodStartIso)
+  // A leg on a bill raised before the period opened — money in now, invoiced
+  // earlier. Compared as instants: the same wall-clock day is not the same
+  // string once the stored offset (UTC) differs from the shop's (+04).
+  const periodStart = new Date(periodStartIso).getTime()
+  const earlier = legs.filter(
+    (l) => l.doc === "sale" && new Date(l.saleDate).getTime() < periodStart,
+  )
   const settledEarlier = {
     bills: new Set(earlier.map((l) => l.saleNo)).size,
     amount: round2(earlier.reduce((sum, l) => sum + l.gross, 0)),
@@ -450,7 +482,7 @@ export function buildJournalSections(
 
   const users = [...groupBy(legs, (l) => l.cashierName ?? "—")].map(([name, group]) => ({
     name,
-    bills: new Set(group.map((l) => l.saleNo)).size,
+    bills: saleBills(group),
     excl: round2(group.reduce((sum, l) => sum + l.net, 0)),
     incl: round2(group.reduce((sum, l) => sum + l.gross, 0)),
   }))
@@ -467,6 +499,18 @@ export function buildJournalSections(
     categories,
     users,
   }
+}
+
+/** One method's takings split by the document each leg belongs to. */
+function billBreakdown(
+  group: JournalLeg[],
+): { ref: string; customer: string | null; excl: number; incl: number }[] {
+  return [...groupBy(group, (l) => l.saleNo)].map(([ref, legs]) => ({
+    ref,
+    customer: legs.find((l) => l.customerName)?.customerName ?? null,
+    excl: round2(legs.reduce((sum, l) => sum + l.net, 0)),
+    incl: round2(legs.reduce((sum, l) => sum + l.gross, 0)),
+  }))
 }
 
 function groupBy<T>(list: T[], key: (item: T) => string): Map<string, T[]> {
