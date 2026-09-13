@@ -33,6 +33,7 @@ import {
   shopToday,
 } from "@/lib/format"
 import { DailySummaryTable } from "@/components/reports/daily-summary-table"
+import { JournalDateRange } from "@/components/reports/journal-date-range"
 import { JournalMethods } from "@/components/reports/journal-methods"
 import { getDailySummary } from "@/lib/reports/daily-summary"
 import {
@@ -176,37 +177,15 @@ export default async function ReportsPage({
         ) : null}
       </header>
 
-      {/* Plain GET form: the range is in the URL, so a report is shareable. */}
-      <form method="get" className="flex flex-wrap items-end gap-3">
-        <input type="hidden" name="report" value={active} />
-        {method ? <input type="hidden" name="m" value={method} /> : null}
-        <div className="space-y-2">
-          <label htmlFor="from" className="text-sm font-medium">
-            From
-          </label>
-          <input
-            id="from"
-            name="from"
-            type="date"
-            defaultValue={from}
-            className="border-input block h-9 rounded-lg border bg-transparent px-3 text-sm"
-          />
-        </div>
-        <div className="space-y-2">
-          <label htmlFor="to" className="text-sm font-medium">
-            To
-          </label>
-          <input
-            id="to"
-            name="to"
-            type="date"
-            defaultValue={to}
-            className="border-input block h-9 rounded-lg border bg-transparent px-3 text-sm"
-          />
-        </div>
-        <Button type="submit" variant="outline">
-          Apply
-        </Button>
+      {/* The range lives in the URL, so a report stays shareable. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <JournalDateRange
+          from={from}
+          to={to}
+          today={shopToday()}
+          report={active}
+          method={method}
+        />
         <Button
           variant="ghost"
           render={
@@ -226,7 +205,7 @@ export default async function ReportsPage({
           <Download aria-hidden />
           Excel
         </Button>
-      </form>
+      </div>
 
       <div className="flex flex-wrap gap-1 border-b">
         {REPORTS.map((r) => (
