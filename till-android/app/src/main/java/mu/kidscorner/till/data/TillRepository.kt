@@ -314,9 +314,12 @@ class TillRepository(
      * constraint — turning a queue that would have drained cleanly into a
      * scattering of oversell failures.
      *
-     * Stops at the first sale that is not due or does not go through, rather
-     * than skipping past it: order matters, and a sale that keeps failing
-     * should not let later ones jump the line.
+     * Skips past a sale that is not due or that the server refuses, rather
+     * than stopping behind it: a refused sale (an oversell, a deleted rule)
+     * will refuse identically on every retry, and blocking the whole queue
+     * behind it would hold sendable sales hostage to one that needs an owner.
+     * Only a transport failure stops the drain — the rest of the queue would
+     * fail the same way, so there is nothing further down worth trying yet.
      *
      * Returns how many were confirmed.
      */

@@ -21,6 +21,7 @@ import mu.kidscorner.till.data.Approval
 import mu.kidscorner.till.data.AuthClient
 import mu.kidscorner.till.data.Bootstrap
 import mu.kidscorner.till.data.CartLine
+import mu.kidscorner.till.data.CartStore
 import mu.kidscorner.till.data.CartTotals
 import mu.kidscorner.till.data.Cashier
 import mu.kidscorner.till.data.CatalogVariant
@@ -50,6 +51,9 @@ import mu.kidscorner.till.data.OfflineGate
 import mu.kidscorner.till.data.RefundItem
 import mu.kidscorner.till.data.RefundRequest
 import mu.kidscorner.till.data.RefundResponse
+import mu.kidscorner.till.data.RecoveryBasket
+import mu.kidscorner.till.data.RecoveryDiscount
+import mu.kidscorner.till.data.RecoveryLine
 import mu.kidscorner.till.data.SaleDetail
 import mu.kidscorner.till.data.SaleItem
 import mu.kidscorner.till.data.SalePayment
@@ -153,6 +157,8 @@ data class SaleOutcome(
     val total: Double,
     /** "Cash, Card" — the handoff prints these under the heading. */
     val methods: String = "",
+    /** Who it was rung up for, for the "received from" line. */
+    val customerName: String = "Walk-in",
     /** Parked rather than confirmed. The customer still gets their change. */
     val queued: Boolean = false,
 )
@@ -323,6 +329,8 @@ data class TillState(
 
     /** What would come out of the printer, as monospaced text. */
     val receiptPreview: String? = null,
+    /** The sale the preview belongs to, so it can be printed again from the dialog. */
+    val previewSaleId: Int? = null,
     val printerConfigured: Boolean = false,
     val printerDescribe: String = "",
     /** The six switches on the settings screen, mirrored out of SharedPreferences. */
@@ -447,6 +455,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private val printerSettings = PrinterSettings(app)
     private val appUpdater = AppUpdater(app)
+    private val cartStore = CartStore(app)
 
     /**
      * Credit notes already sent to the printer, by number.
@@ -497,6 +506,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
 
     private var checkout: CheckoutFreeze? = null
 
+    /** When a fresh VAT policy was last applied. Skips redundant pre-pay refreshes. */
+    private var lastPolicyRefreshAt: Long = 0L
+
     /**
      * Freezes the checkout policy and time for this attempt, once.
      *
@@ -525,6 +537,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun refreshVatPolicy(): Boolean {
         val fresh = repo.bootstrap().getOrNull() ?: return false
+        lastPolicyRefreshAt = System.currentTimeMillis()
         _state.update { applyBootstrapPolicy(it, fresh).copy(deviceId = fresh.deviceId ?: it.deviceId) }
         checkForUpdate(fresh)
         return true
@@ -596,6 +609,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val recents = repo.recentCustomers()
         _state.update { it.copy(queuedCount = repo.queuedCount(), recentCustomers = recents) }
 
+        // A basket left behind by a dead process comes back under its ORIGINAL
+        // key — anything else would double-charge if the sale committed. The
+        // cashier reviews and Pays again; the replay is idempotent either way.
+        recoverBasket()
         loadShop()
         startQueuePump()
     }
@@ -780,7 +797,11 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 // paid for.
                 val expired =
                     cause is UnauthorizedException || cause is SessionEndedException
-                if (expired) repo.signOut()
+                if (expired) {
+                    repo.signOut()
+                    // No session, no basket: a new sign-in must not inherit one.
+                    cartStore.clear()
+                }
 
                 /**
                  * The last bootstrap the server served, when there is no new
@@ -1110,6 +1131,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             receiptPreview = response.totals?.let { z ->
                                 zLines(z, response).toPlainText(printerSettings.paper)
                             },
+                            // A Z is not a sale: no Print-again target.
+                            previewSaleId = null,
                         )
                     }
                     // Printed without being asked. The Z is the day's paperwork
@@ -1391,7 +1414,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // follow. Generated from the same lines, so it is the slip itself, not
         // a summary of it.
         _state.update {
-            it.copy(receiptPreview = lines.toPlainText(printerSettings.paper))
+            it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = null)
         }
 
         val result = printerSettings
@@ -1854,7 +1877,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             width = printerSettings.paper,
             vatCurrentlyEnabled = shop?.vatEnabled ?: true,
         )
-        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = sale.id) }
         val result = printerSettings
             .transport(getApplication())
             .send(EscPos.encode(lines, printerSettings.paper))
@@ -1905,7 +1928,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             ),
             width = printerSettings.paper,
         )
-        _state.update { it.copy(receiptPreview = docLines.toPlainText(printerSettings.paper)) }
+        _state.update { it.copy(receiptPreview = docLines.toPlainText(printerSettings.paper), previewSaleId = null) }
         val result = printerSettings
             .transport(getApplication())
             .send(EscPos.encode(docLines, printerSettings.paper))
@@ -1948,7 +1971,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             ),
             width = printerSettings.paper,
         )
-        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = null) }
         val result = printerSettings
             .transport(getApplication())
             .send(EscPos.encode(lines, printerSettings.paper))
@@ -1983,7 +2006,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             ),
             width = printerSettings.paper,
         )
-        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = null) }
         val result = printerSettings
             .transport(getApplication())
             .send(EscPos.encode(lines, printerSettings.paper))
@@ -2478,7 +2501,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 width = printerSettings.paper,
             )
 
-            _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+            _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = null) }
 
             val result = printerSettings
                 .transport(getApplication())
@@ -2553,6 +2576,42 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private var historySearch: Job? = null
+
+    /**
+     * A scanned receipt code: filter history to it AND open its receipt, like
+     * the reference till — the scan names one sale, so its slip comes up
+     * without a further tap. Anything less precise than a single exact match
+     * just filters the list, so a half-read code never opens the wrong slip.
+     */
+    fun recallAndPreview(saleNo: String) {
+        val code = saleNo.trim()
+        if (code.isEmpty()) return
+        historySearch?.cancel()
+        historySearch = viewModelScope.launch {
+            _state.update { it.copy(historyLoading = true, historyError = null) }
+            repo.sales(code)
+                .onSuccess { response ->
+                    _state.update {
+                        it.copy(
+                            historyLoading = false,
+                            history = response.sales,
+                            historyError = response.error,
+                        )
+                    }
+                    response.sales
+                        .singleOrNull { it.saleNo.equals(code, ignoreCase = true) }
+                        ?.let { previewReceipt(it.id) }
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            historyLoading = false,
+                            historyError = cause.message ?: "Could not load past sales.",
+                        )
+                    }
+                }
+        }
+    }
 
     fun searchHistory(query: String) {
         // Cancelled rather than fired and forgotten: a slow query for "S26" can
@@ -2785,10 +2844,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             vatCurrentlyEnabled = shop?.vatEnabled ?: true,
         )
 
-        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper)) }
+        _state.update { it.copy(receiptPreview = lines.toPlainText(printerSettings.paper), previewSaleId = saleId) }
     }
 
-    fun dismissPreview() = _state.update { it.copy(receiptPreview = null) }
+    fun dismissPreview() = _state.update { it.copy(receiptPreview = null, previewSaleId = null) }
 
     // ------------------------------------------------------------- printer
 
@@ -3024,6 +3083,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         repo.signOut()
+        // A new owner must never inherit the old basket.
+        cartStore.clear()
         _state.update { TillState(screen = TillScreen.DeviceSetup) }
     }
 
@@ -3038,6 +3099,131 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             val lines = block(current.lines)
             current.copy(lines = lines, totals = totalsFor(lines, current))
         }
+        persistCart()
+    }
+
+    /**
+     * Writes the unsent basket for a restart to find.
+     *
+     * Called after every cart mutation and key rotation: the record always
+     * mirrors the live basket under the live key, so a dead process leaves
+     * behind exactly what the cashier saw. Empty writes are the point too —
+     * they clear the record when a sale finishes, parks, or is held away.
+     */
+    private fun persistCart() {
+        val s = _state.value
+        runCatching {
+            cartStore.save(
+                RecoveryBasket(
+                    key = saleKey,
+                    lines = s.lines.map {
+                        RecoveryLine(it.variantId, it.qty, it.discount, it.description, it.unitPrice)
+                    },
+                    customerId = s.customer?.id,
+                    customerName = s.customer?.fullName,
+                    discount = s.discount?.let {
+                        RecoveryDiscount(it.rule?.id, it.label, it.kind, it.value, it.amount)
+                    },
+                    note = s.note,
+                    savedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
+    }
+
+    /**
+     * Brings back a basket left behind by a dead process, under its ORIGINAL
+     * attempt key — anything else would double-charge if the sale committed.
+     *
+     * Nothing is sent here: the cashier reviews and Pays again, and that retry
+     * replays the same key, so a committed sale answers with its original
+     * receipt and an uncommitted one simply commits. Display fields come from
+     * today's catalog (prices may have moved; the server re-prices at commit
+     * anyway), quantities re-clamp to stock, and a discount whose rule is gone
+     * comes back as a manager discount — re-asked, never replayed.
+     */
+    private suspend fun recoverBasket() {
+        val saved = runCatching { cartStore.load() }.getOrNull() ?: return
+        if (saved.lines.isEmpty()) return
+        if (_state.value.lines.isNotEmpty()) return
+        val stock = repo.cachedCatalog().associateBy { it.id }
+        var dropped = 0
+        val lines = saved.lines.mapNotNull { r ->
+            if (r.variantId < 0) {
+                val label = r.description?.trim().orEmpty()
+                if (label.isEmpty() || r.unitPrice <= 0) {
+                    dropped++
+                    null
+                } else {
+                    CartLine(
+                        variantId = r.variantId,
+                        productName = label,
+                        variantLabel = "Custom item",
+                        colourHex = null,
+                        sku = "",
+                        unitPrice = round2(r.unitPrice),
+                        qty = maxOf(1, r.qty),
+                        qtyOnHand = Int.MAX_VALUE,
+                        description = label,
+                    )
+                }
+            } else {
+                val v = stock[r.variantId]
+                if (v == null || v.qtyOnHand < 1) {
+                    dropped++
+                    null
+                } else {
+                    val qty = minOf(maxOf(1, r.qty), v.qtyOnHand)
+                    val gross = round2(v.price * qty)
+                    CartLine(
+                        variantId = v.id,
+                        productName = v.productName,
+                        variantLabel = v.variantLabel,
+                        sizeLabel = v.sizeLabel,
+                        colourName = v.colourName,
+                        colourHex = v.colourHex,
+                        sku = v.sku,
+                        unitPrice = v.price,
+                        qty = qty,
+                        discount = round2(minOf(maxOf(0.0, r.discount), gross)),
+                        qtyOnHand = v.qtyOnHand,
+                        categoryId = v.categoryId ?: 0,
+                    )
+                }
+            }
+        }
+        if (lines.isEmpty()) {
+            cartStore.clear()
+            return
+        }
+        saleKey = saved.key
+        checkout = null
+        val rules = _state.value.discountRules
+        _state.update { current ->
+            retotal(
+                current.copy(
+                    lines = lines,
+                    customer = saved.customerId?.let { Customer(it, saved.customerName ?: "Customer") },
+                    discount = saved.discount?.let { d ->
+                        AppliedDiscountLocal(
+                            rule = d.ruleId?.let { id -> rules.firstOrNull { it.id == id } },
+                            label = d.label,
+                            kind = d.kind,
+                            value = d.value,
+                            amount = d.amount,
+                        )
+                    },
+                    note = saved.note,
+                    error = if (dropped > 0) {
+                        "Some items were unavailable and were removed — check the basket."
+                    } else {
+                        null
+                    },
+                ),
+            )
+        }
+        persistCart()
+        toast("Recovered an unsent basket — review and Pay again")
     }
 
     private fun totalsFor(lines: List<CartLine>, state: TillState): CartTotals =
@@ -3132,6 +3318,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun setNote(note: String) {
         if (_state.value.settleFrozen) return
         _state.update { it.copy(note = note.trim()) }
+        persistCart()
     }
 
     fun clearCart() {
@@ -3143,6 +3330,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         _state.update {
             retotal(it.copy(lines = emptyList(), discount = null, customer = null, note = ""))
         }
+        persistCart()
         toast("Sale cleared")
     }
 
@@ -3151,6 +3339,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun attachCustomer(customer: Customer?) {
         if (_state.value.settleFrozen) return
         _state.update { it.copy(customer = customer, customerResults = emptyList()) }
+        persistCart()
         // Every attach is a "this customer came in" event, wherever it started
         // from — search, recents or the directory's Use button.
         if (customer != null) recordRecentCustomer(customer)
@@ -3629,6 +3818,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         if (_state.value.settleFrozen) return
         val had = _state.value.discount != null
         _state.update { retotal(it.copy(discount = discount)) }
+        persistCart()
         when {
             discount != null -> toast("Basket discount ${discount.label}")
             had -> toast("Basket discount removed")
@@ -3678,6 +3868,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 ),
             )
         }
+        persistCart()
         toast("Sale held · $label")
     }
 
@@ -3718,6 +3909,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 ),
             )
         }
+        persistCart()
     }
 
     fun discardHeld(id: String) {
@@ -3800,11 +3992,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(busy = true, error = null) }
 
         // Refresh the policy so the sale stamps — and the basket showed — what
-        // the shop's registration is right now, then freeze it once. Online
-        // only; offline, the last cached policy stands and is frozen as-is. The
-        // freeze is keyed to saleKey, so a retry reuses this exact policy id and
-        // checkout time rather than re-reading a policy that may have moved.
-        if (_state.value.online) refreshVatPolicy()
+        // the shop's registration is right now, then freeze it once. Skipped
+        // when the heartbeat refreshed moments ago: it runs every two minutes
+        // anyway, and this call sits on the Pay button's critical path. The
+        // freeze is keyed to saleKey, so a retry reuses this exact policy id
+        // and checkout time rather than re-reading a policy that may have moved.
+        if (_state.value.online && System.currentTimeMillis() - lastPolicyRefreshAt > 90_000) {
+            refreshVatPolicy()
+        }
         val checkout = freezeCheckout()
 
         val request = SaleRequest(
@@ -3852,6 +4047,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                     "credit" -> "On account"; else -> m
                                 }
                             },
+                        customerName = current.customer?.fullName ?: "Walk-in",
                     )
                     // A finished sale is the only thing that retires the key. A
                     // fresh basket must never reuse it, or the server would
@@ -3875,6 +4071,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                             screen = TillScreen.Selling(screen.cashier),
                         )
                     }
+                    // The basket is gone and the key retired: forget both, so a
+                    // restart can never resurrect this sale.
+                    persistCart()
                     /*
                      * The receipt prints itself.
                      *
@@ -3985,6 +4184,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                 itemCount = current.totals.itemCount,
                                 total = current.totals.total,
                                 methods = payments.map { it.method }.distinct().joinToString(", "),
+                                customerName = current.customer?.fullName ?: "Walk-in",
                                 queued = true,
                             ),
                             screen = TillScreen.Selling(screen.cashier),
@@ -4052,6 +4252,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // drain replays that sale rather than ringing up a second.
         saleKey = UUID.randomUUID().toString()
         frozenSale = null
+        // The basket is parked, not live: forget it here for the same reason.
+        persistCart()
 
         val screen = _state.value.screen
         val cashier = (screen as? TillScreen.Paying)?.cashier
@@ -4068,14 +4270,15 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 note = "",
                 needsApproval = false,
                 queuedCount = it.queuedCount + 1,
-                outcome = SaleOutcome(
-                    saleId = null,
-                    change = frozen.change,
-                    itemCount = frozen.itemCount,
-                    total = frozen.total,
-                    methods = frozen.methods,
-                    queued = true,
-                ),
+                            outcome = SaleOutcome(
+                                saleId = null,
+                                change = frozen.change,
+                                itemCount = frozen.itemCount,
+                                total = frozen.total,
+                                methods = frozen.methods,
+                                customerName = _state.value.customer?.fullName ?: "Walk-in",
+                                queued = true,
+                            ),
                 screen = if (cashier != null) TillScreen.Selling(cashier) else it.screen,
             )
         }
@@ -4111,7 +4314,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * dialog over the sell screen — the next customer's basket obscured by the
      * last one's receipt.
      */
-    fun dismissOutcome() = _state.update { it.copy(outcome = null, receiptPreview = null) }
+    fun dismissOutcome() = _state.update { it.copy(outcome = null, receiptPreview = null, previewSaleId = null) }
 
     /** Closes the manager prompt without clearing the reason it was refused. */
     fun clearApprovalPrompt() = _state.update { it.copy(needsApproval = false) }

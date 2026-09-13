@@ -239,7 +239,6 @@ class GalleryActivity : ComponentActivity() {
                                 queued = false,
                                 receiptPreview = null,
                                 onPrint = {},
-                                onPrintGift = {},
                                 onNewSale = { showing = null },
                             )
                             ToastPill("Basket discount removed")
@@ -257,6 +256,7 @@ class GalleryActivity : ComponentActivity() {
                             sales = SAMPLE_SALES,
                             loading = false,
                             onSearch = {},
+                            onViewReceipt = {},
                             onReprint = {},
                             onGiftReceipt = {},
                             onReturn = {},
@@ -565,7 +565,7 @@ class GalleryActivity : ComponentActivity() {
                                 width = PaperWidth.Mm80,
                             ).toPlainText(PaperWidth.Mm80),
                             onPrint = {},
-                            onPrintGift = {},
+                            onVoid = {},
                             onNewSale = {},
                         )
 

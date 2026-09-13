@@ -5,23 +5,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Print
@@ -37,25 +37,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
 import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.ui.theme.Handoff
 import mu.kidscorner.till.ui.theme.PlexMono
+import mu.kidscorner.till.ui.theme.Success
 
 /**
  * `atComplete` — the whole screen, not a dialog.
  *
- * `position:absolute; inset:0`, a 620px centred column: an 84px accent disc
- * with a tick, "Sale complete" at 33px, then the change panel with the figure
- * at **60px in IBM Plex Mono**.
+ * Two columns: the confirmation on the left (what happened, what to do
+ * next), the slip that just came off the printer on the right, where the
+ * cashier and the customer are both already looking. A till with no printer
+ * still shows what the receipt said.
  *
- * That size is the design making a judgement, and it is the right one: change
- * is the last thing that happens at a till and the easiest to get wrong. It is
- * the largest thing on any screen in this app.
- *
- * The change panel's colours are the handoff's own — #FFF3F0, #F7D8D0, #A83A28
- * — because it is already warm there. Nothing to translate.
+ * The change figure stays the largest thing on any screen in this app: change
+ * is the last thing that happens at a till and the easiest to get wrong.
  */
 @Composable
 fun SaleCompleteScreen(
@@ -64,204 +61,282 @@ fun SaleCompleteScreen(
     change: Double,
     itemCount: Int,
     methods: String,
+    customerName: String = "Walk-in",
     queued: Boolean,
     /**
-     * What just came off the printer.
-     *
-     * Shown HERE rather than in a dialog afterwards: this is the moment the
-     * cashier and the customer are both looking at the screen, and the slip is
-     * the thing they are about to hand over. It also means a till with no
-     * printer connected still shows what the receipt said.
+     * What just came off the printer. Null while there is nothing to show —
+     * a parked sale has no number yet, and a receipt with no number is not a
+     * receipt.
      */
     receiptPreview: String?,
     onPrint: () -> Unit,
-    onPrintGift: () -> Unit,
+    /** Opens the refund flow for this sale. Absent on a parked sale. */
+    onVoid: (() -> Unit)? = null,
     onNewSale: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize().background(Handoff.Canvas), Alignment.Center) {
-        Column(
-            Modifier.width(620.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        Row(
+            Modifier
+                .width(1020.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White)
+                .border(1.dp, Handoff.LineSoft, RoundedCornerShape(20.dp))
+                .padding(28.dp),
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
         ) {
-            // 88px disc.  A cloud-off mark instead of a tick when the sale is
-            // only parked — the shape says at a glance which of the two it is.
-            Box(
-                Modifier
-                    .size(84.dp)
-                    .clip(CircleShape)
-                    .background(if (queued) Handoff.Muted3 else Handoff.AccentSolid),
-                Alignment.Center,
-            ) {
-                Icon(
-                    if (queued) Icons.Default.CloudOff else Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(42.dp),
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                if (queued) "Saved to send" else "Sale complete",
-                fontSize = 33.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = (-1.02).sp,
-                color = Handoff.InkFigure,
-            )
-
-            Text(
-                // `{{ doneSaleNo }} · {{ doneTotalLabel }} · {{ doneMethods }}`,
-                // where the handoff's `rs()` carries the currency.
-                buildString {
-                    saleNo?.let { append("$it · ") }
-                    append(formatRs(total))
-                    append(" · ${formatQty(itemCount)} items")
-                    if (methods.isNotBlank()) append(" · $methods")
-                },
-                fontSize = 14.sp,
-                color = Handoff.Muted2,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-
-            Spacer(Modifier.height(20.dp))
-
-            if (change > 0) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Handoff.ChangeTint)
-                        .border(1.dp, Handoff.ChangeLine, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 26.dp, vertical = 20.dp),
+            // ── the confirmation ────────────────────────────────────────
+            Column(Modifier.weight(1.15f)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        "CHANGE DUE TO CUSTOMER",
+                        if (queued) "Saved to send" else "Sale complete",
+                        fontSize = 26.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp,
+                        color = Handoff.InkFigure,
+                    )
+                    Surface(
+                        onClick = onNewSale,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Transparent,
+                        contentColor = Handoff.Muted2,
+                        border = BorderStroke(1.dp, Handoff.LineSoft),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = null, Modifier.size(15.dp))
+                            Text("Back to POS", fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                Text(
+                    buildString {
+                        if (saleNo != null) append("Invoice $saleNo · ")
+                        append("${formatQty(itemCount)} items · ")
+                        append(if (methods.isNotBlank()) "paid in $methods" else "paid")
+                    },
+                    fontSize = 13.5.sp,
+                    color = Handoff.Muted2,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+
+                Row(
+                    Modifier.padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (queued) Handoff.ChangeFigure else Success),
+                    )
+                    Text(
+                        if (queued) "SAVED — WILL SEND ITSELF" else "PAYMENT CONFIRMED",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.44.sp,
-                        color = Handoff.ChangeLabel,
-                    )
-                    Text(
-                        formatRs(change),
-                        fontFamily = PlexMono,
-                        fontSize = 60.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-2.4).sp,
-                        lineHeight = 66.sp,
-                        color = Handoff.ChangeFigure,
-                        modifier = Modifier.padding(top = 4.dp),
+                        letterSpacing = 1.2.sp,
+                        color = if (queued) Handoff.ChangeFigure else Success,
                     )
                 }
-            } else {
-                Box(
+
+                Text(
+                    formatRs(total),
+                    fontFamily = PlexMono,
+                    fontSize = 54.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = (-2).sp,
+                    lineHeight = 60.sp,
+                    color = Handoff.InkFigure,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+
+                Text(
+                    if (queued) {
+                        "Held on the tablet — it sends itself when the line is back."
+                    } else if (change > 0) {
+                        "received from $customerName · change ${formatRs(change)}"
+                    } else {
+                        "received from $customerName · no change due"
+                    },
+                    fontSize = 13.5.sp,
+                    color = Handoff.Muted2,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+
+                if (change > 0 && !queued) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 14.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Handoff.ChangeTint)
+                            .border(1.dp, Handoff.ChangeLine, RoundedCornerShape(14.dp))
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            "CHANGE DUE",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.2.sp,
+                            color = Handoff.ChangeLabel,
+                        )
+                        Text(
+                            formatRs(change),
+                            fontFamily = PlexMono,
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Handoff.ChangeFigure,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(18.dp))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Surface(
+                        onClick = onPrint,
+                        enabled = !queued,
+                        shape = RoundedCornerShape(14.dp),
+                        color = Handoff.AccentSolid,
+                        contentColor = Color.White,
+                        modifier = Modifier.weight(1f).height(58.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                        ) {
+                            Icon(Icons.Default.Print, contentDescription = null, Modifier.size(18.dp))
+                            Text("Print again", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (onVoid != null) {
+                        Surface(
+                            onClick = onVoid,
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color.Transparent,
+                            contentColor = Handoff.Danger,
+                            border = BorderStroke(1.dp, Handoff.DangerLine),
+                            modifier = Modifier.weight(1f).height(58.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(
+                                    "Void — refund & restock",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // The next customer is already waiting: one tap clears this
+                // screen back to an empty basket.
+                Row(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Handoff.Surface)
-                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 26.dp, vertical = 18.dp),
-                ) {
-                    Text(
-                        if (queued) {
-                            "The till could not reach the server, so this sale is held on " +
-                                "the tablet and will send itself when the connection is back."
-                        } else {
-                            "Paid in full — no change due."
-                        },
-                        fontSize = 13.sp,
-                        color = Handoff.Muted2,
-                    )
-                }
-            }
-
-            receiptPreview?.let { slip ->
-                Spacer(Modifier.height(18.dp))
-                Box(
-                    Modifier
-                        .widthIn(max = 460.dp)
-                        .heightIn(max = 300.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(Handoff.FieldWell)
-                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(12.dp))
-                        .verticalScroll(rememberScrollState())
-                        .padding(14.dp),
-                    // Centred, as the reference shows it — a slip is a narrow
-                    // column of monospace and left-aligning it in a wide panel
-                    // leaves it sitting off to one side of its own box.
-                    contentAlignment = Alignment.TopCenter,
+                        .border(1.dp, Handoff.LineSoft, RoundedCornerShape(14.dp))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        slip,
-                        fontFamily = PlexMono,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        color = Handoff.Ink,
-                    )
+                    Box(
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Handoff.AccentTint),
+                        Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Handoff.AccentSolid)
+                    }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(
+                            "New sale ready",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Handoff.Ink,
+                        )
+                        Text(
+                            "Counter is clear — start the next customer",
+                            fontSize = 12.5.sp,
+                            color = Handoff.Muted2,
+                        )
+                    }
+                    Surface(
+                        onClick = onNewSale,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Handoff.ScanButton,
+                        contentColor = Color.White,
+                        modifier = Modifier.height(48.dp),
+                    ) {
+                        Box(Modifier.padding(horizontal = 22.dp), Alignment.Center) {
+                            Text("Start →", fontSize = 14.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
 
-            Spacer(Modifier.height(18.dp))
-
-            // Print is flex:1, Gift receipt flex:1, New sale flex:1.3 — the design weights the
-            // continue action slightly larger, because it is the one taken
-            // every time and printing is not.
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Surface(
-                    onClick = onPrint,
-                    enabled = !queued,
-                    shape = RoundedCornerShape(14.dp),
-                    color = Handoff.Surface,
-                    contentColor = Handoff.InkStrong,
-                    border = BorderStroke(1.dp, Handoff.Line),
-                    modifier = Modifier.weight(1f).height(62.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            // ── the slip ────────────────────────────────────────────────
+            Column(Modifier.weight(1f)) {
+                if (receiptPreview != null) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 560.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(12.dp))
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopCenter,
                     ) {
-                        Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(19.dp))
-                        Text("Reprint receipt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            receiptPreview,
+                            fontFamily = PlexMono,
+                            fontSize = 11.5.sp,
+                            lineHeight = 15.5.sp,
+                            color = Handoff.Ink,
+                        )
                     }
-                }
-
-                // `printGift` — new in v2. The same receipt with the prices
-                // taken off, which is the whole point of it: the recipient can
-                // exchange without learning what it cost.
-                Surface(
-                    onClick = onPrintGift,
-                    enabled = !queued,
-                    shape = RoundedCornerShape(14.dp),
-                    color = Handoff.Surface,
-                    contentColor = Handoff.InkStrong,
-                    border = BorderStroke(1.dp, Handoff.Line),
-                    modifier = Modifier.weight(1f).height(62.dp),
-                ) {
-                    Row(
-                        Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Handoff.FieldWell)
+                            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(12.dp))
+                            .padding(16.dp),
+                        Alignment.Center,
                     ) {
-                        Icon(Icons.Default.CardGiftcard, contentDescription = null, modifier = Modifier.size(19.dp))
-                        Text("Gift receipt", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                Surface(
-                    onClick = onNewSale,
-                    shape = RoundedCornerShape(14.dp),
-                    color = Handoff.AccentSolid,
-                    contentColor = Color.White,
-                    modifier = Modifier.weight(1.3f).height(62.dp),
-                ) {
-                    Box(Modifier.fillMaxSize(), Alignment.Center) {
-                        Text("New sale", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (queued) {
+                                "No receipt yet — it prints from Past sales once this sends."
+                            } else {
+                                "The receipt is on its way to the preview."
+                            },
+                            fontSize = 13.sp,
+                            color = Handoff.Muted2,
+                            textAlign = TextAlign.Center,
+                        )
                     }
                 }
             }

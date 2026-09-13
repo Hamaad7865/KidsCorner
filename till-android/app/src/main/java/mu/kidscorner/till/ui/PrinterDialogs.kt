@@ -2,6 +2,7 @@ package mu.kidscorner.till.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -43,27 +45,32 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * line up and the preview would be a lie about the paper.
  *
  * Generated from the same line list the printer receives, so this is not an
- * approximation of the receipt; it is the receipt, minus the ink.
+ * approximation of the receipt; it is the receipt, minus the ink. Close
+ * dismisses; Print again re-sends the same sale when its id is known (past
+ * sales), and is absent for documents with nothing to re-send (the Z).
  */
 @Composable
 fun ReceiptPreviewDialog(
     preview: String,
     paper: PaperWidth,
     onDismiss: () -> Unit,
+    onPrintAgain: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     HandoffDialog(
-        title = "Receipt preview",
+        title = "Receipt",
         subtitle = "${paper.label} · ${paper.columns} characters wide",
         width = 620,
-        maxHeight = 680,
+        maxHeight = 720,
         onDismiss = onDismiss,
     ) {
         Column(Modifier.padding(20.dp)) {
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 460.dp)
-                    .background(Handoff.FieldWell, RoundedCornerShape(10.dp))
+                    .heightIn(max = 440.dp)
+                    .background(Color.White, RoundedCornerShape(10.dp))
+                    .border(1.dp, Handoff.LineSoft, RoundedCornerShape(10.dp))
                     .verticalScroll(rememberScrollState())
                     .padding(14.dp),
                 // A slip is a narrow column of monospace; left-aligned in a
@@ -78,12 +85,25 @@ fun ReceiptPreviewDialog(
                     color = Handoff.Ink,
                 )
             }
-            HandoffButton(
-                label = "Close",
-                primary = false,
-                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                onClick = onDismiss,
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                HandoffButton(
+                    label = "Close",
+                    primary = false,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss,
+                )
+                if (onPrintAgain != null) {
+                    HandoffButton(
+                        label = "Print again",
+                        primary = true,
+                        modifier = Modifier.weight(1f),
+                        onClick = onPrintAgain,
+                    )
+                }
+            }
         }
     }
 }

@@ -121,12 +121,12 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     }
 
     /**
-     * A scanned receipt code: the history dialog opens already searching for
-     * that one sale, with Reprint, Gift and Return one tap away.
+     * A scanned receipt code: the history dialog opens filtered to that sale
+     * AND its receipt comes up, with Close and Print again one tap away.
      */
     val recallSale: (String) -> Unit = { saleNo ->
         recallQuery = saleNo
-        vm.searchHistory(saleNo)
+        vm.recallAndPreview(saleNo)
         overlay = Overlay.Txns
     }
 
@@ -462,6 +462,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 preview = preview,
                 paper = vm.printer.paper,
                 onDismiss = vm::dismissPreview,
+                onPrintAgain = state.previewSaleId?.let { id -> { vm.printReceipt(id) } },
             )
         }
 
@@ -474,10 +475,11 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 change = outcome.change,
                 itemCount = outcome.itemCount,
                 methods = outcome.methods,
+                customerName = outcome.customerName,
                 queued = outcome.queued,
                 receiptPreview = state.receiptPreview,
                 onPrint = { outcome.saleId?.let(vm::printReceipt) },
-                onPrintGift = { outcome.saleId?.let { vm.printReceipt(it, gift = true) } },
+                onVoid = if (!outcome.queued) outcome.saleId?.let { id -> { vm.dismissOutcome(); vm.openRefund(id) } } else null,
                 onNewSale = vm::dismissOutcome,
             )
         }
@@ -533,6 +535,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             initialQuery = recallQuery ?: "",
             error = state.historyError,
             onSearch = vm::searchHistory,
+            onViewReceipt = { vm.previewReceipt(it) },
             onReprint = { vm.printReceipt(it) },
             onGiftReceipt = { vm.printReceipt(it, gift = true) },
             onReturn = { overlay = Overlay.None; vm.openRefund(it) },

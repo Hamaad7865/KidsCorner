@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,12 +53,12 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * `modalTxns` — an 820px card over today's sales.
  *
  * A 52px search beside a dark "Reprint last ticket", then rows of `padding:12px
- * 0` with a 104px number column, the customer, the total, and three keys:
- * reprint, gift receipt, return.
+ * 0` with a 104px number column, the customer, the total, and the keys: view,
+ * reprint, gift receipt, return, exchange.
  *
  * Reached from Till actions. It is the fast path a counter actually needs —
- * somebody comes back with a receipt and the answer is one of those three
- * things — which is why the design gives it a modal rather than a screen.
+ * somebody comes back with a receipt and the answer is one of those things —
+ * which is why the design gives it a modal rather than a screen.
  */
 @Composable
 fun TodaysSalesDialog(
@@ -67,6 +68,8 @@ fun TodaysSalesDialog(
     initialQuery: String = "",
     error: String? = null,
     onSearch: (String) -> Unit,
+    /** Opens the receipt slip itself, without printing. */
+    onViewReceipt: (Int) -> Unit,
     onReprint: (Int) -> Unit,
     onGiftReceipt: (Int) -> Unit,
     onReturn: (Int) -> Unit,
@@ -233,6 +236,13 @@ fun TodaysSalesDialog(
                                 color = Handoff.InkFigure,
                             )
 
+                            SquareKey(onClick = { onViewReceipt(sale.id) }, size = 48) {
+                                Icon(
+                                    Icons.Default.ReceiptLong,
+                                    "View receipt",
+                                    Modifier.size(17.dp),
+                                )
+                            }
                             SquareKey(onClick = { onReprint(sale.id) }, size = 48) {
                                 Icon(Icons.Default.Print, "Reprint", Modifier.size(17.dp))
                             }
