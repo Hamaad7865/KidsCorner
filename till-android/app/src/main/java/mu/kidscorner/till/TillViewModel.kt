@@ -2829,7 +2829,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun previewReceipt(saleId: Int) = viewModelScope.launch {
         val sale = _state.value.selectedSale?.takeIf { it.id == saleId }
             ?: repo.saleDetail(saleId).getOrNull()?.sale
-            ?: return@launch
+            ?: run {
+                toast("Could not load that receipt.")
+                return@launch
+            }
 
         val shop = _state.value.shop
         val lines = buildReceipt(

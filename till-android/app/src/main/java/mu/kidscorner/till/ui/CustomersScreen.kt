@@ -84,6 +84,8 @@ fun CustomersScreen(
     profileDepositsLoading: Boolean,
     /** Opens a purchase's receipt — the preview, and the printer. */
     onViewReceipt: (Int) -> Unit,
+    /** Prints a purchase straight to paper — the key beside each row. */
+    onPrintReceipt: (Int) -> Unit = {},
     onTakePayment: () -> Unit,
     editSaving: Boolean,
     editError: String?,
@@ -109,6 +111,7 @@ fun CustomersScreen(
                 deposits = profileDeposits,
                 depositsLoading = profileDepositsLoading,
                 onViewReceipt = onViewReceipt,
+                onPrintReceipt = onPrintReceipt,
                 onTakePayment = onTakePayment,
                 editSaving = editSaving,
                 editError = editError,
@@ -347,6 +350,7 @@ private fun CustomerProfilePane(
     deposits: List<DepositSummaryRow>,
     depositsLoading: Boolean,
     onViewReceipt: (Int) -> Unit,
+    onPrintReceipt: (Int) -> Unit = {},
     onBack: () -> Unit,
     onTakePayment: () -> Unit,
     editSaving: Boolean,
@@ -542,12 +546,12 @@ private fun CustomerProfilePane(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             SquareKey(
-                                onClick = { onViewReceipt(sale.id) },
+                                onClick = { onPrintReceipt(sale.id) },
                                 size = 40,
                                 tint = Handoff.InkStrong,
                                 modifier = Modifier.padding(start = 10.dp),
                             ) {
-                                Icon(Icons.Default.Print, "View and print receipt", Modifier.size(16.dp))
+                                Icon(Icons.Default.Print, "Print receipt", Modifier.size(16.dp))
                             }
                         }
                     }
