@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -310,8 +311,12 @@ fun SellScreen(
     /** What "All" is worth — the same set the grid draws from, uncapped. */
     val allProducts = remember(catalog) { catalog.distinctBy { it.productId }.size }
     val tiles = remember(tab, catalog) { tilesFor(tab, catalog) }
+    val keyboard = LocalSoftwareKeyboardController.current
 
+    // Picking a result ends typing: the keyboard's job is done whether the
+    // cashier tapped the field to type or scanned straight in.
     fun add(variant: CatalogVariant) {
+        keyboard?.hide()
         onAdd(variant)
         justAdded = variant.id
     }

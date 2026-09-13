@@ -37,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +80,19 @@ fun TodaysSalesDialog(
 ) {
     var query by remember { mutableStateOf(initialQuery) }
     val noRipple = remember { MutableInteractionSource() }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // The terminal's IME shows itself on every focus gain, so arriving here
+    // with a focused field behind us — a scan typed into the sell search —
+    // would pop the keyboard over this list. Drop focus AND explicitly hide
+    // after composition, when the dialog owns the window: hiding earlier loses
+    // the race with the dialog taking focus itself. Tapping the search box
+    // afterwards still summons it normally.
+    LaunchedEffect(Unit) {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+    }
 
     // Debounced, like every other search on this till: a receipt number typed
     // at speed should not fire a request per digit.
