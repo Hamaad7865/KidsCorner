@@ -1,7 +1,8 @@
 "use client"
 
 import { Fragment, useState } from "react"
-import { ChevronRight } from "lucide-react"
+import Link from "next/link"
+import { ChevronRight, Receipt } from "lucide-react"
 
 import {
   Table,
@@ -89,6 +90,12 @@ export function JournalMethods({ methods }: { methods: Method[] }) {
                           )}
                         />
                         {label}
+                        {canOpen ? (
+                          <span className="text-muted-foreground font-normal">
+                            ({m.breakdown.length}{" "}
+                            {m.breakdown.length === 1 ? "bill" : "bills"})
+                          </span>
+                        ) : null}
                       </span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{m.bills}</TableCell>
@@ -101,9 +108,33 @@ export function JournalMethods({ methods }: { methods: Method[] }) {
                           key={`${m.method}:${b.ref}`}
                           className="bg-muted/20 hover:bg-muted/20"
                         >
-                          <TableCell className="text-muted-foreground py-2 pl-9">
-                            {b.ref}
-                            {b.customer ? ` · ${b.customer}` : ""}
+                          <TableCell className="py-2 pl-9">
+                            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {b.saleId != null ? (
+                                <Link
+                                  href={`/sales/${b.saleId}`}
+                                  className="text-primary font-medium hover:underline"
+                                >
+                                  {b.ref}
+                                </Link>
+                              ) : (
+                                <span className="font-medium">{b.ref}</span>
+                              )}
+                              {b.customer ? (
+                                <span className="text-muted-foreground">{b.customer}</span>
+                              ) : null}
+                              {b.saleId != null ? (
+                                <Link
+                                  href={`/receipt/${b.saleId}`}
+                                  target="_blank"
+                                  rel="noopener"
+                                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs"
+                                >
+                                  <Receipt aria-hidden className="size-3" />
+                                  Receipt
+                                </Link>
+                              ) : null}
+                            </span>
                           </TableCell>
                           <TableCell />
                           <TableCell className="text-muted-foreground py-2 text-right tabular-nums">

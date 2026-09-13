@@ -253,6 +253,7 @@ describe("buildJournalSections", () => {
   const leg = (over: Partial<JournalLeg> = {}): JournalLeg => ({
     doc: "sale",
     saleNo: "S-1",
+    saleId: 1,
     saleDate: "2026-09-12T10:00:00+04:00",
     at: "2026-09-12T10:00:00+04:00",
     method: "cash",
@@ -333,10 +334,11 @@ describe("buildJournalSections", () => {
     const s = buildJournalSections(
       [
         leg(),
-        leg({ saleNo: "S-2", gross: 575, net: 500, vat: 75, customerName: "Anil" }),
+        leg({ saleNo: "S-2", saleId: 2, gross: 575, net: 500, vat: 75, customerName: "Anil" }),
         leg({
           doc: "deposit",
           saleNo: "D-9",
+          saleId: null,
           method: "card",
           gross: 200,
           net: 200,
@@ -351,14 +353,14 @@ describe("buildJournalSections", () => {
     const cash = s.byMethod.find((m) => m.method === "cash")!
     expect(cash.bills).toBe(2)
     expect(cash.breakdown).toEqual([
-      { ref: "S-1", customer: "Marie", excl: 1_000, incl: 1_150 },
-      { ref: "S-2", customer: "Anil", excl: 500, incl: 575 },
+      { ref: "S-1", saleId: 1, customer: "Marie", excl: 1_000, incl: 1_150 },
+      { ref: "S-2", saleId: 2, customer: "Anil", excl: 500, incl: 575 },
     ])
     // A deposit is money on a method but not a bill settled.
     const card = s.byMethod.find((m) => m.method === "card")!
     expect(card.bills).toBe(0)
     expect(card.breakdown).toEqual([
-      { ref: "D-9", customer: "Marie", excl: 200, incl: 200 },
+      { ref: "D-9", saleId: null, customer: "Marie", excl: 200, incl: 200 },
     ])
     for (const m of s.byMethod) {
       const incl = m.breakdown.reduce((sum, b) => sum + b.incl, 0)

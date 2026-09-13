@@ -107,7 +107,13 @@ export type JournalSections = {
     excl: number
     incl: number
     /** The documents that made up this method's takings, for the drill-down. */
-    breakdown: { ref: string; customer: string | null; excl: number; incl: number }[]
+    breakdown: {
+      ref: string
+      saleId: number | null
+      customer: string | null
+      excl: number
+      incl: number
+    }[]
   }[]
   taxes: { label: string; rate: number; tax: number; discount: number; excl: number; incl: number }[]
   payments: { method: string; bills: number; amount: number }[]
@@ -121,6 +127,8 @@ export type JournalLeg = {
   /** "sale" legs settle bills; deposits and settlements are money without one. */
   doc: "sale" | "deposit" | "settlement"
   saleNo: string
+  /** The sale's row id, for linking to it and its receipt — null off a sale. */
+  saleId: number | null
   /** The sale's own date — legs on older bills are "settled earlier". */
   saleDate: string
   at: string
@@ -502,11 +510,10 @@ export function buildJournalSections(
 }
 
 /** One method's takings split by the document each leg belongs to. */
-function billBreakdown(
-  group: JournalLeg[],
-): { ref: string; customer: string | null; excl: number; incl: number }[] {
+function billBreakdown(group: JournalLeg[]): JournalSections["byMethod"][number]["breakdown"] {
   return [...groupBy(group, (l) => l.saleNo)].map(([ref, legs]) => ({
     ref,
+    saleId: legs.find((l) => l.saleId != null)?.saleId ?? null,
     customer: legs.find((l) => l.customerName)?.customerName ?? null,
     excl: round2(legs.reduce((sum, l) => sum + l.net, 0)),
     incl: round2(legs.reduce((sum, l) => sum + l.gross, 0)),
@@ -782,6 +789,7 @@ export async function getSalesJournal(
       sectionLegs.push({
         doc: "sale",
         saleNo: head.sale_no,
+        saleId,
         saleDate: head.sale_date,
         at: leg.created_at,
         method: leg.method,
@@ -826,6 +834,7 @@ export async function getSalesJournal(
     sectionLegs.push({
       doc: "deposit",
       saleNo: t.deposit_orders?.order_no ?? `D-${t.order_id ?? t.id}`,
+      saleId: null,
       saleDate: t.created_at,
       at: t.created_at,
       method: t.method,
@@ -862,6 +871,7 @@ export async function getSalesJournal(
     sectionLegs.push({
       doc: "settlement",
       saleNo: `STL-${e.id}`,
+      saleId: null,
       saleDate: e.created_at,
       at: e.created_at,
       method: e.method ?? "cash",
