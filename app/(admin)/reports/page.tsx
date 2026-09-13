@@ -580,18 +580,33 @@ export default async function ReportsPage({
 
       {active === "journal" && journal ? (
         <div className="space-y-4">
+          <div>
+            <h2 className="font-heading text-xl font-semibold uppercase">
+              {journal.from === journal.to
+                ? formatDate(journal.from)
+                : `${formatDate(journal.from)} – ${formatDate(journal.to)}`}
+            </h2>
+            <p className="text-muted-foreground text-xs">
+              Cash basis — every figure is money received in this period, not
+              invoices issued.
+            </p>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat label="Bills settled" value={String(journal.sections.billsSettled)} />
             <Stat
-              label="Net of VAT"
-              value={formatRs(journal.totals.net)}
-              hint="what the VAT return calls turnover"
+              label="Total received incl tax"
+              value={formatRs(journal.sections.totalReceived)}
+              hint={`Avg ${formatRs(journal.sections.avgTicket)}`}
             />
             <Stat
-              label="VAT"
-              value={formatRs(journal.totals.vat)}
-              hint="contained in the gross, not added to it"
+              label="Clients"
+              value={String(journal.sections.clients)}
+              hint={
+                journal.sections.totalReceived > 0 && journal.sections.billsSettled > 0
+                  ? `${formatRs(journal.sections.totalReceived)} · Avg ${formatRs(journal.sections.avgTicket)}`
+                  : undefined
+              }
             />
-            <Stat label="Gross" value={formatRs(journal.totals.gross)} />
             <Stat
               label="Documents"
               value={String(
@@ -605,6 +620,122 @@ export default async function ReportsPage({
               }`}
             />
           </div>
+
+          <Section title="Methods">
+            <SimpleTable
+              head={["Method", "Bills settled", "Total excl tax", "Total incl tax"]}
+              rows={[
+                ...journal.sections.byMethod.map((m) => [
+                  PAYMENT_METHOD_LABELS[m.method as keyof typeof PAYMENT_METHOD_LABELS] ?? m.method,
+                  String(m.bills),
+                  formatRs(m.excl),
+                  formatRs(m.incl),
+                ]),
+                [
+                  "Total",
+                  String(journal.sections.billsSettled),
+                  formatRs(
+                    journal.sections.byMethod.reduce((sum, m) => sum + m.excl, 0),
+                  ),
+                  formatRs(journal.sections.totalReceived),
+                ],
+              ]}
+              empty="No money received in this period."
+            />
+          </Section>
+
+          <Section title="Taxes">
+            <SimpleTable
+              head={["Label", "Rate", "Tax", "Discount", "Excluding tax", "With tax"]}
+              rows={[
+                ...journal.sections.taxes.map((t) => [
+                  t.label,
+                  t.rate > 0 ? `${t.rate * 100}%` : "—",
+                  formatRs(t.tax),
+                  t.discount > 0 ? formatRs(t.discount) : "—",
+                  formatRs(t.excl),
+                  formatRs(t.incl),
+                ]),
+                [
+                  "Total",
+                  "",
+                  formatRs(journal.totals.vat),
+                  formatRs(
+                    journal.sections.taxes.reduce((sum, t) => sum + t.discount, 0),
+                  ),
+                  formatRs(journal.totals.net),
+                  formatRs(journal.sections.totalReceived),
+                ],
+              ]}
+              empty="No taxable takings in this period."
+            />
+          </Section>
+
+          <Section title="Settled earlier bills">
+            <SimpleTable
+              head={["Bill", "Amount"]}
+              rows={
+                journal.sections.settledEarlier.bills > 0
+                  ? [
+                      [
+                        `Settled earlier bills (${journal.sections.settledEarlier.bills})`,
+                        formatRs(journal.sections.settledEarlier.amount),
+                      ],
+                      ["Total", formatRs(journal.sections.settledEarlier.amount)],
+                    ]
+                  : []
+              }
+              empty="No earlier bills settled in this period."
+            />
+          </Section>
+
+          <Section title="Categories">
+            <SimpleTable
+              head={["Label", "Qty", "%", "Excluding tax", "With tax"]}
+              rows={[
+                ...journal.sections.categories.map((c) => [
+                  c.label,
+                  String(c.qty),
+                  `${c.pct}%`,
+                  formatRs(c.excl),
+                  formatRs(c.incl),
+                ]),
+                [
+                  "Total",
+                  "",
+                  "",
+                  formatRs(journal.totals.net),
+                  formatRs(journal.sections.totalReceived),
+                ],
+              ]}
+              empty="No categorised takings in this period."
+            />
+          </Section>
+
+          <Section title="Cashiers">
+            <SimpleTable
+              head={["Label", "Bills settled", "Excluding tax", "With tax"]}
+              rows={[
+                ...journal.sections.users.map((u) => [
+                  u.name,
+                  String(u.bills),
+                  formatRs(u.excl),
+                  formatRs(u.incl),
+                ]),
+                [
+                  "Total",
+                  String(journal.sections.billsSettled),
+                  formatRs(
+                    journal.sections.users.reduce((sum, u) => sum + u.excl, 0),
+                  ),
+                  formatRs(journal.sections.totalReceived),
+                ],
+              ]}
+              empty="No cashier takings in this period."
+            />
+          </Section>
+
+          <Section title="Documents">
 
           {journal.truncated ? (
             <p className="text-destructive text-sm">
@@ -730,6 +861,7 @@ export default async function ReportsPage({
               </TableBody>
             </Table>
           </div>
+          </Section>
         </div>
       ) : null}
 

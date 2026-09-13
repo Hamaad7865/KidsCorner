@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildJournalSections,
   creditLine,
   depositLine,
   journalTotals,
@@ -8,6 +9,7 @@ import {
   saleLine,
   settlementLine,
   splitCents,
+  type JournalLeg,
   type JournalRow,
 } from "./sales-journal"
 
@@ -244,5 +246,82 @@ describe("cash basis: deposits and settlements count when the money arrives", ()
     ])
     expect(totals.gross).toBe(775) // 1150 + 200 - 575
     expect(totals.net + totals.vat).toBe(totals.gross)
+  })
+})
+
+describe("buildJournalSections", () => {
+  const leg = (over: Partial<JournalLeg> = {}): JournalLeg => ({
+    doc: "sale",
+    saleNo: "S-1",
+    saleDate: "2026-09-12T10:00:00+04:00",
+    at: "2026-09-12T10:00:00+04:00",
+    method: "cash",
+    gross: 1_150,
+    net: 1_000,
+    vat: 150,
+    vatEnabled: true,
+    vatRate: 0.15,
+    discountShare: 0,
+    customerName: "Marie",
+    cashierName: "Priya",
+    categories: [{ label: "Tops", weight: 1_150, qty: 2 }],
+    ...over,
+  })
+
+  it("counts bills, takings, clients and the average ticket", () => {
+    const s = buildJournalSections(
+      [leg(), leg({ saleNo: "S-2", gross: 575, net: 500, vat: 75, customerName: null })],
+      "2026-09-12T00:00:00+04:00",
+    )
+    expect(s.billsSettled).toBe(2)
+    expect(s.totalReceived).toBe(1_725)
+    expect(s.clients).toBe(1)
+    expect(s.avgTicket).toBe(862.5)
+  })
+
+  it("puts legs on older bills under settled earlier", () => {
+    const s = buildJournalSections(
+      [leg(), leg({ saleNo: "S-0", saleDate: "2026-08-20T10:00:00+04:00", gross: 500, net: 500, vat: 0 })],
+      "2026-09-12T00:00:00+04:00",
+    )
+    expect(s.settledEarlier).toEqual({ bills: 1, amount: 500 })
+    expect(s.totalReceived).toBe(1_650)
+  })
+
+  it("breaks tax bands with discounts, and categories foot to the total", () => {
+    const s = buildJournalSections(
+      [
+        leg({ discountShare: 100 }),
+        leg({
+          doc: "deposit",
+          saleNo: "D-1",
+          gross: 200,
+          net: 200,
+          vat: 0,
+          vatEnabled: false,
+          vatRate: 0,
+          discountShare: 0,
+          categories: [],
+        }),
+      ],
+      "2026-09-12T00:00:00+04:00",
+    )
+    expect(s.taxes).toEqual([
+      { label: "15%", rate: 0.15, tax: 150, discount: 100, excl: 1_000, incl: 1_150 },
+    ])
+    const catTotal = s.categories.reduce((sum, c) => sum + c.incl, 0)
+    expect(catTotal).toBe(s.totalReceived)
+  })
+
+  it("groups methods and users with bill counts", () => {
+    const s = buildJournalSections(
+      [leg(), leg({ saleNo: "S-2", method: "card", gross: 575, net: 500, vat: 75 })],
+      "2026-09-12T00:00:00+04:00",
+    )
+    expect(s.payments).toEqual([
+      { method: "cash", bills: 1, amount: 1_150 },
+      { method: "card", bills: 1, amount: 575 },
+    ])
+    expect(s.users).toEqual([{ name: "Priya", bills: 2, excl: 1_500, incl: 1_725 }])
   })
 })

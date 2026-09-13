@@ -87,8 +87,48 @@ export type SalesJournal = {
     credits: number
     voids: number
   }
+  sections: JournalSections
   /** True when the period held more documents than were read. */
   truncated: boolean
+}
+
+/**
+ * The journal broken down five ways, Carfectionist-style — every figure money
+ * received in the period, not invoices issued.
+ */
+export type JournalSections = {
+  billsSettled: number
+  totalReceived: number
+  clients: number
+  avgTicket: number
+  byMethod: { method: string; bills: number; excl: number; incl: number }[]
+  taxes: { label: string; rate: number; tax: number; discount: number; excl: number; incl: number }[]
+  payments: { method: string; bills: number; amount: number }[]
+  settledEarlier: { bills: number; amount: number }
+  categories: { label: string; qty: number; pct: number; excl: number; incl: number }[]
+  users: { name: string; bills: number; excl: number; incl: number }[]
+}
+
+/** One money-in leg with everything the sections need. Exported for tests. */
+export type JournalLeg = {
+  /** "sale" legs settle bills; deposits and settlements are money without one. */
+  doc: "sale" | "deposit" | "settlement"
+  saleNo: string
+  /** The sale's own date — legs on older bills are "settled earlier". */
+  saleDate: string
+  at: string
+  method: string
+  gross: number
+  net: number
+  vat: number
+  vatEnabled: boolean
+  vatRate: number
+  /** This leg's share of the sale's total discount, for the tax bands. */
+  discountShare: number
+  customerName: string | null
+  cashierName: string | null
+  /** Category mix of the sale: label → weight (line totals). */
+  categories: { label: string; weight: number; qty: number }[]
 }
 
 /** Plenty for a small shop's month; enough to notice if it is ever hit. */
@@ -320,8 +360,130 @@ export function journalTotals(rows: JournalRow[]): {
   )
 }
 
+function rateLabel(rate: number): string {
+  if (!Number.isFinite(rate) || rate <= 0) return "Zero-rated"
+  return `${(rate * 100).toFixed(2).replace(/\.?0+$/, "")}%`
+}
+
+/**
+ * Breaks money-in legs five ways. Pure, so the section arithmetic is testable
+ * without a database.
+ *
+ * A leg counts for the sale it settles under "bills settled" once no matter
+ * how many tenders it took; a leg on a bill raised before the period counts
+ * under "settled earlier" instead. Category and discount shares ride each
+ * leg's own weights, so every section foots to the same total.
+ */
+export function buildJournalSections(
+  legs: JournalLeg[],
+  /** ISO instant the period opens — legs on older bills settle earlier ones. */
+  periodStartIso: string,
+): JournalSections {
+  const totalReceived = round2(legs.reduce((sum, l) => sum + l.gross, 0))
+  const clients = new Set(
+    legs.map((l) => l.customerName).filter((n): n is string => !!n),
+  ).size
+
+  // Bills are sales settled — deposits and settlements are money without one.
+  const billNos = [...new Set(legs.filter((l) => l.doc === "sale").map((l) => l.saleNo))]
+
+  const byMethod = [...groupBy(legs, (l) => l.method)].map(([method, group]) => ({
+    method,
+    bills: new Set(group.map((l) => l.saleNo)).size,
+    excl: round2(group.reduce((sum, l) => sum + l.net, 0)),
+    incl: round2(group.reduce((sum, l) => sum + l.gross, 0)),
+  }))
+
+  const taxes = [...groupBy(legs.filter((l) => l.vatEnabled), (l) => String(l.vatRate))].map(
+    ([rateKey, group]) => {
+      const rate = Number(rateKey)
+      return {
+        label: rateLabel(rate),
+        rate,
+        tax: round2(group.reduce((sum, l) => sum + l.vat, 0)),
+        discount: round2(group.reduce((sum, l) => sum + l.discountShare, 0)),
+        excl: round2(group.reduce((sum, l) => sum + l.net, 0)),
+        incl: round2(group.reduce((sum, l) => sum + l.gross, 0)),
+      }
+    },
+  )
+
+  const payments = [...groupBy(legs, (l) => l.method)].map(([method, group]) => ({
+    method,
+    bills: new Set(group.map((l) => l.saleNo)).size,
+    amount: round2(group.reduce((sum, l) => sum + l.gross, 0)),
+  }))
+
+  const earlier = legs.filter((l) => l.saleDate < periodStartIso)
+  const settledEarlier = {
+    bills: new Set(earlier.map((l) => l.saleNo)).size,
+    amount: round2(earlier.reduce((sum, l) => sum + l.gross, 0)),
+  }
+
+  const catGross = new Map<string, number>()
+  const catNet = new Map<string, number>()
+  const catQty = new Map<string, number>()
+  for (const leg of legs) {
+    const totalWeight = leg.categories.reduce((sum, c) => sum + c.weight, 0)
+    const ratio = leg.gross === 0 ? 0 : leg.net / leg.gross
+    if (totalWeight <= 0) {
+      catGross.set("(uncategorised)", round2((catGross.get("(uncategorised)") ?? 0) + leg.gross))
+      catNet.set("(uncategorised)", round2((catNet.get("(uncategorised)") ?? 0) + leg.net))
+      catQty.set("(uncategorised)", round2((catQty.get("(uncategorised)") ?? 0) + 0))
+      continue
+    }
+    for (const c of leg.categories) {
+      const share = (leg.gross * c.weight) / totalWeight
+      catGross.set(c.label, round2((catGross.get(c.label) ?? 0) + share))
+      catNet.set(c.label, round2((catNet.get(c.label) ?? 0) + share * ratio))
+      // The category's units, scaled by the paid share of the sale.
+      catQty.set(c.label, round2((catQty.get(c.label) ?? 0) + (c.qty * leg.gross) / totalWeight))
+    }
+  }
+  const categories = [...catGross.entries()].map(([label, incl]) => ({
+    label,
+    qty: catQty.get(label) ?? 0,
+    pct: totalReceived === 0 ? 0 : round2((incl / totalReceived) * 100),
+    excl: catNet.get(label) ?? 0,
+    incl: round2(incl),
+  }))
+
+  const users = [...groupBy(legs, (l) => l.cashierName ?? "—")].map(([name, group]) => ({
+    name,
+    bills: new Set(group.map((l) => l.saleNo)).size,
+    excl: round2(group.reduce((sum, l) => sum + l.net, 0)),
+    incl: round2(group.reduce((sum, l) => sum + l.gross, 0)),
+  }))
+
+  return {
+    billsSettled: billNos.length,
+    totalReceived,
+    clients,
+    avgTicket: billNos.length === 0 ? 0 : round2(totalReceived / billNos.length),
+    byMethod,
+    taxes,
+    payments,
+    settledEarlier,
+    categories,
+    users,
+  }
+}
+
+function groupBy<T>(list: T[], key: (item: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>()
+  for (const item of list) {
+    const k = key(item)
+    const group = map.get(k) ?? []
+    group.push(item)
+    map.set(k, group)
+  }
+  return map
+}
+
 type RawSaleHead = {
   sale_no: string
+  sale_date: string
+  discount: number
   status: string
   vat_enabled: boolean
   vat_rate: number
@@ -361,7 +523,7 @@ export async function getSalesJournal(
       .from("sale_payments")
       .select(
         `id, sale_id, method, amount, created_at,
-         sales!inner ( sale_no, status, vat_enabled, vat_rate, vat_amount, total,
+         sales!inner ( sale_no, sale_date, discount, status, vat_enabled, vat_rate, vat_amount, total,
            customers ( full_name ), profiles ( full_name ) )`,
       )
       .gte("created_at", after)
@@ -462,7 +624,8 @@ export async function getSalesJournal(
 
   const rows: JournalRow[] = []
 
-  // Group a sale's legs so each carries its share of the frozen VAT.
+  // Group a sale's legs so each carries its share of the frozen VAT and
+  // discount, and fetch what each sale sold for the category mix.
   const legsBySale = new Map<number, RawLeg[]>()
   for (const raw of legRows) {
     const leg = raw as unknown as RawLeg
@@ -472,14 +635,91 @@ export async function getSalesJournal(
     legsBySale.set(leg.sale_id, group)
   }
 
-  for (const [, group] of legsBySale) {
+  const legSaleIds = [...legsBySale.keys()]
+  const { data: itemRows, error: itemsError } = legSaleIds.length
+    ? await supabase
+        .from("sale_items")
+        .select(
+          `sale_id, qty, line_total, discount, variant_id,
+           product_variants ( products ( id, name, category_id ) )`,
+        )
+        .in("sale_id", legSaleIds)
+    : { data: [], error: null }
+  if (itemsError) throw itemsError
+
+  const categoryIds = [
+    ...new Set(
+      ((itemRows ?? []) as unknown as {
+        product_variants?: { products?: { category_id: number | null } | null } | null
+      }[])
+        .map((it) => it.product_variants?.products?.category_id)
+        .filter((id): id is number => typeof id === "number"),
+    ),
+  ]
+  const { data: categoryRows, error: categoryError } = categoryIds.length
+    ? await supabase.from("categories").select("id, name").in("id", categoryIds)
+    : { data: [], error: null }
+  if (categoryError) throw categoryError
+  const categoryById = new Map(
+    ((categoryRows ?? []) as { id: number; name: string }[]).map((c) => [c.id, c.name]),
+  )
+
+  type SaleMix = {
+    head: RawSaleHead
+    categories: { label: string; weight: number; qty: number }[]
+    discountTotal: number
+  }
+  const mixBySale = new Map<number, SaleMix>()
+  for (const [saleId, group] of legsBySale) {
     const head = group[0].sales
+    const lines = ((itemRows ?? []) as unknown as {
+      sale_id: number
+      qty: number
+      line_total: number
+      discount: number
+      variant_id: number | null
+      product_variants?: { products?: { name: string; category_id: number | null } | null } | null
+    }[]).filter((it) => it.sale_id === saleId)
+    const catWeight = new Map<string, number>()
+    const catQty = new Map<string, number>()
+    for (const line of lines) {
+      const label =
+        line.variant_id == null
+          ? "(uncategorised)"
+          : (categoryById.get(line.product_variants?.products?.category_id ?? -1) ??
+            "(uncategorised)")
+      catWeight.set(label, round2((catWeight.get(label) ?? 0) + Number(line.line_total)))
+      catQty.set(label, round2((catQty.get(label) ?? 0) + Number(line.qty)))
+    }
+    mixBySale.set(saleId, {
+      head,
+      categories: [...catWeight.entries()].map(([label, weight]) => ({
+        label,
+        weight,
+        qty: catQty.get(label) ?? 0,
+      })),
+      discountTotal: round2(
+        Number(head.discount ?? 0) + lines.reduce((sum, l) => sum + Number(l.discount), 0),
+      ),
+    })
+  }
+
+  const sectionLegs: JournalLeg[] = []
+
+  for (const [saleId, group] of legsBySale) {
+    const head = group[0].sales
+    const mix = mixBySale.get(saleId)
     const frozenVatCents = Math.round(Number(head.vat_amount) * 100)
     const shares = splitCents(
       frozenVatCents,
       group.map((leg) => Number(leg.amount)),
     )
+    const discountShares = splitCents(
+      Math.round((mix?.discountTotal ?? 0) * 100),
+      group.map((leg) => Number(leg.amount)),
+    )
     group.forEach((leg, i) => {
+      const vatShare = (shares[i] ?? 0) / 100
       rows.push(
         paymentLegLine({
           paymentId: leg.id,
@@ -487,7 +727,7 @@ export async function getSalesJournal(
           at: leg.created_at,
           method: leg.method,
           amount: Number(leg.amount),
-          vatShare: (shares[i] ?? 0) / 100,
+          vatShare,
           vatEnabled: head.vat_enabled,
           vatRate: Number(head.vat_rate),
           customerName: head.customers?.full_name ?? null,
@@ -495,6 +735,22 @@ export async function getSalesJournal(
           status: head.status,
         }),
       )
+      sectionLegs.push({
+        doc: "sale",
+        saleNo: head.sale_no,
+        saleDate: head.sale_date,
+        at: leg.created_at,
+        method: leg.method,
+        gross: round2(Number(leg.amount)),
+        net: round2(Number(leg.amount) - vatShare),
+        vat: round2(vatShare),
+        vatEnabled: head.vat_enabled,
+        vatRate: Number(head.vat_rate),
+        discountShare: (discountShares[i] ?? 0) / 100,
+        customerName: head.customers?.full_name ?? null,
+        cashierName: head.profiles?.full_name ?? null,
+        categories: mix?.categories ?? [],
+      })
     })
   }
 
@@ -507,6 +763,9 @@ export async function getSalesJournal(
       order_id: number
       deposit_orders?: { order_no: string; customer_id: number; cashier_id: string } | null
     }
+    const customerName = t.deposit_orders?.customer_id
+      ? (customerById.get(t.deposit_orders.customer_id) ?? null)
+      : null
     rows.push(
       depositLine({
         paymentId: t.id,
@@ -514,14 +773,28 @@ export async function getSalesJournal(
         at: t.created_at,
         method: t.method,
         amount: Number(t.amount),
-        customerName: t.deposit_orders?.customer_id
-          ? (customerById.get(t.deposit_orders.customer_id) ?? null)
-          : null,
+        customerName,
         cashierName: t.deposit_orders?.cashier_id
           ? (cashierById.get(t.deposit_orders.cashier_id) ?? null)
           : null,
       }),
     )
+    sectionLegs.push({
+      doc: "deposit",
+      saleNo: t.deposit_orders?.order_no ?? `D-${t.order_id ?? t.id}`,
+      saleDate: t.created_at,
+      at: t.created_at,
+      method: t.method,
+      gross: round2(Number(t.amount)),
+      net: round2(Number(t.amount)),
+      vat: 0,
+      vatEnabled: false,
+      vatRate: 0,
+      discountShare: 0,
+      customerName,
+      cashierName: null,
+      categories: [],
+    })
   }
 
   for (const entry of settlementRows) {
@@ -542,6 +815,22 @@ export async function getSalesJournal(
         customerName: e.customers?.full_name ?? null,
       }),
     )
+    sectionLegs.push({
+      doc: "settlement",
+      saleNo: `STL-${e.id}`,
+      saleDate: e.created_at,
+      at: e.created_at,
+      method: e.method ?? "cash",
+      gross: round2(-Number(e.amount)),
+      net: round2(-Number(e.amount)),
+      vat: 0,
+      vatEnabled: false,
+      vatRate: 0,
+      discountShare: 0,
+      customerName: e.customers?.full_name ?? null,
+      cashierName: null,
+      categories: [],
+    })
   }
 
   for (const note of creditRows.slice(0, JOURNAL_LIMIT)) {
@@ -619,6 +908,7 @@ export async function getSalesJournal(
       credits: rows.filter((r) => r.kind === "credit").length,
       voids: rows.filter((r) => r.status === "void").length,
     },
+    sections: buildJournalSections(sectionLegs, after),
     truncated:
       (legs?.length ?? 0) > JOURNAL_LIMIT ||
       (topUps?.length ?? 0) > JOURNAL_LIMIT ||
