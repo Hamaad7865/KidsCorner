@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest"
 
-import { creditLine, journalTotals, saleLine, type JournalRow } from "./sales-journal"
+import {
+  creditLine,
+  depositLine,
+  journalTotals,
+  paymentLegLine,
+  saleLine,
+  settlementLine,
+  splitCents,
+  type JournalRow,
+} from "./sales-journal"
 
 /**
  * The four accounting rules the journal exists to get right.
@@ -145,5 +154,95 @@ describe("journalTotals", () => {
     const totals = journalTotals(rows)
     expect(totals.gross).toBe(0.3)
     expect(totals.net).toBe(0.27)
+  })
+})
+
+describe("cash basis: a tender leg carries its share of the frozen VAT", () => {
+  it("splits whole cents so the legs foot exactly", () => {
+    // Rs 300 of VAT across legs of 2000 and 300: 260.87 + 39.13.
+    expect(splitCents(30_000, [2_000, 300])).toEqual([26_087, 3_913])
+    expect(splitCents(30_000, [2_000, 300]).reduce((a, b) => a + b, 0)).toBe(30_000)
+  })
+
+  it("keeps signs on money-out legs", () => {
+    expect(splitCents(3_913, [300, -40]).reduce((a, b) => a + b, 0)).toBe(3_913)
+  })
+
+  it("states the leg's date, not the sale's", () => {
+    const row = paymentLegLine({
+      paymentId: 7,
+      saleNo: "S260731-1",
+      at: "2026-08-02T10:00:00+04:00",
+      method: "cash",
+      amount: 300,
+      vatShare: 39.13,
+      vatEnabled: true,
+      vatRate: 0.15,
+    })
+    expect(row.key).toBe("p7")
+    expect(row.at).toBe("2026-08-02T10:00:00+04:00")
+    expect(row.gross).toBe(300)
+    expect(row.vat).toBe(39.13)
+    expect(row.net).toBe(260.87)
+  })
+})
+
+describe("cash basis: deposits and settlements count when the money arrives", () => {
+  it("books a top-up with no VAT — nothing has left the shelf", () => {
+    const row = depositLine({
+      paymentId: 3,
+      orderNo: "D-0001",
+      at: "2026-08-25T10:00:00+04:00",
+      method: "cash",
+      amount: 200,
+    })
+    expect(row.key).toBe("d3")
+    expect(row.kind).toBe("deposit")
+    expect(row.gross).toBe(200)
+    expect(row.vat).toBe(0)
+    expect(row.net).toBe(200)
+  })
+
+  it("books a settlement as money in, although it is stored negative", () => {
+    const row = settlementLine({
+      entryId: 9,
+      at: "2026-08-26T10:00:00+04:00",
+      amount: 500,
+      method: "cash",
+    })
+    expect(row.gross).toBe(500)
+    expect(row.vat).toBe(0)
+  })
+
+  it("a mixed cash period still balances", () => {
+    const totals = journalTotals([
+      paymentLegLine({
+        paymentId: 1,
+        saleNo: "S-1",
+        at: "2026-08-18T10:00:00+04:00",
+        method: "cash",
+        amount: 1_150,
+        vatShare: 150,
+        vatEnabled: true,
+        vatRate: 0.15,
+      }),
+      depositLine({
+        paymentId: 2,
+        orderNo: "D-1",
+        at: "2026-08-18T11:00:00+04:00",
+        method: "cash",
+        amount: 200,
+      }),
+      creditLine({
+        creditNo: "CN-1",
+        createdAt: "2026-08-18T12:00:00+04:00",
+        vatAmount: 75,
+        vatEnabled: true,
+        vatRate: 0.15,
+        total: 575,
+      }),
+    ])
+    expect(totals.gross).toBe(775) // 1150 + 200 - 575
+    expect(totals.net + totals.vat).toBe(totals.gross)
   })
 })

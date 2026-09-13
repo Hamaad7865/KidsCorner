@@ -354,31 +354,30 @@ export default async function ReportsPage({
               value={formatRs(collected.outstanding)}
               hint={
                 collected.outstanding === 0
-                  ? "Every ticket paid in full"
-                  : collected.outstanding === collected.onAccount
-                    ? "All of it sold on account"
-                    : "More than the account sales — worth investigating"
+                  ? "Invoiced and received agree for the period"
+                  : "Mixes account lending with cross-period timing"
               }
             />
           </div>
 
           {/*
-            Only a MISMATCH is a problem now.
+            Only a MISMATCH beyond timing is a problem now.
 
-            This used to warn whenever "not yet collected" was anything but
-            zero, because it could only have been ledger drift. Account sales
-            make a non-zero figure the normal case, so the warning fires on the
-            part that account lending does not explain.
+            Invoiced and collected live in different periods whenever money is
+            paid across visits — a deposit taken before, a settlement after —
+            so this figure is only comparable to account lending when neither
+            is in range. The warning fires on the part that neither lending
+            nor timing explains... in practice, on anything above `onAccount`
+            that deposits and settlements do not account for.
           */}
           {collected.outstanding !== collected.onAccount ? (
             <p className="text-warning text-sm">
-              The period&rsquo;s sales exceed its payments by{" "}
+              The period&rsquo;s invoiced sales exceed its money received by{" "}
               {formatRs(collected.outstanding)}, but only{" "}
-              {formatRs(collected.onAccount)} was billed to an account. The
-              difference of{" "}
-              {formatRs(collected.outstanding - collected.onAccount)} is not
-              explained by either — check the period&rsquo;s sales against their
-              payments.
+              {formatRs(collected.onAccount)} was billed to an account. Part of
+              the difference is timing — deposits taken earlier and settlements
+              arriving later. The rest is not explained by either — check the
+              period&rsquo;s sales against their payments.
             </p>
           ) : null}
 
@@ -595,8 +594,13 @@ export default async function ReportsPage({
             <Stat label="Gross" value={formatRs(journal.totals.gross)} />
             <Stat
               label="Documents"
-              value={String(journal.counts.sales + journal.counts.credits)}
-              hint={`${journal.counts.sales} sales · ${journal.counts.credits} credit notes${
+              value={String(
+                journal.counts.payments +
+                  journal.counts.deposits +
+                  journal.counts.settlements +
+                  journal.counts.credits,
+              )}
+              hint={`${journal.counts.payments} payments · ${journal.counts.deposits} deposits · ${journal.counts.settlements} settlements · ${journal.counts.credits} credit notes${
                 journal.counts.voids > 0 ? ` · ${journal.counts.voids} void` : ""
               }`}
             />
@@ -637,7 +641,7 @@ export default async function ReportsPage({
                   const isCredit = row.kind === "credit"
                   const isVoid = row.status === "void"
                   return (
-                    <TableRow key={`${row.kind}-${row.reference}`}>
+                    <TableRow key={row.key}>
                       <TableCell className="text-muted-foreground text-xs">
                         <div>{formatDate(row.at)}</div>
                         <div>{row.at.slice(11, 16)}</div>

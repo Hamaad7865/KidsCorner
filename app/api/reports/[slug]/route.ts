@@ -98,7 +98,13 @@ export async function GET(
             // made the export disagree with the screen it sits next to.
             shopDayOf(r.at),
             shopTimeOf(r.at),
-            r.kind === "credit" ? "Credit note" : "Sale",
+            r.kind === "credit"
+              ? "Credit note"
+              : r.kind === "deposit"
+                ? "Deposit"
+                : r.kind === "settlement"
+                  ? "Settlement"
+                  : "Sale",
             r.reference,
             r.againstReference ?? "",
             r.customerName ?? "Walk-in",
@@ -115,7 +121,7 @@ export async function GET(
             "",
             "",
             "TOTAL",
-            `${j.counts.sales} sales, ${j.counts.credits} credit notes`,
+            `${j.counts.payments} payments, ${j.counts.deposits} deposits, ${j.counts.settlements} settlements, ${j.counts.credits} credit notes`,
             "",
             "",
             "",

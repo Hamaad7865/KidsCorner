@@ -32,6 +32,7 @@ const journal = {
   to: "2026-08-18",
   rows: [
     {
+      key: "p1",
       kind: "sale" as const,
       reference: "S-1",
       at: "2026-08-18T06:00:00.000Z",
@@ -47,6 +48,7 @@ const journal = {
       status: "completed",
     },
     {
+      key: "p2",
       kind: "sale" as const,
       reference: "S-2",
       at: "2026-08-18T07:00:00.000Z",
@@ -63,7 +65,7 @@ const journal = {
     },
   ],
   totals: { net: 215, vat: 15, gross: 230 },
-  counts: { sales: 2, credits: 0, voids: 0 },
+  counts: { payments: 2, deposits: 0, settlements: 0, credits: 0, voids: 0 },
   truncated: false,
 }
 
