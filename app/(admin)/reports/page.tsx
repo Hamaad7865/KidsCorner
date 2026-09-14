@@ -578,15 +578,7 @@ export default async function ReportsPage({
               value={formatRs(journal.sections.totalReceived)}
               hint={`Avg ${formatRs(journal.sections.avgTicket)}`}
             />
-            <Stat
-              label="Clients"
-              value={String(journal.sections.clients)}
-              hint={
-                journal.sections.totalReceived > 0 && journal.sections.billsSettled > 0
-                  ? `${formatRs(journal.sections.totalReceived)} · Avg ${formatRs(journal.sections.avgTicket)}`
-                  : undefined
-              }
-            />
+            <Stat label="Clients" value={String(journal.sections.clients)} />
             <Stat
               label="Documents"
               value={String(
@@ -610,7 +602,7 @@ export default async function ReportsPage({
               head={["Label", "Rate", "Tax", "Discount", "Excluding tax", "With tax"]}
               rows={journal.sections.taxes.map((t) => [
                 t.label,
-                t.rate > 0 ? `${t.rate * 100}%` : "—",
+                t.rate > 0 ? `${Number((t.rate * 100).toFixed(2))}%` : "—",
                 formatRs(t.tax),
                 t.discount > 0 ? formatRs(t.discount) : "—",
                 formatRs(t.excl),

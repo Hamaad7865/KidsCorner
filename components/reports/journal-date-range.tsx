@@ -50,11 +50,16 @@ export function JournalDateRange({
 
   useEffect(() => {
     if (!open) return
+    const dismiss = () => {
+      setOpen(false)
+      setAnchor(null)
+      setLevel("day")
+    }
     const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) close()
+      if (box.current && !box.current.contains(e.target as Node)) dismiss()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close()
+      if (e.key === "Escape") dismiss()
     }
     document.addEventListener("mousedown", onDown)
     document.addEventListener("keydown", onKey)
@@ -62,7 +67,7 @@ export function JournalDateRange({
       document.removeEventListener("mousedown", onDown)
       document.removeEventListener("keydown", onKey)
     }
-  })
+  }, [open])
 
   function close() {
     setOpen(false)
@@ -212,7 +217,7 @@ export function JournalDateRange({
                       className={cn(
                         "flex h-9 items-center justify-center rounded-md text-sm tabular-nums hover:bg-muted",
                         !cell.inMonth && "text-muted-foreground/50",
-                        within && "bg-primary/15 rounded-none",
+                        within && !selected && "bg-primary/15 rounded-none",
                         selected &&
                           "bg-primary text-primary-foreground hover:bg-primary",
                       )}

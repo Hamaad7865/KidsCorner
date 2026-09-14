@@ -124,8 +124,8 @@ export type JournalSections = {
 
 /** One money-in leg with everything the sections need. Exported for tests. */
 export type JournalLeg = {
-  /** "sale" legs settle bills; deposits and settlements are money without one. */
-  doc: "sale" | "deposit" | "settlement"
+  /** "sale" legs settle bills; deposits, settlements and credits are money without one. */
+  doc: "sale" | "deposit" | "settlement" | "credit"
   saleNo: string
   /** The sale's row id, for linking to it and its receipt — null off a sale. */
   saleId: number | null
@@ -399,10 +399,16 @@ export function buildJournalSections(
     legs.map((l) => l.customerName).filter((n): n is string => !!n),
   ).size
 
-  // Bills are sales settled — deposits and settlements are money without one.
+  // Bills are sales settled — deposits, settlements and credits are money
+  // without one.
   const saleBills = (group: JournalLeg[]) =>
     new Set(group.filter((l) => l.doc === "sale").map((l) => l.saleNo)).size
   const billNos = [...new Set(legs.filter((l) => l.doc === "sale").map((l) => l.saleNo))]
+  // The average ticket is bill money over bills — deposits and refunds are not
+  // bills, so they must stay out of the numerator as well as the denominator.
+  const saleGross = round2(
+    legs.filter((l) => l.doc === "sale").reduce((sum, l) => sum + l.gross, 0),
+  )
 
   const byMethod = [...groupBy(legs, (l) => l.method)].map(([method, group]) => ({
     method,
@@ -469,7 +475,6 @@ export function buildJournalSections(
     if (totalWeight <= 0) {
       catGross.set("(uncategorised)", round2((catGross.get("(uncategorised)") ?? 0) + leg.gross))
       catNet.set("(uncategorised)", round2((catNet.get("(uncategorised)") ?? 0) + leg.net))
-      catQty.set("(uncategorised)", round2((catQty.get("(uncategorised)") ?? 0) + 0))
       continue
     }
     for (const c of leg.categories) {
@@ -499,7 +504,7 @@ export function buildJournalSections(
     billsSettled: billNos.length,
     totalReceived,
     clients,
-    avgTicket: billNos.length === 0 ? 0 : round2(totalReceived / billNos.length),
+    avgTicket: billNos.length === 0 ? 0 : round2(saleGross / billNos.length),
     byMethod,
     taxes,
     payments,
@@ -715,6 +720,23 @@ export async function getSalesJournal(
     ((categoryRows ?? []) as { id: number; name: string }[]).map((c) => [c.id, c.name]),
   )
 
+  type SaleItemRow = {
+    sale_id: number
+    qty: number
+    line_total: number
+    discount: number
+    variant_id: number | null
+    product_variants?: { products?: { name: string; category_id: number | null } | null } | null
+  }
+  // Group items by sale once, so the per-sale loop is a lookup rather than a
+  // full rescan of every item.
+  const itemsBySale = new Map<number, SaleItemRow[]>()
+  for (const it of (itemRows ?? []) as unknown as SaleItemRow[]) {
+    const group = itemsBySale.get(it.sale_id) ?? []
+    group.push(it)
+    itemsBySale.set(it.sale_id, group)
+  }
+
   type SaleMix = {
     head: RawSaleHead
     categories: { label: string; weight: number; qty: number }[]
@@ -723,14 +745,7 @@ export async function getSalesJournal(
   const mixBySale = new Map<number, SaleMix>()
   for (const [saleId, group] of legsBySale) {
     const head = group[0].sales
-    const lines = ((itemRows ?? []) as unknown as {
-      sale_id: number
-      qty: number
-      line_total: number
-      discount: number
-      variant_id: number | null
-      product_variants?: { products?: { name: string; category_id: number | null } | null } | null
-    }[]).filter((it) => it.sale_id === saleId)
+    const lines = itemsBySale.get(saleId) ?? []
     const catWeight = new Map<string, number>()
     const catQty = new Map<string, number>()
     for (const line of lines) {
@@ -913,6 +928,25 @@ export async function getSalesJournal(
         againstReference: n.sales?.sale_no,
       }),
     )
+    // Money out, like a settlement, but carrying its own VAT so the tax bands
+    // net down too — otherwise the sections overstate what was kept.
+    sectionLegs.push({
+      doc: "credit",
+      saleNo: n.credit_no,
+      saleId: null,
+      saleDate: n.created_at,
+      at: n.created_at,
+      method: n.refund_method ?? "cash",
+      gross: round2(-Number(n.total)),
+      net: round2(-(Number(n.total) - Number(n.vat_amount))),
+      vat: round2(-Number(n.vat_amount)),
+      vatEnabled: n.vat_enabled,
+      vatRate: Number(n.vat_rate),
+      discountShare: 0,
+      customerName: n.sales?.customers?.full_name ?? null,
+      cashierName: n.profiles?.full_name ?? null,
+      categories: [],
+    })
   }
 
   for (const sale of voidRows) {

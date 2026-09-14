@@ -330,6 +330,33 @@ describe("buildJournalSections", () => {
     expect(s.users).toEqual([{ name: "Priya", bills: 2, excl: 1_500, incl: 1_725 }])
   })
 
+  it("nets a cash refund out of takings without touching the average ticket", () => {
+    const s = buildJournalSections(
+      [
+        leg(),
+        leg({
+          doc: "credit",
+          saleNo: "CN-1",
+          saleId: null,
+          method: "cash",
+          gross: -500,
+          net: -500,
+          vat: 0,
+          vatEnabled: false,
+          vatRate: 0,
+          categories: [],
+        }),
+      ],
+      "2026-09-12T00:00:00+04:00",
+    )
+    expect(s.totalReceived).toBe(650)
+    const cash = s.byMethod.find((m) => m.method === "cash")!
+    expect(cash.incl).toBe(650)
+    expect(cash.bills).toBe(1) // the refund is not a bill
+    // The refund is money out, so the day's average basket is unmoved.
+    expect(s.avgTicket).toBe(1_150)
+  })
+
   it("drills each method down to its documents, which foot to the row", () => {
     const s = buildJournalSections(
       [
