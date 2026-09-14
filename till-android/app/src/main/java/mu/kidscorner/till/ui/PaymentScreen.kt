@@ -164,15 +164,18 @@ fun PaymentScreen(
     var padOnAmount by remember { mutableStateOf(false) }
 
     /*
-     * The tender starts AT the amount due rather than at zero.
-     *
-     * Exact is what most sales are, and an empty box made every one of them a
-     * typing job before Record would even light. Keyed to the method and to
-     * what is still outstanding, so switching to Card or taking a part payment
-     * re-seeds it rather than leaving the last method's figure in the box.
+     * The cash tender starts empty — 0.00 — rather than pre-filled with the
+     * amount due. Exact and the rounded notes sit one tap below it, so an
+     * exact payment is still a single tap, but Record can no longer fire
+     * before the cashier has entered what the customer actually handed over.
+     * Non-cash keeps its pre-fill: a card settles the bill as it stands, so
+     * there is nothing to count and nothing to gain from typing it out.
+     * Keyed to the method and to what is still outstanding, so switching
+     * methods or taking a part payment re-seeds the box rather than leaving
+     * the last figure in it.
      */
     LaunchedEffect(method, outstanding) {
-        entry = if (outstanding > 0) trimZeros(outstanding) else ""
+        entry = if (!isCash && outstanding > 0) trimZeros(outstanding) else ""
     }
 
     // ── splitting ───────────────────────────────────────────────────────────
