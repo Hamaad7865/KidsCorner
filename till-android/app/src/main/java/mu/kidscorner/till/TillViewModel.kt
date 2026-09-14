@@ -741,7 +741,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun reconnect() = viewModelScope.launch {
         if (_state.value.reconnecting) return@launch
         _state.update { it.copy(reconnecting = true, error = null) }
-        refreshRoster()
+        // Manual tap, so the roster pull doubles as an explicit update check:
+        // a just-published release is offered in seconds, not at the next
+        // heartbeat or cache expiry.
+        refreshRoster(manual = true)
         // Whatever came back, the catalogue is worth having too — a till that
         // has just found the shop should not still be selling this morning's
         // prices, or pointing at last week's shelf, off a cache. The reconnecting
@@ -782,12 +785,16 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * offline weeks after an owner cleared their PIN. Revocation that only
      * takes effect when a tablet happens to be rebooted is not revocation.
      *
+     * `manual` marks a cashier's sync tap (or any explicit check): the pull
+     * then asks GitHub live for releases too. The heartbeat leaves it off
+     * and rides the edge cache.
+     *
      * Quiet: no spinner, no error. Nothing here is anything a cashier asked
      * for, and a failure just means the roster stays as it was, which is the
      * correct outcome anyway.
      */
-    private suspend fun refreshRoster() {
-        repo.bootstrap().onSuccess { fresh ->
+    private suspend fun refreshRoster(manual: Boolean = false) {
+        repo.bootstrap(fresh = manual).onSuccess { fresh ->
             _state.update {
                 it.copy(
                     // The SHIFT is deliberately not taken from this answer.
@@ -831,7 +838,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun loadShop() = viewModelScope.launch {
         _state.update { it.copy(busy = true, error = null) }
 
-        repo.bootstrap()
+        // Fresh: cold start and explicit retry are someone waiting on the
+        // till, so a just-published update is offered now, not at the next
+        // cache expiry. A failure still falls back to the remembered shop.
+        repo.bootstrap(fresh = true)
             .onSuccess { shop ->
                 _state.update {
                     it.copy(

@@ -106,4 +106,23 @@ describe("getLatestAndroidRelease", () => {
 
     expect(await getLatestAndroidRelease()).toBeNull()
   })
+
+  it("asks the edge cache on an ordinary heartbeat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(githubResponse([release()]))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await getLatestAndroidRelease()
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toBe("https://api.github.com/repos/Hamaad7865/KidsCorner/releases?per_page=30")
+  })
+
+  it("mints a one-off URL past the edge cache on an explicit check", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(githubResponse([release()]))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const latest = await getLatestAndroidRelease({ bypassCache: true })
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toMatch(/^https:\/\/api\.github\.com\/repos\/Hamaad7865\/KidsCorner\/releases\?per_page=30&nocache=\d+$/)
+    expect(latest?.versionCode).toBe(2)
+  })
 })

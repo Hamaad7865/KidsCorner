@@ -19,6 +19,9 @@
 const REPO = "Hamaad7865/KidsCorner"
 const TAG_PATTERN = /^till-v(\d+)$/
 
+/** Edge-cache seconds for the release list — see getLatestAndroidRelease. */
+const CACHE_TTL_S = 60
+
 export type LatestRelease = {
   versionCode: number
   versionName: string
@@ -41,26 +44,39 @@ type GithubRelease = {
 /**
  * Fetches the release list once and picks the newest matching one.
  *
- * Cached at Cloudflare's edge for ten minutes (`cf.cacheTtl`) rather than
+ * Cached at Cloudflare's edge for a minute (`CACHE_TTL_S`) rather than
  * fetched on every heartbeat — a shop's tills call bootstrap every two
  * minutes each, and GitHub's unauthenticated API is rate-limited per
  * source IP, which on Workers is shared with unrelated traffic. A stale
- * answer for up to ten minutes costs nothing; a shop is not waiting on this.
+ * answer for up to a minute costs nothing next to the heartbeat's own
+ * two-minute cadence; a shop is not waiting on this.
+ *
+ * An explicit check (the till's sync tap, an app launch) passes
+ * `bypassCache`, which mints a one-off URL so the edge has nothing stored
+ * for it and GitHub is asked live — the answer lands in seconds. Those
+ * taps are rare (a cashier pressing sync, a restart), so the extra hits
+ * never approach the rate limit.
  *
  * Never throws. A malformed response, a rate limit, GitHub being down — all
  * of it comes back as null, and bootstrap simply omits the update fields
  * that round, exactly like any other optional field failing gracefully.
  */
-export async function getLatestAndroidRelease(): Promise<LatestRelease | null> {
+export async function getLatestAndroidRelease(
+  opts?: { bypassCache?: boolean },
+): Promise<LatestRelease | null> {
   try {
-    const response = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`, {
+    const base = `https://api.github.com/repos/${REPO}/releases?per_page=30`
+    // Unknown query keys are ignored by the GitHub API; the only purpose of
+    // the extra key is a cache entry the edge has never seen.
+    const url = opts?.bypassCache ? `${base}&nocache=${Date.now()}` : base
+    const response = await fetch(url, {
       headers: {
         Accept: "application/vnd.github+json",
         // GitHub's REST API refuses requests with no User-Agent.
         "User-Agent": "kidscorner-till-update-check",
       },
       // Cloudflare-specific fetch option; ignored (harmlessly) outside Workers.
-      cf: { cacheTtl: 600, cacheEverything: true },
+      cf: { cacheTtl: CACHE_TTL_S, cacheEverything: true },
     } as RequestInit)
 
     if (!response.ok) return null

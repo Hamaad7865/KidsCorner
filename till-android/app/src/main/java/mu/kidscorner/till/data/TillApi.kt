@@ -344,18 +344,25 @@ class TillApi(private val http: HttpClient) {
      * design: a till that cannot register still gets its catalogue and can
      * still sell — the registry is for the back office to look at, and losing
      * a heartbeat must never stop a shop trading.
+     *
+     * `fresh` marks an explicit check (sync tap, app launch): the server
+     * skips its edge-cached release list and asks GitHub live, so a
+     * just-published update is offered in seconds. Heartbeats leave it off
+     * and ride the cache, which is what keeps the rate limit out of reach.
      */
     suspend fun bootstrap(
         token: String,
         deviceCode: String? = null,
         model: String? = null,
         appVersion: String? = null,
+        fresh: Boolean = false,
     ): Bootstrap =
         http.get("$origin/api/till/bootstrap") {
             bearer(token)
             deviceCode?.let { parameter("device", it) }
             model?.let { parameter("model", it) }
             appVersion?.let { parameter("version", it) }
+            if (fresh) parameter("fresh", "1")
         }.decode()
 
     suspend fun verifyPin(

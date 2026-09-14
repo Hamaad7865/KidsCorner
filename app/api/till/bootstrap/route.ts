@@ -35,6 +35,14 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams
   const deviceCode = params.get("device")?.trim()
   let deviceId: number | null = null
+  /**
+   * An explicit check — the till's sync tap, an app launch — skips the
+   * edge-cached release list and asks GitHub live, so a just-published
+   * update is offered in seconds rather than at the next cache expiry.
+   * Heartbeats omit it and ride the cache, which is what keeps the
+   * unauthenticated GitHub rate limit out of reach.
+   */
+  const freshCheck = params.get("fresh") === "1"
 
   if (deviceCode) {
     const { data } = await supabase.rpc("register_pos_device" as never, {
@@ -59,7 +67,7 @@ export async function GET(request: Request) {
       getShopIdentity(supabase),
       // Never blocks bootstrap: null when there is nothing newer, GitHub is
       // unreachable, or the repo carries no matching release yet.
-      getLatestAndroidRelease(),
+      getLatestAndroidRelease({ bypassCache: freshCheck }),
     ])
 
   return NextResponse.json({

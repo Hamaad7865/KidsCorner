@@ -24,6 +24,7 @@ let currentPolicy = {
 }
 
 let latestRelease: { versionCode: number; versionName: string; apkUrl: string } | null = null
+let lastUpdateOpts: { bypassCache?: boolean } | undefined
 
 vi.mock("@/lib/api/till-session", () => ({
   requireTillSession: async () => session,
@@ -41,13 +42,16 @@ vi.mock("@/lib/vat/policy", () => ({
 // Real network calls (GitHub) have no business running inside a unit test —
 // lib/pos/app-update.test.ts owns proving that module's own behaviour.
 vi.mock("@/lib/pos/app-update", () => ({
-  getLatestAndroidRelease: async () => latestRelease,
+  getLatestAndroidRelease: async (opts?: { bypassCache?: boolean }) => {
+    lastUpdateOpts = opts
+    return latestRelease
+  },
 }))
 
 const { GET } = await import("./route")
 
-const get = async () => {
-  const response = await GET(new Request("http://t/api/till/bootstrap"))
+const get = async (url = "http://t/api/till/bootstrap") => {
+  const response = await GET(new Request(url))
   return response.json()
 }
 
@@ -100,6 +104,7 @@ describe("till bootstrap VAT fields", () => {
 describe("till bootstrap update fields", () => {
   beforeEach(() => {
     latestRelease = null
+    lastUpdateOpts = undefined
   })
 
   it("reports null update fields when there is nothing newer published", async () => {
@@ -121,5 +126,15 @@ describe("till bootstrap update fields", () => {
     expect(json.apkUrl).toBe(
       "https://github.com/Hamaad7865/KidsCorner/releases/download/till-v3/till-v3.apk",
     )
+  })
+
+  it("rides the cached release list on an ordinary heartbeat", async () => {
+    await get()
+    expect(lastUpdateOpts).toEqual({ bypassCache: false })
+  })
+
+  it("asks GitHub live when the till says this is an explicit check", async () => {
+    await get("http://t/api/till/bootstrap?fresh=1")
+    expect(lastUpdateOpts).toEqual({ bypassCache: true })
   })
 })

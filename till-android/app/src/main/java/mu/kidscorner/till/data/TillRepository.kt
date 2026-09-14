@@ -61,12 +61,21 @@ class TillRepository(
     /** The last bootstrap the server served, for a start with no line. */
     suspend fun cachedShop(): Bootstrap? = gate.cachedShop()
 
-    suspend fun bootstrap(): Result<Bootstrap> = authed {
+    /**
+     * Everything the till needs to draw, in one call.
+     *
+     * `fresh` marks an explicit check (sync tap, app launch): the server
+     * skips its edge-cached release list and asks GitHub live. Heartbeats
+     * leave it off. Either way the roster is remembered whole on success,
+     * which is what lets the keypad work through an outage.
+     */
+    suspend fun bootstrap(fresh: Boolean = false): Result<Bootstrap> = authed {
         api.bootstrap(
             it,
             deviceCode = store.deviceCode,
             model = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
             appVersion = mu.kidscorner.till.BuildConfig.VERSION_NAME,
+            fresh = fresh,
         )
     }.onSuccess {
         // The only thing that fetches the roster, so it is also the only thing
