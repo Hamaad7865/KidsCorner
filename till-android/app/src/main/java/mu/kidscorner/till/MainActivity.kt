@@ -79,11 +79,14 @@ class MainActivity : ComponentActivity() {
      *
      * The scan modes hold NO focused field — this terminal's IME shows itself
      * on every focus gain, suppression flag or not, so any focus-based capture
-     * summons the keyboard (logcat proved it: the hidden 1dp field did exactly
-     * that). A wedge gun is a keyboard, and with nothing focusable on screen
-     * its keys arrive here unconsumed. They are assembled by [wedge] and
-     * routed by [scanRoute]; disarmed, everything falls through to super,
-     * which is today's behaviour exactly (an unfocused gun types nowhere).
+     * summons the keyboard. A wedge gun is a keyboard, and its keys would
+     * arrive unconsumed — except the scan toggle that armed the mode usually
+     * holds focus itself, and a focused button eats the gun's Enter as a
+     * click, orphaning the burst (digits in, nothing out). So this intercepts
+     * in dispatchKeyEvent, which runs BEFORE the focus system, not in
+     * onKeyDown, which runs after it. Disarmed, everything falls through to
+     * super, which is today's behaviour exactly (an unfocused gun types
+     * nowhere).
      *
      * Only consumed while armed AND routed. Characterless keys (volume, back
      * and the rest) always fall through.
@@ -99,32 +102,49 @@ class MainActivity : ComponentActivity() {
      */
     var scanRoute: ScanRoute = ScanRoute.None
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (event == null) return super.onKeyDown(keyCode, event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val route = scanRoute
-        if (route == ScanRoute.None) return super.onKeyDown(keyCode, event)
-        when (keyCode) {
-            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                wedge.enter()?.let { code ->
-                    when (route) {
-                        ScanRoute.Sell -> sellScans.tryEmit(code)
-                        ScanRoute.Recall -> recallScans.tryEmit(code)
-                        ScanRoute.None -> Unit
+        if (route == ScanRoute.None) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            when (event.keyCode) {
+                // Tab as well as Enter: some guns terminate with Tab, and in
+                // scan mode there is no focus order for Tab to move through.
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_TAB -> {
+                    val code = wedge.enter()
+                    if (code != null) {
+                        android.util.Log.d("TillScan", "submit route=$route code=$code")
+                        when (route) {
+                            ScanRoute.Sell -> sellScans.tryEmit(code)
+                            ScanRoute.Recall -> recallScans.tryEmit(code)
+                            ScanRoute.None -> Unit
+                        }
+                    } else {
+                        android.util.Log.d("TillScan", "terminator on empty buffer, route=$route")
                     }
+                    return true
                 }
-                return true
-            }
-            KeyEvent.KEYCODE_DEL -> {
-                wedge.backspace()
-                return true
-            }
-            else -> {
-                val c = event.unicodeChar
-                if (c == 0) return super.onKeyDown(keyCode, event)
-                wedge.key(c, event.eventTime)
-                return true
+                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL -> {
+                    wedge.backspace()
+                    return true
+                }
+                else -> {
+                    val c = event.unicodeChar
+                    if (c == 0) return super.dispatchKeyEvent(event)
+                    wedge.key(c, event.eventTime)
+                    return true
+                }
             }
         }
+        if (event.action == KeyEvent.ACTION_UP) {
+            // Swallow the release of keys consumed above, so a focused button
+            // can never turn the gun's Enter into a click.
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_TAB,
+                KeyEvent.KEYCODE_DEL, KeyEvent.KEYCODE_FORWARD_DEL,
+                -> return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
