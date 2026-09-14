@@ -8,10 +8,12 @@ import android.media.ToneGenerator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -2862,16 +2864,28 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * traces plus any stack the app threw. Needs the line; diagnostics can
      * wait for it, so this is never queued.
      */
+    private var diagnosticsSending = false
+
     fun shareDiagnostics() {
+        if (diagnosticsSending) return
+        diagnosticsSending = true
         viewModelScope.launch {
             toast("Sending diagnostic log…")
-            val log = runCatching {
-                val proc = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "3000")
-                    .redirectErrorStream(true)
-                    .start()
-                proc.waitFor(10, TimeUnit.SECONDS)
-                proc.inputStream.bufferedReader().readText().takeLast(50_000)
-            }.getOrDefault("(log unavailable)")
+            // Off the main thread: spawning logcat and draining its output is
+            // blocking work that would otherwise freeze the till.
+            val log = withContext(Dispatchers.IO) {
+                runCatching {
+                    val proc = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", "1200")
+                        .redirectErrorStream(true)
+                        .start()
+                    // Drain the pipe first, then wait — logcat blocks writing once
+                    // its ~64KB stdout buffer fills, so a waitFor ahead of the read
+                    // would stall until the timeout on any sizeable log.
+                    val text = proc.inputStream.bufferedReader().readText().takeLast(50_000)
+                    proc.waitFor(10, TimeUnit.SECONDS)
+                    text
+                }.getOrDefault("(log unavailable)")
+            }
             repo.sendDiagnostics(
                 DiagnosticsRequest(
                     appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
@@ -2886,6 +2900,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             }.onFailure { cause ->
                 toast(cause.message ?: "The log could not be sent.")
             }
+            diagnosticsSending = false
         }
     }
 

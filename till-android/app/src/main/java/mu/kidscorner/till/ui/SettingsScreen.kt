@@ -166,7 +166,8 @@ fun SettingsScreen(
                 ),
                 // The drawer has no cable of its own: it fires through the
                 // receipt printer's drawer port, so it is live exactly when
-                // the printer is. Its test key pops it.
+                // the printer is. Popping it lives on the header button, so the
+                // card only reports status.
                 Periph(
                     "Cash drawer",
                     Icons.Default.Inbox,
@@ -175,8 +176,7 @@ fun SettingsScreen(
                     live = printerConfigured,
                     on = printerConfigured,
                     model = if (printerConfigured) printerLabel else "",
-                    testLabel = "Pop drawer",
-                    testOverride = onTestDrawer,
+                    showTest = false,
                 ),
                 // A wedge scanner needs no driver: it types as a keyboard, so
                 // there is nothing to set up and nothing to test from here —
@@ -423,46 +423,49 @@ private fun PeripheralCard(
                 Toggle(on = card.live && card.on, enabled = card.live, onClick = onToggle)
             }
 
-            // A live card with nothing to pulse (the wedge scanner) needs no
-            // second row at all — an empty one would read as a missing button.
-            if ((card.live && card.showTest) || !card.live) {
-            Row(
-                Modifier.padding(top = 11.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                if (card.live && card.showTest) {
-                    Surface(
-                        onClick = { card.testOverride?.invoke() ?: onTest() },
-                        shape = RoundedCornerShape(11.dp),
-                        color = Handoff.Surface,
-                        contentColor = Handoff.InkStrong,
-                        border = BorderStroke(1.dp, Handoff.Line),
-                        modifier = Modifier.height(48.dp),
-                    ) {
-                        Box(Modifier.fillMaxHeight().padding(horizontal = 14.dp), Alignment.Center) {
-                            Text(
-                                card.testLabel,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                            )
+            // A live card with a test to pulse shows the test row; an offline
+            // card shows "no driver". A live card with nothing to pulse (the
+            // wedge scanner) needs no second row — an empty one would read as a
+            // missing button.
+            val hasTest = card.live && card.showTest
+            if (hasTest || !card.live) {
+                Row(
+                    Modifier.padding(top = 11.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    if (hasTest) {
+                        Surface(
+                            onClick = { card.testOverride?.invoke() ?: onTest() },
+                            shape = RoundedCornerShape(11.dp),
+                            color = Handoff.Surface,
+                            contentColor = Handoff.InkStrong,
+                            border = BorderStroke(1.dp, Handoff.Line),
+                            modifier = Modifier.height(48.dp),
+                        ) {
+                            Box(Modifier.fillMaxHeight().padding(horizontal = 14.dp), Alignment.Center) {
+                                Text(
+                                    card.testLabel,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                )
+                            }
                         }
-                    }
-                    // The paper choice belongs to the printer alone.
-                    if (card.title == "Receipt printer") {
-                        PaperWidth.entries.forEach { option ->
-                            Chip(option.label, paper == option) { onSetPaper(option) }
+                        // The paper choice belongs to the printer alone.
+                        if (card.title == "Receipt printer") {
+                            PaperWidth.entries.forEach { option ->
+                                Chip(option.label, paper == option) { onSetPaper(option) }
+                            }
                         }
+                    } else {
+                        Text(
+                            "No driver on this till yet.",
+                            fontSize = 12.sp,
+                            color = Handoff.Muted3,
+                            modifier = Modifier.padding(top = 14.dp),
+                        )
                     }
-                } else if (!card.live) {
-                    Text(
-                        "No driver on this till yet.",
-                        fontSize = 12.sp,
-                        color = Handoff.Muted3,
-                        modifier = Modifier.padding(top = 14.dp),
-                    )
                 }
-            }
             }
         }
     }

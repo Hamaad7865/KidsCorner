@@ -90,7 +90,6 @@ fun TodaysSalesDialog(
     // the race with the dialog taking focus itself. Tapping the search box
     // afterwards still summons it normally.
     LaunchedEffect(Unit) {
-        android.util.Log.d("TillIme", "txns opened: clearing focus + hiding IME")
         focusManager.clearFocus(force = true)
         keyboard?.hide()
     }

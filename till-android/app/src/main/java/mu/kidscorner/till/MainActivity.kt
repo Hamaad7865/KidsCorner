@@ -122,10 +122,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     // leaves a text field also hides it explicitly (scan recall and receipt
     // viewing below).
     LaunchedEffect(overlay) {
-        if (overlay != Overlay.None) {
-            android.util.Log.d("TillIme", "overlay=$overlay: clearing focus")
-            focusManager.clearFocus(force = true)
-        }
+        if (overlay != Overlay.None) focusManager.clearFocus(force = true)
     }
 
     /**
@@ -134,7 +131,6 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
      */
     val recallSale: (String) -> Unit = { saleNo ->
         recallQuery = saleNo
-        android.util.Log.d("TillIme", "recall $saleNo: hiding IME")
         keyboard?.hide()
         vm.recallAndPreview(saleNo)
         overlay = Overlay.Txns

@@ -71,8 +71,8 @@ android {
         applicationId = "mu.kidscorner.till"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "0.20.7"
+        versionCode = 36
+        versionName = "0.20.8"
 
         buildConfigField("String", "SUPABASE_URL", "\"${env("NEXT_PUBLIC_SUPABASE_URL")}\"")
         buildConfigField(
