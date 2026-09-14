@@ -40,6 +40,22 @@ data class QueuedSale(
     /** Kept alongside so the queue can be shown without decoding the payload. */
     val total: Double,
     val itemCount: Int,
+    /**
+     * Provisional offline ref (`OFF-07-260914-012`), minted at queue time.
+     *
+     * Never an `S...` number (see `OfflineRefs`): the server still assigns the
+     * final number on drain. Null on rows queued by older builds, which predate
+     * offline printing and show as plain queued sales.
+     */
+    val provisionalRef: String? = null,
+    /**
+     * The printable snapshot (`OfflineReceiptDoc` JSON) frozen at checkout.
+     *
+     * The payload alone cannot reprint: it carries ids, not the names/prices
+     * the customer saw. This carries what the paper said, so a reprint while
+     * still queued matches the original even after a price change.
+     */
+    val receiptSnapshot: String? = null,
 )
 
 @Dao
@@ -83,6 +99,12 @@ interface SaleQueueDao {
     /** Called only once the server has confirmed the sale — including a replay. */
     @Query("DELETE FROM queued_sales WHERE `key` = :key")
     suspend fun remove(key: String)
+
+    @Query("SELECT * FROM queued_sales WHERE `key` = :key LIMIT 1")
+    suspend fun getByKey(key: String): QueuedSale?
+
+    @Query("SELECT * FROM queued_sales WHERE provisionalRef = :ref LIMIT 1")
+    suspend fun getByRef(ref: String): QueuedSale?
 
     @Query(
         """

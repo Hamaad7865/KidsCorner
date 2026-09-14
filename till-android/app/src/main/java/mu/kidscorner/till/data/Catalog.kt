@@ -114,7 +114,7 @@ interface CatalogDao {
 
 @Database(
     entities = [CatalogVariant::class, QueuedSale::class, RecentCustomer::class],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class TillDatabase : RoomDatabase() {
@@ -224,6 +224,21 @@ abstract class TillDatabase : RoomDatabase() {
             override fun migrate(connection: SQLiteConnection) {
                 connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `onPromotion` INTEGER NOT NULL DEFAULT 0")
                 connection.execSQL("ALTER TABLE `catalog` ADD COLUMN `promoWasPrice` REAL")
+            }
+        }
+
+        /**
+         * Adds the offline receipt: provisional `OFF-` ref + printable snapshot.
+         *
+         * Nullable with no default, so rows queued by older builds keep working:
+         * they show as plain queued sales with no provisional paper to reprint.
+         * Same rule as every migration here — this table holds real revenue and
+         * is never dropped.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL("ALTER TABLE `queued_sales` ADD COLUMN `provisionalRef` TEXT")
+                connection.execSQL("ALTER TABLE `queued_sales` ADD COLUMN `receiptSnapshot` TEXT")
             }
         }
     }

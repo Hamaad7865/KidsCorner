@@ -469,7 +469,7 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
         // panel — so it is drawn last inside the Box and covers everything.
         state.outcome?.let { outcome ->
             SaleCompleteScreen(
-                saleNo = outcome.saleId?.let { "#$it" },
+                saleNo = outcome.saleId?.let { "#$it" } ?: outcome.provisionalRef,
                 total = outcome.total,
                 change = outcome.change,
                 itemCount = outcome.itemCount,
@@ -477,7 +477,14 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                 customerName = outcome.customerName,
                 queued = outcome.queued,
                 receiptPreview = state.receiptPreview,
-                onPrint = { outcome.saleId?.let(vm::printReceipt) },
+                onPrint = {
+                    val saleId = outcome.saleId
+                    val prov = outcome.provisionalRef
+                    when {
+                        saleId != null -> vm.printReceipt(saleId)
+                        prov != null -> vm.reprintOffline(prov)
+                    }
+                },
                 onVoid = if (!outcome.queued) outcome.saleId?.let { id -> { vm.dismissOutcome(); vm.openRefund(id) } } else null,
                 onNewSale = vm::dismissOutcome,
             )
@@ -540,6 +547,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             onReturn = { overlay = Overlay.None; vm.openRefund(it) },
             onExchange = { overlay = Overlay.None; vm.openExchange(it) },
             onDismiss = { overlay = Overlay.None },
+            queued = state.queuedOffline,
+            onReprintOffline = vm::reprintOffline,
+            drained = state.drainedMappings,
         )
 
         Overlay.Printer -> PrinterSettingsDialog(

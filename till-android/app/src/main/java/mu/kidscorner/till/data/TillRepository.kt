@@ -283,12 +283,32 @@ class TillRepository(
     // --------------------------------------------------------------- queue
 
     /**
+     * A queued sale that just sent: links provisional paper to final sale.
+     *
+     * `saleNo` is best-effort (one extra fetch per drained sale); null when the
+     * detail could not be read — the mapping by id still holds, the human name
+     * just waits for History.
+     */
+    data class DrainedSale(
+        val key: String,
+        val provisionalRef: String?,
+        val saleId: Int,
+        val saleNo: String? = null,
+    )
+
+    /**
      * Parks a sale the till could not confirm.
      *
      * Returns false if the write itself failed, so the caller can hold the
      * cashier on screen rather than tell them a sale is saved when it is not.
      */
-    suspend fun enqueueSale(sale: SaleRequest, total: Double, itemCount: Int): Boolean =
+    suspend fun enqueueSale(
+        sale: SaleRequest,
+        total: Double,
+        itemCount: Int,
+        provisionalRef: String? = null,
+        receiptSnapshot: String? = null,
+    ): Boolean =
         runCatching {
             queue.enqueue(
                 QueuedSale(
@@ -298,6 +318,8 @@ class TillRepository(
                     attempts = 0,
                     total = total,
                     itemCount = itemCount,
+                    provisionalRef = provisionalRef,
+                    receiptSnapshot = receiptSnapshot,
                 ),
             )
         }.isSuccess
@@ -305,6 +327,12 @@ class TillRepository(
     suspend fun queuedCount(): Int = runCatching { queue.count() }.getOrDefault(0)
 
     suspend fun queuedSales(): List<QueuedSale> = runCatching { queue.all() }.getOrDefault(emptyList())
+
+    suspend fun queuedByKey(key: String): QueuedSale? =
+        runCatching { queue.getByKey(key) }.getOrNull()
+
+    suspend fun queuedByRef(ref: String): QueuedSale? =
+        runCatching { queue.getByRef(ref) }.getOrNull()
 
     /** Queued sales carrying an error, newest first. */
     suspend fun failingSales(): List<QueuedSale> =
@@ -325,10 +353,12 @@ class TillRepository(
      * Only a transport failure stops the drain — the rest of the queue would
      * fail the same way, so there is nothing further down worth trying yet.
      *
-     * Returns how many were confirmed.
+     * Returns what sent, with provisional->final links for the badge/toast.
+     * `saleNo` is resolved best-effort per drained sale; null means "sent,
+     * name follows in History".
      */
-    suspend fun drainQueue(): Int {
-        var sent = 0
+    suspend fun drainQueue(): List<DrainedSale> {
+        val sent = mutableListOf<DrainedSale>()
         val now = System.currentTimeMillis()
 
         for (queued in queuedSales()) {
@@ -355,8 +385,23 @@ class TillRepository(
                 // for a key it has already seen, which is exactly what makes
                 // draining a queue of maybe-committed sales safe.
                 value != null && value.ok -> {
-                    queue.remove(queued.key)
-                    sent += 1
+                    val saleId = value.saleId
+                    if (saleId != null) {
+                        queue.remove(queued.key)
+                        // Best-effort human name for the mapping toast. Must not
+                        // un-send: the sale already committed.
+                        val saleNo = runCatching {
+                            saleDetail(saleId).getOrNull()?.sale?.saleNo
+                        }.getOrNull()
+                        sent += DrainedSale(
+                            key = queued.key,
+                            provisionalRef = queued.provisionalRef,
+                            saleId = saleId,
+                            saleNo = saleNo,
+                        )
+                    } else {
+                        queue.recordAttempt(queued.key, now, value.error ?: "The sale did not send.")
+                    }
                 }
 
                 // The server answered and refused. Not retryable on its own —

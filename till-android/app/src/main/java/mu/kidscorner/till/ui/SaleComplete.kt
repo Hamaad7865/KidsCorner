@@ -64,9 +64,9 @@ fun SaleCompleteScreen(
     customerName: String = "Walk-in",
     queued: Boolean,
     /**
-     * What just came off the printer. Null while there is nothing to show —
-     * a parked sale has no number yet, and a receipt with no number is not a
-     * receipt.
+     * What just came off the printer. Online this is the final `S...` receipt;
+     * offline it is the provisional `OFF-...` paper (reprintable while queued,
+     * final follows on sync). Null only while the paper is still on its way.
      */
     receiptPreview: String?,
     onPrint: () -> Unit,
@@ -119,7 +119,9 @@ fun SaleCompleteScreen(
 
                 Text(
                     buildString {
-                        if (saleNo != null) append("Invoice $saleNo · ")
+                        if (saleNo != null) {
+                            append(if (queued) "Provisional $saleNo · " else "Invoice $saleNo · ")
+                        }
                         append("${formatQty(itemCount)} items · ")
                         append(if (methods.isNotBlank()) "paid in $methods" else "paid")
                     },
@@ -161,7 +163,8 @@ fun SaleCompleteScreen(
 
                 Text(
                     if (queued) {
-                        "Held on the tablet — it sends itself when the line is back."
+                        "Provisional receipt printed — final invoice follows when sent." +
+                            if (change > 0) " Change ${formatRs(change)} due now." else ""
                     } else if (change > 0) {
                         "received from $customerName · change ${formatRs(change)}"
                     } else {
@@ -172,7 +175,7 @@ fun SaleCompleteScreen(
                     modifier = Modifier.padding(top = 6.dp),
                 )
 
-                if (change > 0 && !queued) {
+                if (change > 0) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -209,7 +212,7 @@ fun SaleCompleteScreen(
                 ) {
                     Surface(
                         onClick = onPrint,
-                        enabled = !queued,
+                        enabled = receiptPreview != null,
                         shape = RoundedCornerShape(14.dp),
                         color = Handoff.AccentSolid,
                         contentColor = Color.White,
@@ -329,7 +332,7 @@ fun SaleCompleteScreen(
                     ) {
                         Text(
                             if (queued) {
-                                "No receipt yet — it prints from Past sales once this sends."
+                                "Provisional receipt is on its way to the preview — final invoice prints from Past sales once this sends."
                             } else {
                                 "The receipt is on its way to the preview."
                             },

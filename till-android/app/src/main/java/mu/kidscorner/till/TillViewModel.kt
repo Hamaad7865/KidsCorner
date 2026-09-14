@@ -53,6 +53,9 @@ import mu.kidscorner.till.data.ExchangeResponse
 import mu.kidscorner.till.data.HeldSale
 import mu.kidscorner.till.data.MovementRequest
 import mu.kidscorner.till.data.OfflineGate
+import mu.kidscorner.till.data.OfflineRefAllocator
+import mu.kidscorner.till.data.OfflineRefs
+import mu.kidscorner.till.data.localDateOf
 import mu.kidscorner.till.data.RefundItem
 import mu.kidscorner.till.data.RefundRequest
 import mu.kidscorner.till.data.RefundResponse
@@ -102,8 +105,15 @@ import mu.kidscorner.till.print.buildDepositRefundSlip
 import mu.kidscorner.till.print.buildDepositSlip
 import mu.kidscorner.till.print.buildDepositTopUpSlip
 import mu.kidscorner.till.print.buildExchangeReceipt
+import mu.kidscorner.till.print.buildOfflineReceipt
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
+import mu.kidscorner.till.print.decodeOfflineReceipt
+import mu.kidscorner.till.print.encodeOfflineReceipt
+import mu.kidscorner.till.print.OfflineReceiptDiscountSnapshot
+import mu.kidscorner.till.print.OfflineReceiptDoc
+import mu.kidscorner.till.print.OfflineReceiptLineSnapshot
+import mu.kidscorner.till.print.OfflineReceiptPaymentSnapshot
 import mu.kidscorner.till.print.toPlainText
 import mu.kidscorner.till.data.withQty
 import mu.kidscorner.till.data.withLineDiscount
@@ -166,6 +176,31 @@ data class SaleOutcome(
     val customerName: String = "Walk-in",
     /** Parked rather than confirmed. The customer still gets their change. */
     val queued: Boolean = false,
+    /**
+     * Provisional offline ref (`OFF-07-260914-012`) when queued.
+     *
+     * Never an `S...` number: the server assigns the final number on drain.
+     * Used as the receipt No., QR/barcode and reprint key while still queued,
+     * and to show `OFF-... -> S...` once it sends.
+     */
+    val provisionalRef: String? = null,
+)
+
+/** One drained link for the `OFF-... -> S...` confirmation. */
+data class DrainedMapping(
+    val provisionalRef: String?,
+    val saleId: Int,
+    val saleNo: String?,
+)
+
+/** One still-queued row for the history dialog (display-only). */
+data class QueuedOfflineRow(
+    val key: String,
+    val provisionalRef: String,
+    val queuedAt: Long,
+    val total: Double,
+    val itemCount: Int,
+    val lastError: String? = null,
 )
 
 data class StockCheckUiState(
@@ -384,6 +419,22 @@ data class TillState(
     val queuedCount: Int = 0,
     /** How many the last drain got through, for a brief confirmation. */
     val queuedJustSent: Int = 0,
+    /**
+     * Provisional->final links from the last drain, newest first.
+     *
+     * Shown so the shop sees what sent as what (`OFF-... -> S...`); cleared
+     * with `clearQueuedNotice`. Null `saleNo` means "sent, name follows in
+     * History" (detail fetch failed, mapping by id still holds).
+     */
+    val drainedMappings: List<DrainedMapping> = emptyList(),
+    /**
+     * Still-queued offline sales for the history dialog, newest first.
+     *
+     * Refreshed on queue changes (enqueue/drain/launch). Lets a cashier
+     * reprint provisional paper and see what is still waiting without a
+     * server round trip. Display-only: the truth stays in `queued_sales`.
+     */
+    val queuedOffline: List<QueuedOfflineRow> = emptyList(),
 )
 
 /**
@@ -445,6 +496,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             TillDatabase.MIGRATION_4_5,
             TillDatabase.MIGRATION_5_6,
             TillDatabase.MIGRATION_6_7,
+            TillDatabase.MIGRATION_7_8,
         )
         .build()
 
@@ -461,6 +513,16 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     private val printerSettings = PrinterSettings(app)
     private val appUpdater = AppUpdater(app)
     private val cartStore = CartStore(app)
+    private val offlineRefs = OfflineRefAllocator(app)
+
+    /**
+     * Offline provisional reprints already done, by provisional ref.
+     *
+     * The auto offline print fires once per queued sale; a recomposition or a
+     * second tap must not send the same provisional paper twice to a shared
+     * printer queue. Manual "Print again" bypasses this (cashier asked).
+     */
+    private val printedOfflineRefs = mutableSetOf<String>()
 
     /**
      * Credit notes already sent to the printer, by number.
@@ -613,6 +675,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         // before any fetch answers, same as the catalog does.
         val recents = repo.recentCustomers()
         _state.update { it.copy(queuedCount = repo.queuedCount(), recentCustomers = recents) }
+        refreshQueueState()
 
         // A basket left behind by a dead process comes back under its ORIGINAL
         // key — anything else would double-charge if the sale committed. The
@@ -1891,6 +1954,156 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------- offline paper
+
+    /**
+     * Freezes what the customer just saw into a printable offline snapshot.
+     *
+     * Called BEFORE the cart is cleared, from the queue branch only. Money here
+     * is display (server re-prices on sync); the snapshot is what makes the
+     * reprint match the original after a price move.
+     */
+    private fun offlineDocFor(
+        provisionalRef: String,
+        saleKey: String,
+        lines: List<CartLine>,
+        totals: CartTotals,
+        payments: List<SalePayment>,
+        change: Double,
+        checkedOutAt: String,
+    ): OfflineReceiptDoc {
+        val s = _state.value
+        val shop = s.shop
+        val discountLines = s.discount?.let {
+            listOf(OfflineReceiptDiscountSnapshot(it.label, it.amount, null))
+        } ?: emptyList()
+        return OfflineReceiptDoc(
+            provisionalRef = provisionalRef,
+            saleKey = saleKey,
+            saleDateIso = checkedOutAt,
+            cashierName = cashierOf(s.screen)?.fullName,
+            customerName = s.customer?.fullName,
+            note = s.note.ifBlank { null },
+            lines = lines.map {
+                OfflineReceiptLineSnapshot(
+                    productName = it.productName,
+                    sizeLabel = it.sizeLabel,
+                    colourName = it.colourName,
+                    sku = it.sku,
+                    qty = it.qty,
+                    unitPrice = round2(it.unitPrice),
+                    discount = round2(it.discount),
+                    lineTotal = round2(it.unitPrice * it.qty - it.discount),
+                )
+            },
+            payments = payments.map {
+                OfflineReceiptPaymentSnapshot(it.method, round2(it.amount), it.tendered?.let { t -> round2(t) })
+            },
+            discounts = discountLines,
+            subtotal = round2(totals.subtotal),
+            total = round2(totals.total),
+            vatAmount = round2(totals.vat),
+            change = round2(change),
+            vatEnabled = shop?.vatEnabled ?: true,
+            vatNumber = shop?.vatNumber,
+        )
+    }
+
+    private fun shopIdentityForReceipt(): ShopIdentity {
+        val shop = _state.value.shop
+        return ShopIdentity(
+            name = shop?.shopName ?: "Kids Corner",
+            address = shop?.shopAddress,
+            phone = shop?.shopPhone,
+            vatNumber = shop?.vatNumber,
+        )
+    }
+
+    /**
+     * Prints an offline provisional receipt (no server calls).
+     *
+     * Once-only per ref for the automatic print: a recomposition re-entering
+     * the success path must not double-feed the printer. Manual reprints pass
+     * `force = true`.
+     */
+    private suspend fun printOfflineDoc(doc: OfflineReceiptDoc, force: Boolean = false) {
+        if (!force && !printedOfflineRefs.add(doc.provisionalRef)) return
+        val lines = buildOfflineReceipt(
+            doc = doc,
+            shop = shopIdentityForReceipt(),
+            width = printerSettings.paper,
+            vatCurrentlyEnabled = _state.value.shop?.vatEnabled ?: true,
+        )
+        _state.update {
+            it.copy(
+                receiptPreview = lines.toPlainText(printerSettings.paper),
+                previewSaleId = null,
+            )
+        }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+        if (result is PrintResult.Failed) {
+            toast("Provisional receipt did not print — reprint it from the queue")
+        } else {
+            toast("Provisional ${doc.provisionalRef} printed — final follows when sent")
+        }
+    }
+
+    /** Reprints a still-queued provisional receipt by ref (from its snapshot). */
+    fun reprintOffline(provisionalRef: String) = viewModelScope.launch {
+        val row = repo.queuedByRef(provisionalRef)
+        val doc = decodeOfflineReceipt(row?.receiptSnapshot)
+        if (doc == null) {
+            toast("That queued sale has no printable copy yet")
+            return@launch
+        }
+        _state.update { it.copy(printing = true) }
+        val lines = buildOfflineReceipt(
+            doc = doc,
+            shop = shopIdentityForReceipt(),
+            width = printerSettings.paper,
+            reprintNumber = 2,
+            vatCurrentlyEnabled = _state.value.shop?.vatEnabled ?: true,
+        )
+        _state.update {
+            it.copy(
+                receiptPreview = lines.toPlainText(printerSettings.paper),
+                previewSaleId = null,
+            )
+        }
+        val result = printerSettings
+            .transport(getApplication())
+            .send(EscPos.encode(lines, printerSettings.paper))
+        _state.update { it.copy(printing = false) }
+        if (result is PrintResult.Failed) {
+            toast("Provisional receipt did not print — check paper and power")
+        } else {
+            toast("Provisional ${doc.provisionalRef} reprinted")
+        }
+    }
+
+    /** Refreshes the queue badge + offline rows for the history dialog. */
+    private suspend fun refreshQueueState() {
+        val rows = repo.queuedSales()
+        _state.update {
+            it.copy(
+                queuedCount = rows.size,
+                queuedOffline = rows.mapNotNull { q ->
+                    val ref = q.provisionalRef ?: return@mapNotNull null
+                    QueuedOfflineRow(
+                        key = q.key,
+                        provisionalRef = ref,
+                        queuedAt = q.queuedAt,
+                        total = q.total,
+                        itemCount = q.itemCount,
+                        lastError = q.lastError,
+                    )
+                }.sortedByDescending { r -> r.queuedAt },
+            )
+        }
+    }
+
     private fun printDepositSlip(
         orderNo: String,
         customerName: String,
@@ -2591,6 +2804,36 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun recallAndPreview(saleNo: String) {
         val code = saleNo.trim()
         if (code.isEmpty()) return
+        // Provisional paper recalls from the queue, not the server: an OFF ref
+        // has no sale row until the drain assigns its S-number.
+        if (OfflineRefs.isProvisional(code)) {
+            historySearch?.cancel()
+            historySearch = viewModelScope.launch {
+                val row = repo.queuedByRef(code)
+                val doc = decodeOfflineReceipt(row?.receiptSnapshot)
+                if (doc == null) {
+                    _state.update {
+                        it.copy(historyError = "That queued sale is no longer on this till.")
+                    }
+                    return@launch
+                }
+                val lines = buildOfflineReceipt(
+                    doc = doc,
+                    shop = shopIdentityForReceipt(),
+                    width = printerSettings.paper,
+                    reprintNumber = 2,
+                    vatCurrentlyEnabled = _state.value.shop?.vatEnabled ?: true,
+                )
+                _state.update {
+                    it.copy(
+                        receiptPreview = lines.toPlainText(printerSettings.paper),
+                        previewSaleId = null,
+                        historyError = null,
+                    )
+                }
+            }
+            return
+        }
         historySearch?.cancel()
         historySearch = viewModelScope.launch {
             _state.update { it.copy(historyLoading = true, historyError = null) }
@@ -4139,9 +4382,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                      * REPRINT now, for the times the paper jams or the
                      * customer wants a second copy.
                      *
-                     * Only for a sale that actually landed: a parked one has
-                     * no number yet, and a receipt with no number is not a
-                     * receipt. Failures are already swallowed inside — a shop
+                     * Only for a sale that actually landed: a parked one gets
+                     * its own provisional OFF paper below, never this one.
+                     * Failures are already swallowed inside — a shop
                      * with no printer must still be able to sell.
                      */
                     outcome.saleId?.let { printReceipt(it, auto = true) }
@@ -4213,13 +4456,53 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 // customer. The queued attempt carries the same idempotency
                 // key, so if it did commit the drain replays it rather than
                 // charging again.
+                //
+                // On-account is never queued: it is refused or accepted against
+                // a balance only the server knows, and a queued one could be
+                // accepted twice or after the debt was settled elsewhere.
+                if (payments.any { it.method == "credit" }) {
+                    _state.update {
+                        it.copy(
+                            busy = false,
+                            settleFrozen = true,
+                            settleParkable = false,
+                            error = "On-account needs connection — the balance lives on the server. Try again when the line is back.",
+                        )
+                    }
+                    return@onFailure
+                }
+                val day = localDateOf(checkout.checkedOutAt)
+                    ?: java.time.LocalDate.now()
+                val provisionalRef = offlineRefs.next(
+                    current.deviceId,
+                    OfflineRefs.dayOf(day),
+                )
+                val offlineDoc = offlineDocFor(
+                    provisionalRef = provisionalRef,
+                    saleKey = saleKey,
+                    lines = current.lines,
+                    totals = current.totals,
+                    payments = payments,
+                    change = change,
+                    checkedOutAt = checkout.checkedOutAt,
+                )
                 val queued = repo.enqueueSale(
                     request,
                     total = current.totals.total,
                     itemCount = current.totals.itemCount,
+                    provisionalRef = provisionalRef,
+                    receiptSnapshot = encodeOfflineReceipt(offlineDoc),
                 )
 
                 if (queued) {
+                    val prettyMethods = payments.map { it.method }.distinct()
+                        .joinToString(", ") { m ->
+                            when (m) {
+                                "cash" -> "Cash"; "card" -> "Card"; "juice" -> "Juice"
+                                "myt_money" -> "my.t money"; "bank" -> "Bank"
+                                "credit" -> "On account"; else -> m
+                            }
+                        }
                     saleKey = UUID.randomUUID().toString()
                     _state.update {
                         it.copy(
@@ -4238,12 +4521,26 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                 change = change,
                                 itemCount = current.totals.itemCount,
                                 total = current.totals.total,
-                                methods = payments.map { it.method }.distinct().joinToString(", "),
+                                methods = prettyMethods,
                                 customerName = current.customer?.fullName ?: "Walk-in",
                                 queued = true,
+                                provisionalRef = provisionalRef,
                             ),
                             screen = TillScreen.Selling(screen.cashier),
                         )
+                    }
+                    persistCart()
+                    refreshQueueState()
+                    // Provisional paper now (local print, no server), final
+                    // S-number follows on drain. Drawer pops now too — cash
+                    // changed hands now, not when the line returns.
+                    printOfflineDoc(offlineDoc)
+                    val hasCash = payments.any { it.method == "cash" }
+                    val hasNonCash = payments.any { it.method != "cash" }
+                    if ((hasCash && (printerSettings.drawerOnCash || change > 0.0)) ||
+                        (hasNonCash && printerSettings.drawerOnCard)
+                    ) {
+                        openCashDrawer()
                     }
                 } else {
                     // The queue write itself failed. Better to block one sale
@@ -4295,7 +4592,36 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val frozen = frozenSale ?: return@launch
         if (!_state.value.settleParkable) return@launch
 
-        val parked = repo.enqueueSale(frozen.request, frozen.total, frozen.itemCount)
+        // Display snapshot comes from the live basket (still frozen, not yet
+        // cleared); the payload already carries the original idempotency key.
+        val tender = lastTender
+        val snapshotPayments = tender?.first ?: listOf(
+            SalePayment(method = "cash", amount = frozen.total, tendered = null),
+        )
+        val snapshotChange = tender?.second ?: frozen.change
+        val current = _state.value
+        val day = localDateOf(frozen.request.checkedOutAt ?: nowIso())
+            ?: java.time.LocalDate.now()
+        val provisionalRef = offlineRefs.next(
+            current.deviceId,
+            OfflineRefs.dayOf(day),
+        )
+        val offlineDoc = offlineDocFor(
+            provisionalRef = provisionalRef,
+            saleKey = frozen.request.idempotencyKey,
+            lines = current.lines,
+            totals = current.totals,
+            payments = snapshotPayments,
+            change = snapshotChange,
+            checkedOutAt = frozen.request.checkedOutAt ?: nowIso(),
+        )
+        val parked = repo.enqueueSale(
+            frozen.request,
+            frozen.total,
+            frozen.itemCount,
+            provisionalRef,
+            encodeOfflineReceipt(offlineDoc),
+        )
         if (!parked) {
             _state.update {
                 it.copy(error = "This sale could not be saved to send later. Try again.")
@@ -4333,10 +4659,13 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                                 methods = frozen.methods,
                                 customerName = _state.value.customer?.fullName ?: "Walk-in",
                                 queued = true,
+                                provisionalRef = provisionalRef,
                             ),
                 screen = if (cashier != null) TillScreen.Selling(cashier) else it.screen,
             )
         }
+        refreshQueueState()
+        printOfflineDoc(offlineDoc)
     }
 
     /**
@@ -4349,18 +4678,42 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     /** Returns the job so a caller that must not proceed until it lands can wait. */
     fun drainQueue(): Job = viewModelScope.launch {
         if (!repo.isSignedIn) return@launch
-        val sent = repo.drainQueue()
+        val drained = repo.drainQueue()
         val remaining = repo.queuedCount()
         _state.update {
             it.copy(
                 queuedCount = remaining,
-                queuedJustSent = if (sent > 0) sent else it.queuedJustSent,
+                queuedJustSent = if (drained.isNotEmpty()) drained.size else it.queuedJustSent,
+                drainedMappings = if (drained.isNotEmpty()) {
+                    drained.map { d ->
+                        DrainedMapping(
+                            provisionalRef = d.provisionalRef,
+                            saleId = d.saleId,
+                            saleNo = d.saleNo,
+                        )
+                    } + it.drainedMappings
+                } else {
+                    it.drainedMappings
+                },
             )
         }
-        if (sent > 0) refreshCatalog()
+        refreshQueueState()
+        if (drained.isNotEmpty()) {
+            refreshCatalog()
+            // One line per mapping so the shop sees what paper became final.
+            // Kept to toasts (not an error banner): the money already moved.
+            val first = drained.first()
+            if (drained.size == 1) {
+                val name = first.saleNo ?: "#${first.saleId}"
+                val prov = first.provisionalRef?.let { "$it → " } ?: ""
+                toast("Queued $prov$name sent — reprint final from History")
+            } else {
+                toast("${drained.size} queued sales sent — reprint finals from History")
+            }
+        }
     }
 
-    fun clearQueuedNotice() = _state.update { it.copy(queuedJustSent = 0) }
+    fun clearQueuedNotice() = _state.update { it.copy(queuedJustSent = 0, drainedMappings = emptyList()) }
 
     /**
      * Clears the slip with the sale.

@@ -77,6 +77,15 @@ fun TodaysSalesDialog(
     onReturn: (Int) -> Unit,
     onExchange: (Int) -> Unit = {},
     onDismiss: () -> Unit,
+    /**
+     * Still-queued offline sales (provisional `OFF-` paper already printed).
+     * Shown above server history so a cashier can reprint while offline and
+     * see what is still waiting. Empty when nothing is queued.
+     */
+    queued: List<mu.kidscorner.till.QueuedOfflineRow> = emptyList(),
+    onReprintOffline: (String) -> Unit = {},
+    /** Last drain links (`OFF-... -> S...`), newest first. Cleared with the notice. */
+    drained: List<mu.kidscorner.till.DrainedMapping> = emptyList(),
 ) {
     var query by remember { mutableStateOf(initialQuery) }
     val noRipple = remember { MutableInteractionSource() }
@@ -139,6 +148,107 @@ fun TodaysSalesDialog(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
+                    )
+                }
+            }
+        }
+
+        if (drained.isNotEmpty()) {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)) {
+                Text(
+                    "JUST SENT",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.05.sp,
+                    color = Handoff.Muted3,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                drained.take(3).forEach { m ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            buildString {
+                                if (m.provisionalRef != null) append(m.provisionalRef).append(" → ")
+                                append(m.saleNo ?: "#${m.saleId}")
+                            },
+                            fontFamily = PlexMono,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Handoff.InkFigure,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "Final — reprint below",
+                            fontSize = 12.sp,
+                            color = Handoff.Muted3,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (queued.isNotEmpty()) {
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)) {
+                Text(
+                    "WAITING TO SEND · PROVISIONAL PRINTED",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.05.sp,
+                    color = Handoff.Muted3,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+                queued.forEach { q ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(13.dp),
+                    ) {
+                        Column(Modifier.width(150.dp)) {
+                            Text(
+                                q.provisionalRef,
+                                fontFamily = PlexMono,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Handoff.InkFigure,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "${formatQty(q.itemCount)} items · queued",
+                                fontSize = 11.5.sp,
+                                color = Handoff.Muted3,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                        Text(
+                            formatAmount(q.total),
+                            Modifier.weight(1f),
+                            fontFamily = PlexMono,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.End,
+                            color = Handoff.InkFigure,
+                        )
+                        SquareKey(onClick = { onReprintOffline(q.provisionalRef) }, size = 48) {
+                            Icon(Icons.Default.Print, "Reprint provisional", Modifier.size(17.dp))
+                        }
+                    }
+                    if (q.lastError != null) {
+                        Text(
+                            q.lastError,
+                            fontSize = 12.sp,
+                            color = Handoff.Danger,
+                            modifier = Modifier.padding(bottom = 6.dp),
+                        )
+                    }
+                    Box(
+                        Modifier.fillMaxWidth().height(1.dp)
+                            .background(Handoff.LineFaint),
                     )
                 }
             }
