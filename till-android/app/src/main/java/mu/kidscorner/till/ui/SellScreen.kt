@@ -66,9 +66,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -83,6 +81,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 import mu.kidscorner.till.data.AppliedDiscountLocal
 import mu.kidscorner.till.data.CartLine
 import mu.kidscorner.till.data.CartTotals
@@ -279,26 +278,25 @@ fun SellScreen(
      * keyboard over a screen nobody typed in.
      */
     searchFocusable: Boolean = true,
+    /**
+     * Scan mode, armed from one shared switch (see TillRoot): the search
+     * field is swapped for a status pill and gun bursts arrive on
+     * [sellScans], assembled below focus in MainActivity.onKeyDown — no
+     * field, no focus, nothing typed on screen, keyboard never summoned.
+     */
+    scanArmed: Boolean = false,
+    onScanArmedChange: (Boolean) -> Unit = {},
+    /** Finished gun bursts, one code per emission. Null in previews. */
+    sellScans: SharedFlow<String>? = null,
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
     var picker by remember { mutableStateOf<ProductGroup?>(null) }
     var tab by remember { mutableStateOf<Int?>(null) }
-    /**
-     * Scan mode: the search field is swapped for a status pill and gun input
-     * lands in a hidden 1dp field below it. Nothing typed is ever visible and
-     * the keyboard is never summoned — the gun just works and lines appear in
-     * the basket. Off means today's behaviour: tap the field, keyboard shows,
-     * type or scan with the field focused.
-     */
-    var scanMode by remember { mutableStateOf(false) }
-    /** What the hidden collector holds between keystrokes — never displayed. */
-    var scanBuffer by remember { mutableStateOf("") }
     /** Last product a scan added, flashed in the pill so the cashier sees it land. */
     var lastScan by remember { mutableStateOf<String?>(null) }
     /** Last code a scan could not match, flashed red in the pill. */
     var scanError by remember { mutableStateOf<String?>(null) }
-    val scanFocus = remember { FocusRequester() }
     /**
      * The category rail, open unless the tablet is too narrow for three columns.
      *
@@ -324,24 +322,15 @@ fun SellScreen(
         if (scanError != null) { delay(2_200); scanError = null }
     }
 
-    // Scan mode owns no keyboard: the hidden collector takes focus
-    // programmatically and showKeyboardOnFocus stays false, and nothing here
-    // ever calls keyboard.show() for it. Gated like the search field — no
-    // focus while an overlay covers the screen, and no refocus over the sale
-    // complete screen (dismissing it re-runs this and focus returns).
-    LaunchedEffect(scanMode, searchFocusable, saleOutcomeShowing) {
-        if (scanMode && searchFocusable && !saleOutcomeShowing) scanFocus.requestFocus()
-    }
-
     // Strict IME rule: NOTHING here takes focus on its own. An earlier design
     // kept the search box focused for the hardware scanner and suppressed the
     // keyboard with showKeyboardOnFocus = false — but this terminal's IME
     // shows itself on every focus gain regardless, so focus itself is what had
     // to go. The keyboard now appears only when a textbox is tapped. Scanner
     // input lands once the cashier has tapped the search field; focus then
-    // stays until something else takes it. Scan mode (above) is the exception
-    // cashiers asked for: one toggle focuses a hidden field instead, so the
-    // gun works with nothing visible and no keyboard at all.
+    // stays until something else takes it. Scan mode holds no focus at all:
+    // bursts arrive on sellScans from below focus, which is the only capture
+    // this IME cannot attach itself to.
 
     // `scanHit` — when what has been typed IS a barcode, the design drops the
     // fuzzy matches entirely (`matches = isCode ? [] : …`) and shows one row
@@ -379,21 +368,20 @@ fun SellScreen(
     }
 
     /**
-     * One submit path for typed and scanned codes. A receipt's own code
+     * One submit path for typed codes and gun bursts. A receipt's own code
      * recalls the SALE — reprint or refund — rather than rings anything up.
      * Checked before the product lookup, since the two can never collide: no
      * product barcode carries an S. A scanned code that matches nothing has
      * nowhere visible to be read, so the till toasts instead.
      *
-     * Declared before its two callers below: local functions resolve in
-     * textual order, so a forward reference does not compile.
+     * Declared before its caller below: local functions resolve in textual
+     * order, so a forward reference does not compile.
      */
     fun submitCode(raw: String, fromScanner: Boolean) {
         if (raw.isEmpty()) return
         if (RECEIPT_NO.matches(raw)) {
             onRecallSale(raw)
             query = ""
-            scanBuffer = ""
             return
         }
         val scanned = onFindBarcode(raw)
@@ -402,14 +390,12 @@ fun SellScreen(
             lastScan = scanned.productName
             scanError = null
             query = ""
-            scanBuffer = ""
             return
         }
         if (fromScanner) {
             onUnknownBarcode(raw)
             scanError = raw
             lastScan = null
-            scanBuffer = ""
         } else if (results.size == 1) {
             open(results.first())
             query = ""
@@ -418,8 +404,14 @@ fun SellScreen(
 
     fun submitSearch() = submitCode(query.trim(), fromScanner = false)
 
-    /** A gun terminator (Enter) landed in scan mode — same rules, no fuzzy fallback. */
-    fun submitScan() = submitCode(scanBuffer.trim(), fromScanner = true)
+    // Gun bursts arrive here, one code per emission, assembled below focus
+    // in MainActivity.onKeyDown — the same submit path as the search field,
+    // with the fuzzy single-result fallback skipped (a burst is always a
+    // complete code, never a half-typed query). Placed after submitCode:
+    // local declarations resolve in textual order, even inside effects.
+    LaunchedEffect(sellScans) {
+        sellScans?.collect { submitCode(it, fromScanner = true) }
+    }
 
     Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
         TillChrome(
@@ -446,9 +438,9 @@ fun SellScreen(
         // The keyboard appears only when this field is tapped; a scanner still
         // works once the field has been tapped, and focus stays until
         // something else takes it. Scan mode is the alternative: one toggle
-        // swaps the field for a status pill and focuses a hidden 1dp
-        // collector instead, so the gun works with nothing typed on screen
-        // and no keyboard ever summoned.
+        // swaps the field for a status pill and the gun arrives on sellScans
+        // instead, assembled below focus — nothing typed on screen and no
+        // keyboard ever summoned.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -458,33 +450,14 @@ fun SellScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
                     ScanModeToggle(
-                        active = scanMode,
-                        onToggle = { scanMode = !scanMode; scanBuffer = "" },
+                        active = scanArmed,
+                        onToggle = { onScanArmedChange(!scanArmed) },
                     )
-                    if (scanMode) {
+                    if (scanArmed) {
                         ScanModePill(
                             lastScan = lastScan,
                             error = scanError,
                             modifier = Modifier.weight(1f),
-                        )
-                        // The gun's landing strip: invisible, unfocusable while
-                        // an overlay covers the screen, keyboard never summoned.
-                        // The gun's own Enter submits through the same path as
-                        // the search field.
-                        BasicTextField(
-                            value = scanBuffer,
-                            onValueChange = { scanBuffer = it },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Done,
-                                showKeyboardOnFocus = false,
-                            ),
-                            keyboardActions = KeyboardActions(onDone = { submitScan() }),
-                            modifier = Modifier
-                                .size(1.dp)
-                                .focusRequester(scanFocus)
-                                .focusProperties { canFocus = searchFocusable },
-                            decorationBox = {},
                         )
                     } else {
                     SearchField(

@@ -2,6 +2,7 @@ package mu.kidscorner.till
 
 import android.Manifest
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,11 +32,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import mu.kidscorner.till.data.Approval
 import mu.kidscorner.till.data.DownloadState
 import mu.kidscorner.till.print.hasBluetoothPermission
 import mu.kidscorner.till.print.PrinterSettings
 import mu.kidscorner.till.print.requestUsbPermission
+import mu.kidscorner.till.ui.ScanRoute
+import mu.kidscorner.till.ui.WedgeScanner
 import mu.kidscorner.till.ui.ActionsDialog
 import mu.kidscorner.till.ui.AccountPaymentDialog
 import mu.kidscorner.till.ui.BasketDiscountDialog
@@ -70,6 +74,59 @@ import mu.kidscorner.till.ui.UpdateDialog
 import mu.kidscorner.till.ui.theme.KidsCornerTillTheme
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Wedge-gun capture below focus.
+     *
+     * The scan modes hold NO focused field — this terminal's IME shows itself
+     * on every focus gain, suppression flag or not, so any focus-based capture
+     * summons the keyboard (logcat proved it: the hidden 1dp field did exactly
+     * that). A wedge gun is a keyboard, and with nothing focusable on screen
+     * its keys arrive here unconsumed. They are assembled by [wedge] and
+     * routed by [scanRoute]; disarmed, everything falls through to super,
+     * which is today's behaviour exactly (an unfocused gun types nowhere).
+     *
+     * Only consumed while armed AND routed. Characterless keys (volume, back
+     * and the rest) always fall through.
+     */
+    private val wedge = WedgeScanner()
+    internal val sellScans = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    internal val recallScans = MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    /**
+     * Where the next finished burst goes. Written from composition as the
+     * armed flag, the overlay and the screen change; read here on the UI
+     * thread, same thread, so no lock.
+     */
+    var scanRoute: ScanRoute = ScanRoute.None
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (event == null) return super.onKeyDown(keyCode, event)
+        val route = scanRoute
+        if (route == ScanRoute.None) return super.onKeyDown(keyCode, event)
+        when (keyCode) {
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                wedge.enter()?.let { code ->
+                    when (route) {
+                        ScanRoute.Sell -> sellScans.tryEmit(code)
+                        ScanRoute.Recall -> recallScans.tryEmit(code)
+                        ScanRoute.None -> Unit
+                    }
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_DEL -> {
+                wedge.backspace()
+                return true
+            }
+            else -> {
+                val c = event.unicodeChar
+                if (c == 0) return super.onKeyDown(keyCode, event)
+                wedge.key(c, event.eventTime)
+                return true
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -104,9 +161,16 @@ class MainActivity : ComponentActivity() {
 private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, DepositCreate, Printer, Actions, Note, Custom, Txns, Update }
 
 @Composable
-private fun TillRoot(vm: TillViewModel = viewModel()) {
+private fun TillRoot(
+    vm: TillViewModel = viewModel(),
+    activity: MainActivity = LocalContext.current as MainActivity,
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var overlay by remember { mutableStateOf(Overlay.None) }
+    // One arming for both scan modes — the gun has a single route at a time.
+    // Held here rather than in either screen so the sell toggle and the past
+    // sales toggle are the same switch seen from two places.
+    var scanArmed by remember { mutableStateOf(false) }
     // The receipt number a scanned receipt code asked for, handed to the
     // history dialog as its opening search. Cleared whenever history is
     // opened the ordinary way, so a stale recall never filters a fresh list.
@@ -114,6 +178,19 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // Route finished gun bursts at the activity, below focus. Past sales
+    // wins when it is open (a receipt in hand means a return, not a sale);
+    // otherwise the sell screen takes them. Anywhere else — payment, a
+    // dialog, the lock screen — bursts are ignored, never queued.
+    LaunchedEffect(scanArmed, overlay, state.screen) {
+        activity.scanRoute = when {
+            !scanArmed -> ScanRoute.None
+            overlay == Overlay.Txns -> ScanRoute.Recall
+            overlay == Overlay.None && state.screen is TillScreen.Selling -> ScanRoute.Sell
+            else -> ScanRoute.None
+        }
+    }
 
     // Strict IME rule: opening any overlay drops focus first. Otherwise
     // dismissing it hands focus back to whatever held it — on this terminal's
@@ -281,6 +358,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
                         },
                         saleOutcomeShowing = state.outcome != null,
                         searchFocusable = overlay == Overlay.None,
+                        scanArmed = scanArmed,
+                        onScanArmedChange = { scanArmed = it },
+                        sellScans = activity.sellScans,
                     )
                 }
             }
@@ -552,6 +632,9 @@ private fun TillRoot(vm: TillViewModel = viewModel()) {
             queued = state.queuedOffline,
             onReprintOffline = vm::reprintOffline,
             drained = state.drainedMappings,
+            scanArmed = scanArmed,
+            onScanArmedChange = { scanArmed = it },
+            recallScans = activity.recallScans,
         )
 
         Overlay.Printer -> PrinterSettingsDialog(

@@ -21,9 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
@@ -42,18 +39,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 import mu.kidscorner.till.data.SaleSummary
 import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
@@ -73,9 +68,9 @@ import mu.kidscorner.till.ui.theme.Success
  * which is why the design gives it a modal rather than a screen.
  *
  * The scan toggle beside the search is the sell screen's scan mode brought
- * here: one tap swaps the field for a status pill and focuses a hidden 1dp
- * collector, so a receipt barcode/QR recalls its sale with nothing typed on
- * screen and no keyboard ever summoned. An exact match auto-opens its slip
+ * here: one tap swaps the field for a status pill and gun bursts arrive on
+ * recallScans, assembled below focus — nothing typed on screen, no focus
+ * anywhere, keyboard never summoned. An exact match auto-opens its slip
  * above this list (see recallAndPreview); anything else just filters the
  * list, and the pill shows what was scanned.
  */
@@ -89,6 +84,16 @@ fun TodaysSalesDialog(
     onSearch: (String) -> Unit,
     /** A scanned receipt code — exact-match recall, no typing involved. */
     onScanRecall: (String) -> Unit = {},
+    /**
+     * Scan mode, armed from one shared switch (see TillRoot): the search is
+     * swapped for a status pill and gun bursts arrive on [recallScans],
+     * assembled below focus in MainActivity.onKeyDown — no field, no focus,
+     * nothing typed on screen, keyboard never summoned.
+     */
+    scanArmed: Boolean = false,
+    onScanArmedChange: (Boolean) -> Unit = {},
+    /** Finished gun bursts, one code per emission. Null in previews. */
+    recallScans: SharedFlow<String>? = null,
     /** Opens the receipt slip itself, without printing. */
     onViewReceipt: (Int) -> Unit,
     onReprint: (Int) -> Unit,
@@ -110,13 +115,8 @@ fun TodaysSalesDialog(
     val noRipple = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    /** Scan mode: pill instead of field, gun input to a hidden collector. */
-    var scanMode by remember { mutableStateOf(false) }
-    /** What the hidden collector holds between keystrokes — never displayed. */
-    var scanBuffer by remember { mutableStateOf("") }
     /** Last receipt code a scan submitted, flashed in the pill. */
     var lastScan by remember { mutableStateOf<String?>(null) }
-    val scanFocus = remember { FocusRequester() }
 
     // The terminal's IME shows itself on every focus gain, so arriving here
     // with a focused field behind us — a scan typed into the sell search —
@@ -139,21 +139,17 @@ fun TodaysSalesDialog(
         if (lastScan != null) { delay(1_600); lastScan = null }
     }
 
-    // Scan mode owns no keyboard: the hidden collector takes focus
-    // programmatically and showKeyboardOnFocus stays false, and nothing here
-    // ever summons it. Declared before the row below uses it — local
-    // functions resolve in textual order.
-    LaunchedEffect(scanMode) {
-        if (scanMode) scanFocus.requestFocus()
-    }
-
-    /** A gun terminator (Enter) landed in scan mode — recall, not filter. */
-    fun submitScan() {
-        val raw = scanBuffer.trim()
-        scanBuffer = ""
-        if (raw.isEmpty()) return
-        lastScan = raw
-        onScanRecall(raw)
+    // Gun bursts arrive here, one code per emission, assembled below focus
+    // in MainActivity.onKeyDown. An exact match auto-opens its slip above
+    // this list; anything else filters the list, and the pill shows what
+    // was scanned.
+    LaunchedEffect(recallScans) {
+        recallScans?.collect { burst ->
+            val code = burst.trim()
+            if (code.isEmpty()) return@collect
+            lastScan = code
+            onScanRecall(code)
+        }
     }
 
     HandoffDialog(
@@ -169,36 +165,18 @@ fun TodaysSalesDialog(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ScanRecallToggle(
-                active = scanMode,
+                active = scanArmed,
                 onToggle = {
                     // Entering scan mode clears a typed filter first, so the
                     // gun works against today's full list, not stale results.
-                    if (!scanMode) query = ""
-                    scanMode = !scanMode
-                    scanBuffer = ""
+                    if (!scanArmed) query = ""
+                    onScanArmedChange(!scanArmed)
                 },
             )
-            if (scanMode) {
+            if (scanArmed) {
                 ScanRecallPill(
                     lastScan = lastScan,
                     modifier = Modifier.weight(1f),
-                )
-                // The gun's landing strip: invisible, keyboard never summoned.
-                // The gun's own Enter recalls through the same exact-match
-                // path as a scan from the sell screen.
-                BasicTextField(
-                    value = scanBuffer,
-                    onValueChange = { scanBuffer = it },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Done,
-                        showKeyboardOnFocus = false,
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { submitScan() }),
-                    modifier = Modifier
-                        .size(1.dp)
-                        .focusRequester(scanFocus),
-                    decorationBox = {},
                 )
             } else {
             Box(Modifier.weight(1f)) {
