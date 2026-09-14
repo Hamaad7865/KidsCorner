@@ -19,11 +19,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -36,10 +41,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +59,7 @@ import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
 import mu.kidscorner.till.ui.theme.Handoff
 import mu.kidscorner.till.ui.theme.PlexMono
+import mu.kidscorner.till.ui.theme.Success
 
 /**
  * `modalTxns` — an 820px card over today's sales.
@@ -61,6 +71,13 @@ import mu.kidscorner.till.ui.theme.PlexMono
  * Reached from Till actions. It is the fast path a counter actually needs —
  * somebody comes back with a receipt and the answer is one of those things —
  * which is why the design gives it a modal rather than a screen.
+ *
+ * The scan toggle beside the search is the sell screen's scan mode brought
+ * here: one tap swaps the field for a status pill and focuses a hidden 1dp
+ * collector, so a receipt barcode/QR recalls its sale with nothing typed on
+ * screen and no keyboard ever summoned. An exact match auto-opens its slip
+ * above this list (see recallAndPreview); anything else just filters the
+ * list, and the pill shows what was scanned.
  */
 @Composable
 fun TodaysSalesDialog(
@@ -70,6 +87,8 @@ fun TodaysSalesDialog(
     initialQuery: String = "",
     error: String? = null,
     onSearch: (String) -> Unit,
+    /** A scanned receipt code — exact-match recall, no typing involved. */
+    onScanRecall: (String) -> Unit = {},
     /** Opens the receipt slip itself, without printing. */
     onViewReceipt: (Int) -> Unit,
     onReprint: (Int) -> Unit,
@@ -91,6 +110,13 @@ fun TodaysSalesDialog(
     val noRipple = remember { MutableInteractionSource() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    /** Scan mode: pill instead of field, gun input to a hidden collector. */
+    var scanMode by remember { mutableStateOf(false) }
+    /** What the hidden collector holds between keystrokes — never displayed. */
+    var scanBuffer by remember { mutableStateOf("") }
+    /** Last receipt code a scan submitted, flashed in the pill. */
+    var lastScan by remember { mutableStateOf<String?>(null) }
+    val scanFocus = remember { FocusRequester() }
 
     // The terminal's IME shows itself on every focus gain, so arriving here
     // with a focused field behind us — a scan typed into the sell search —
@@ -109,6 +135,26 @@ fun TodaysSalesDialog(
         delay(300)
         onSearch(query)
     }
+    LaunchedEffect(lastScan) {
+        if (lastScan != null) { delay(1_600); lastScan = null }
+    }
+
+    // Scan mode owns no keyboard: the hidden collector takes focus
+    // programmatically and showKeyboardOnFocus stays false, and nothing here
+    // ever summons it. Declared before the row below uses it — local
+    // functions resolve in textual order.
+    LaunchedEffect(scanMode) {
+        if (scanMode) scanFocus.requestFocus()
+    }
+
+    /** A gun terminator (Enter) landed in scan mode — recall, not filter. */
+    fun submitScan() {
+        val raw = scanBuffer.trim()
+        scanBuffer = ""
+        if (raw.isEmpty()) return
+        lastScan = raw
+        onScanRecall(raw)
+    }
 
     HandoffDialog(
         title = "Today's sales",
@@ -120,13 +166,48 @@ fun TodaysSalesDialog(
         Row(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            ScanRecallToggle(
+                active = scanMode,
+                onToggle = {
+                    // Entering scan mode clears a typed filter first, so the
+                    // gun works against today's full list, not stale results.
+                    if (!scanMode) query = ""
+                    scanMode = !scanMode
+                    scanBuffer = ""
+                },
+            )
+            if (scanMode) {
+                ScanRecallPill(
+                    lastScan = lastScan,
+                    modifier = Modifier.weight(1f),
+                )
+                // The gun's landing strip: invisible, keyboard never summoned.
+                // The gun's own Enter recalls through the same exact-match
+                // path as a scan from the sell screen.
+                BasicTextField(
+                    value = scanBuffer,
+                    onValueChange = { scanBuffer = it },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Done,
+                        showKeyboardOnFocus = false,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submitScan() }),
+                    modifier = Modifier
+                        .size(1.dp)
+                        .focusRequester(scanFocus),
+                    decorationBox = {},
+                )
+            } else {
             Box(Modifier.weight(1f)) {
                 HandoffField(
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Receipt number, customer or amount…",
                 )
+            }
             }
             // `background:#0C2429` — the same near-black as the scan key.
             Surface(
@@ -449,3 +530,60 @@ fun TodaysSalesDialog(
 /** "14:32" from an ISO stamp. Sliced, like the history list's. */
 private fun shortClock(iso: String): String =
     if (iso.length >= 16) iso.substring(11, 16) else iso
+
+/**
+ * The scan-mode toggle: the same 56px key as the sell screen's, lit accent
+ * while scan mode owns the gun. Off, the dialog is the typed search it was.
+ */
+@Composable
+private fun ScanRecallToggle(active: Boolean, onToggle: () -> Unit) {
+    Surface(
+        onClick = onToggle,
+        shape = RoundedCornerShape(12.dp),
+        color = if (active) Handoff.AccentSolid else Handoff.Surface,
+        contentColor = if (active) Color.White else Handoff.InkStrong,
+        border = BorderStroke(1.dp, if (active) Handoff.AccentSolid else Handoff.Line),
+        modifier = Modifier.size(56.dp),
+    ) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Icon(Icons.Default.QrCodeScanner, "Scan mode", Modifier.size(22.dp))
+        }
+    }
+}
+
+/**
+ * What the search becomes in scan mode: a status pill, never a textbox. An
+ * exact match auto-opens its slip above this list; anything else filters the
+ * list, and the pill shows what was scanned.
+ */
+@Composable
+private fun ScanRecallPill(
+    lastScan: String?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .height(56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Handoff.FieldWell)
+            .border(1.dp, Handoff.Line, RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(Success),
+        )
+        Text(
+            if (lastScan != null) "Scanned · $lastScan" else "Scan receipt · ready",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Handoff.Ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
