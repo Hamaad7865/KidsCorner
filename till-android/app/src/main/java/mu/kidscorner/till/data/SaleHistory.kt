@@ -96,6 +96,13 @@ data class SaleDetail(
     val vatAmount: Double = 0.0,
     val total: Double,
     /**
+     * Cash-rounding adjustment booked on all-cash sales while the shop has it
+     * switched on (migration 049): total = subtotal − discount + rounding.
+     * Zero everywhere else — the receipt prints the line only when non-zero.
+     * Defaulted so rows decoded from older servers still parse.
+     */
+    val rounding: Double = 0.0,
+    /**
      * The sale's frozen VAT policy. A reprint reads these, never today's shop
      * setting, so a receipt is a VAT invoice or a plain receipt exactly as it
      * was on the day.

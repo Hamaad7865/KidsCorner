@@ -37,6 +37,7 @@ const shopSettingsSchema = z.object({
     .array(z.enum(PAYMENT_METHODS))
     .min(1, "The till needs at least one payment method."),
   refundRequiresManager: z.boolean(),
+  cashRounding: z.boolean(),
 
   // Both optional. The VAT rate and number are no longer edited here — they
   // belong to the append-only VAT policy ledger, changed through the VAT
@@ -52,6 +53,7 @@ const SETTING_LABELS: Record<string, string> = {
   shop_phone: "Shop phone",
   payment_methods: "Payment methods",
   refund_requires_manager: "Manager approval for returns",
+  round_cash: "Cash rounding to nearest Rs 5",
 }
 
 /**
@@ -83,6 +85,7 @@ export async function saveShopSettings(
       (v): v is string => typeof v === "string",
     ),
     refundRequiresManager: boolOf(formData, "refundRequiresManager"),
+    cashRounding: boolOf(formData, "cashRounding"),
     shopAddress: textOf(formData, "shopAddress"),
     shopPhone: textOf(formData, "shopPhone"),
   })
@@ -92,6 +95,7 @@ export async function saveShopSettings(
     shopName,
     paymentMethods,
     refundRequiresManager,
+    cashRounding,
     shopAddress,
     shopPhone,
   } = parsed.data
@@ -104,6 +108,7 @@ export async function saveShopSettings(
     { key: "shop_name", value: shopName },
     { key: "payment_methods", value: paymentMethods },
     { key: "refund_requires_manager", value: refundRequiresManager },
+    { key: "round_cash", value: cashRounding },
     // Address and phone are what getShopIdentity has always read and nothing
     // ever wrote: the receipt printed with no address and no phone. They are
     // not seeded by any migration, so the insert branch below is the path that

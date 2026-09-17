@@ -180,6 +180,44 @@ export async function listStockByLocation(
   return [...groups.values()]
 }
 
+/**
+ * How many of each of these variants sit at one location, from the same
+ * `stock_by_location` view as {@link listStockByLocation}.
+ *
+ * Focused rather than a filter over the full-catalogue read: the label picker
+ * asks about one product's handful of variants, and pulling two thousand rows
+ * to keep six would be wasteful on every keystroke. A variant with no row at the
+ * location is simply absent from the map — the caller reads that as zero, which
+ * is what "none of this here" means.
+ *
+ * Returns an empty map rather than throwing when the view is absent, so the
+ * picker degrades to zero defaults instead of a crashed page on a database
+ * without migration 006.
+ */
+export async function stockForVariantsAtLocation(
+  variantIds: number[],
+  locationId: number,
+): Promise<Map<number, number>> {
+  if (variantIds.length === 0) return new Map()
+
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from("stock_by_location")
+    .select("variant_id, qty_on_hand")
+    .eq("location_id", locationId)
+    .in("variant_id", variantIds)
+
+  if (error || !data) return new Map()
+
+  const map = new Map<number, number>()
+  for (const row of data) {
+    if (row.variant_id === null) continue
+    map.set(row.variant_id, row.qty_on_hand ?? 0)
+  }
+  return map
+}
+
 export type LowStockRow = {
   variantId: number
   productId: number | null

@@ -5,6 +5,7 @@ import mu.kidscorner.till.data.cartTotals
 import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.retryDelayMs
 import mu.kidscorner.till.data.round2
+import mu.kidscorner.till.data.round5
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,6 +44,29 @@ class MoneyTest {
     fun `round2 survives non-finite input`() {
         assertEquals(0.0, round2(Double.NaN), 0.0)
         assertEquals(0.0, round2(Double.POSITIVE_INFINITY), 0.0)
+    }
+
+    @Test
+    fun `round5 snaps to the nearest Rs 5 both ways`() {
+        // 1,137 down to 1,135 and 1,138 up to 1,140 — the counter's cases.
+        assertEquals(1135.0, round5(1137.0), 0.0)
+        assertEquals(1140.0, round5(1138.0), 0.0)
+    }
+
+    @Test
+    fun `round5 rounds halves up like the server`() {
+        // 112.5/5 is exactly 22.5 in binary: kotlin.math.round (ties-even)
+        // would say 22, but numeric round() and Math.round both say 23 —
+        // and the till must book what the server books.
+        assertEquals(115.0, round5(112.5), 0.0)
+        assertEquals(1140.0, round5(1137.5), 0.0)
+    }
+
+    @Test
+    fun `round5 leaves exact multiples and zero alone`() {
+        assertEquals(1135.0, round5(1135.0), 0.0)
+        assertEquals(0.0, round5(0.0), 0.0)
+        assertEquals(0.0, round5(-3.0), 0.0)
     }
 
     private fun line(price: Double, qty: Int, discount: Double = 0.0) = CartLine(

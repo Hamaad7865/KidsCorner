@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -75,6 +76,8 @@ fun TillChrome(
     /** Opens the "Update to vX?" confirmation. Only called when ready AND empty. */
     onOfferUpdate: () -> Unit = {},
     onCloseTill: (() -> Unit)? = null,
+    /** Opens the till menu drawer sliding in from the left. */
+    onOpenMenu: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth()) {
         Row(
@@ -86,7 +89,21 @@ fun TillChrome(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // ── the mark and the shop ───────────────────────────────────────
+            // ── burger + the mark and the shop ──────────────────────────────
+            if (onOpenMenu != null) {
+                Surface(
+                    onClick = onOpenMenu,
+                    shape = RoundedCornerShape(11.dp),
+                    color = Handoff.Surface,
+                    contentColor = Handoff.InkStrong,
+                    border = BorderStroke(1.dp, Handoff.Line),
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), Alignment.Center) {
+                        Icon(Icons.Default.Menu, "Open menu", Modifier.size(20.dp))
+                    }
+                }
+            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -265,9 +282,11 @@ private fun ConnectionPill(
     val updateReady =
         updateVersionName != null && downloadReady && online && !waiting && !reconnecting
 
-    // One control, always tappable: sync everything now — roster, catalogue
-    // (prices and shelf), and the VAT policy — and, when the line is down, the
-    // same tap is how a cashier tells the till to go and find the shop again.
+    // One control, always tappable: push the queue first — waiting sales go
+    // out now rather than at the next heartbeat — then sync everything else:
+    // roster, catalogue (prices and shelf), and the VAT policy — and, when
+    // the line is down, the same tap is how a cashier tells the till to go
+    // and find the shop again.
     // When an update is ready and the basket is empty, the same tap instead
     // offers to install it — the pill still has exactly one job at a time.
     // Disabled only while a sync is already in flight, so a double tap cannot

@@ -35,6 +35,7 @@ export function ShopSettings({
   shopAddress,
   shopPhone,
   refundRequiresManager,
+  cashRounding,
   paymentMethods,
   canManage,
 }: {
@@ -51,6 +52,8 @@ export function ShopSettings({
   shopAddress: string
   shopPhone: string
   refundRequiresManager: boolean
+  /** All-cash sales book the nearest Rs 5 (migration 049). Off is exact. */
+  cashRounding: boolean
   paymentMethods: string[]
   canManage: boolean
 }) {
@@ -192,6 +195,36 @@ export function ShopSettings({
                 discount does — out of the drawer, against a sale that may be
                 weeks old. Switch it on and the till asks for a PIN before it
                 pays anything back, and records who said yes.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Cash rounding</legend>
+          <label
+            className={cn(
+              "flex cursor-pointer items-start gap-3 rounded-lg border p-3 select-none",
+              "focus-within:ring-ring focus-within:ring-2",
+              !canManage && "cursor-not-allowed opacity-60",
+            )}
+          >
+            <input
+              type="checkbox"
+              name="cashRounding"
+              defaultChecked={cashRounding}
+              disabled={!canManage}
+              className="accent-brand-600 mt-0.5"
+            />
+            <span className="space-y-1">
+              <span className="block text-sm font-medium">
+                Round all-cash sales to the nearest Rs 5
+              </span>
+              <span className="text-muted-foreground block text-xs">
+                For coins under Rs 5, which are scarce at the counter. Only
+                fully cash-paid sales round — a card in the split keeps the
+                sale exact — and the difference prints on the receipt as its
+                own Rounding line, so the books always foot.
               </span>
             </span>
           </label>

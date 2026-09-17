@@ -282,7 +282,6 @@ class GalleryActivity : ComponentActivity() {
                             drawerOnCash = true,
                             drawerOnCard = false,
                             beepOnScan = true,
-                            roundCash = false,
                             onBack = { showing = null },
                             onOpenPrinter = {},
                             onTestPrint = {},

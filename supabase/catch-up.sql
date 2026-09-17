@@ -298,6 +298,8 @@ CREATE TABLE IF NOT EXISTS sales (
     discount numeric(12,2) DEFAULT 0 NOT NULL,
     vat_amount numeric(12,2) DEFAULT 0 NOT NULL,
     total numeric(12,2) NOT NULL,
+    -- 049: cash-rounding adjustment (total = subtotal − discount + rounding).
+    rounding numeric(12,2) DEFAULT 0 NOT NULL,
     status text DEFAULT 'completed'::text NOT NULL,
     cashier_id uuid,
     idempotency_key text,
@@ -1422,6 +1424,11 @@ declare
     v_snapshot_number text;
     v_subtotal numeric := 0;
     v_total numeric;
+    -- 049: cash rounding workspace. v_rounding is what lands on the
+    -- receipt and in sales.rounding; the other two are its inputs.
+    v_rounding  numeric(12,2) := 0;
+    v_all_cash  boolean;
+    v_round_on  boolean;
     v_vat_amount numeric(12,2);
     v_item jsonb;
     v_line numeric;
@@ -1481,6 +1488,26 @@ begin
 
     v_total := v_subtotal - coalesce(p_discount, 0);
 
+    -- 049: cash rounding. All-cash sales only, and only while the shop has
+    -- it switched on. Defined on the total already rounded to cents, so
+    -- every client recomputes the identical figure (see migration 049 on
+    -- determinism). A mixed tender, credit, and a zero total stay exact.
+    -- Sits before the balance check below, which therefore validates the
+    -- rounded total — what the payments actually sum to.
+    SELECT NOT EXISTS (
+        SELECT 1 FROM pg_catalog.jsonb_array_elements(p_payments) AS payment
+         WHERE payment->>'method' <> 'cash'
+    ) INTO v_all_cash;
+    SELECT coalesce((SELECT value::text FROM public.settings
+                      WHERE key = 'round_cash'), 'false') = 'true'
+      INTO v_round_on;
+    IF v_all_cash AND v_round_on AND v_total > 0 THEN
+        v_rounding := pg_catalog.round(pg_catalog.round(v_total, 2) / 5, 0) * 5
+                      - pg_catalog.round(v_total, 2);
+        v_rounding := pg_catalog.round(v_rounding, 2);
+        v_total := v_total + v_rounding;
+    END IF;
+
     -- Balanced like the till. TypeScript refuses an unbalanced sale before
     -- calling, but this function is reachable by any authenticated client, so
     -- the rule lives here too. Compared in cents — each row rounded, exactly
@@ -1506,13 +1533,13 @@ begin
     insert into public.sales (
         sale_no, shift_id, customer_id, sale_date, subtotal, discount,
         vat_amount, total, cashier_id, vat_policy_id, vat_enabled, vat_rate,
-        vat_number, idempotency_key
+        vat_number, idempotency_key, rounding
     ) values (
         'pending-' || pg_catalog.gen_random_uuid()::text,
         p_shift_id, p_customer_id, v_checked_out_at, v_subtotal,
         coalesce(p_discount, 0), v_vat_amount, v_total, p_cashier_id,
         v_policy.id, v_policy.enabled, v_effective_rate, v_snapshot_number,
-        v_key
+        v_key, v_rounding
     ) returning id into v_sale_id;
 
     update public.sales
@@ -4165,6 +4192,7 @@ INSERT INTO settings (key, value) VALUES
     ('currency', '"MUR"'::jsonb),
     ('payment_methods', '["cash","card","juice","bank","credit"]'::jsonb),
     ('refund_requires_manager', 'false'::jsonb),
+    ('round_cash', 'false'::jsonb),
     ('shop_address', '""'::jsonb),
     ('shop_name', '"Kids Corner"'::jsonb),
     ('shop_phone', '""'::jsonb),

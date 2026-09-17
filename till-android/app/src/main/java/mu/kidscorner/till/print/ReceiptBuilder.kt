@@ -3,6 +3,7 @@ package mu.kidscorner.till.print
 import mu.kidscorner.till.data.SaleDetail
 import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
+import kotlin.math.abs
 
 /**
  * Details the shop puts at the top of every receipt.
@@ -204,6 +205,12 @@ fun buildReceipt(
             d.approvedByName?.let {
                 add(ReceiptLine.Text("    ${d.label} approved by $it"))
             }
+        }
+        // Cash rounding (migration 049): subtotal − discount + rounding =
+        // total, so a rounded cash sale shows where the rupees went.
+        if (sale.rounding != 0.0) {
+            val sign = if (sale.rounding < 0) "-" else "+"
+            add(ReceiptLine.Columns("    Rounding :", sign + plainAmount(abs(sale.rounding))))
         }
     }
     add(ReceiptLine.Text("Total: " + suffixed(sale.total, currency), Align.Centre, bold = true))

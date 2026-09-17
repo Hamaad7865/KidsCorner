@@ -41,6 +41,21 @@ export function round2(value: number): number {
   return (rounded === 0 ? 0 : rounded) / 100
 }
 
+/**
+ * Nearest Rs 5 — the cash-rounding step (migration 049).
+ *
+ * Matches SQL `round(v / 5) * 5` on numeric and Android `Math.round(v / 5) * 5`
+ * exactly, on the only domain it ever sees: non-negative cent values (a sale
+ * total can never go below zero — discounts clamp to the basket). Every .5
+ * boundary of x/5 with x in cents is exactly representable in float64 (x is
+ * k·2.5, so x/5 is k/2), which is why no drift correction is needed the way
+ * round2 needs it — Math.round sees the true half, not a neighbour of it.
+ */
+export function round5(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.round(value / 5) * 5
+}
+
 /** `formatRs(1250.5)` -> `"Rs 1,250.50"` */
 export function formatRs(value: number | null | undefined): string {
   return `${CURRENCY_SYMBOL} ${NUMBER_FORMAT.format(round2(value ?? 0))}`

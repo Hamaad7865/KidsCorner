@@ -40,18 +40,21 @@ export default async function ReceiptPage({
 
   const supabase = await createClient()
 
+  // Column list mirrors lib/sales/queries.ts (both select `rounding`,
+  // migration 049 — keep the two in step).
+  const RECEIPT_COLUMNS =
+    `id, sale_no, sale_date, subtotal, discount, vat_amount, total, rounding, status,
+     vat_enabled, vat_rate, vat_number,
+     customers ( full_name ),
+     profiles ( full_name ),
+     sale_items ( qty, unit_price, discount, line_total, description, variant_id,
+       product_variants ( sku, products ( name ), sizes ( label ), colours ( name ) ) ),
+     sale_payments ( method, amount, tendered )`
+
   const [{ data: sale }, { data: shopName }, identity] = await Promise.all([
     supabase
       .from("sales")
-      .select(
-        `id, sale_no, sale_date, subtotal, discount, vat_amount, total, status,
-         vat_enabled, vat_rate, vat_number,
-         customers ( full_name ),
-         profiles ( full_name ),
-         sale_items ( qty, unit_price, discount, line_total, description, variant_id,
-           product_variants ( sku, products ( name ), sizes ( label ), colours ( name ) ) ),
-         sale_payments ( method, amount, tendered )`,
-      )
+      .select(RECEIPT_COLUMNS)
       .eq("id", saleId)
       .maybeSingle(),
     supabase.from("settings").select("value").eq("key", "shop_name").maybeSingle(),
@@ -62,6 +65,9 @@ export default async function ReceiptPage({
   ])
 
   if (!sale) notFound()
+
+  // Zero on every unrounded sale (and on legacy rows, backfilled to 0).
+  const rounding = Number(sale.rounding)
 
   const shop = typeof shopName?.value === "string" ? shopName.value : "Kids Corner"
   // Display follows the CURRENT toggle: switched off, this renders plain no
@@ -175,6 +181,14 @@ export default async function ReceiptPage({
         <Line label="Subtotal" value={formatRs(Number(sale.subtotal))} />
         {Number(sale.discount) > 0 ? (
           <Line label="Discount" value={`- ${formatRs(Number(sale.discount))}`} />
+        ) : null}
+        {/* Cash rounding (migration 049): subtotal − discount + rounding =
+            total, so a rounded cash sale shows where the rupees went. */}
+        {rounding !== 0 ? (
+          <Line
+            label="Rounding"
+            value={`${rounding < 0 ? "-" : "+"} ${formatRs(Math.abs(rounding))}`}
+          />
         ) : null}
         <Line
           label="TOTAL"

@@ -76,3 +76,17 @@ graphify-out/
 # committed, not referenced by any code; delete it once you've confirmed
 # whether it holds anything real.
 kc_keystore_secrets.txt
+
+# The impeccable design skill — vendored tooling that installs its own files
+# into the checkout (skill body, agents, hooks). It runs the pre-edit design
+# hook locally; it is not this shop's source and should never be committed.
+.claude/skills/impeccable/
+.github/skills/impeccable/
+.github/agents/impeccable-*.agent.md
+.github/hooks/impeccable.json
+
+# Local storefront preview harness — a throwaway static server referenced by
+# .claude/launch.json. Kept on disk for previewing, kept out of the repo.
+.preview-server.mjs
+.preview-storefront.html
+.preview-sales-chart.html

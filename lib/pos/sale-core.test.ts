@@ -508,7 +508,7 @@ describe("verifyApproval for a return", () => {
  * retry can make a once-valid offline policy look future-dated, while calling
  * the old overloaded name silently assigns the legacy policy instead.
  */
-function saleCommitClient(rpc: ReturnType<typeof vi.fn>): TillClient {
+function saleCommitClient(rpc: ReturnType<typeof vi.fn>, roundCash = false): TillClient {
   return {
     from(table: string) {
       // The shift gate reads the drawer before anything is priced; a test
@@ -521,6 +521,16 @@ function saleCommitClient(rpc: ReturnType<typeof vi.fn>): TillClient {
                 data: { id: 1, device_id: null, closed_at: null },
                 error: null,
               }),
+            }),
+          }),
+        }
+      }
+      // Cash rounding reads its switch the same way: a missing row is off.
+      if (table === "settings") {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: { value: roundCash }, error: null }),
             }),
           }),
         }
@@ -599,5 +609,149 @@ describe("commitSale VAT policy handoff", () => {
         }),
       ],
     ])
+  })
+})
+
+/**
+ * commitSale cash rounding (migration 049, settings.round_cash).
+ *
+ * The till may display a rounded tender, but only this function and the RPC
+ * decide what the shop books — and both must agree to the cent, or the sale
+ * is refused at commit. A stub variant priced at an unround figure stands in
+ * for the catalogue; the settings read answers the switch under test.
+ */
+describe("commitSale cash rounding", () => {
+  const CASHIER = "7691c64f-c80c-44a8-9777-f0adccd43753"
+
+  function roundingClient(price: number, roundCash: boolean) {
+    const rpc = vi.fn().mockResolvedValue({ data: 901, error: null })
+    const supabase = {
+      from(table: string) {
+        if (table === "shifts") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { id: 1, device_id: null, closed_at: null },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === "settings") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { value: roundCash }, error: null }),
+              }),
+            }),
+          }
+        }
+        if (table !== "product_variants") throw new Error(`unexpected table ${table}`)
+        return {
+          select: () => ({
+            in: async () => ({
+              data: [
+                {
+                  id: 101,
+                  selling_price: price,
+                  qty_on_hand: 99,
+                  is_active: true,
+                  products: { name: "Rounding test item", category_id: 7 },
+                },
+              ],
+              error: null,
+            }),
+          }),
+        }
+      },
+      rpc,
+    } as unknown as TillClient
+    return { supabase, rpc }
+  }
+
+  const saleInput = (payments: { method: string; amount: number; tendered: number | null }[]) => ({
+    shiftId: 1,
+    customerId: null,
+    cashierId: CASHIER,
+    discounts: [],
+    items: [{ variantId: 101, qty: 1, discount: 0 }],
+    payments,
+    idempotencyKey: `rounding-${Math.random()}`,
+  })
+
+  const commit = (supabase: TillClient, input: ReturnType<typeof saleInput>) =>
+    commitSale(supabase, { id: CASHIER, name: "Marie" }, input, {
+      role: "owner",
+      deviceId: null,
+    })
+
+  it("books the rounded total on an all-cash sale while switched on", async () => {
+    const { supabase, rpc } = roundingClient(1137, true)
+    const result = await commit(
+      supabase,
+      saleInput([{ method: "cash", amount: 1135, tendered: 1140 }]),
+    )
+    expect(result).toEqual({ ok: true, saleId: 901 })
+    // Nothing new travels to the RPC: it recomputes the identical rounding
+    // from the same setting, so the queued offline replay agrees with it.
+    expect(rpc).toHaveBeenCalledOnce()
+  })
+
+  it("refuses the exact unrounded figure once rounding is on", async () => {
+    const { supabase, rpc } = roundingClient(1137, true)
+    const result = await commit(
+      supabase,
+      saleInput([{ method: "cash", amount: 1137, tendered: 1137 }]),
+    )
+    expect(result).toEqual({
+      ok: false,
+      error:
+        "Payments total 1137.00 but the sale is 1135.00. " +
+        "Cash over the price belongs in the tendered figure, not the amount.",
+    })
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("leaves an all-cash sale exact while switched off", async () => {
+    const { supabase, rpc } = roundingClient(1137, false)
+    const result = await commit(
+      supabase,
+      saleInput([{ method: "cash", amount: 1137, tendered: 1200 }]),
+    )
+    expect(result).toEqual({ ok: true, saleId: 901 })
+    expect(rpc).toHaveBeenCalledOnce()
+  })
+
+  it("leaves a mixed tender exact even while switched on", async () => {
+    const { supabase, rpc } = roundingClient(1137, true)
+    const result = await commit(
+      supabase,
+      saleInput([
+        { method: "cash", amount: 1000, tendered: 1000 },
+        { method: "card", amount: 137, tendered: null },
+      ]),
+    )
+    expect(result).toEqual({ ok: true, saleId: 901 })
+    expect(rpc).toHaveBeenCalledOnce()
+  })
+
+  it("rounds up as well as down", async () => {
+    const { supabase } = roundingClient(1138, true)
+    const result = await commit(
+      supabase,
+      saleInput([{ method: "cash", amount: 1140, tendered: 1140 }]),
+    )
+    expect(result).toEqual({ ok: true, saleId: 901 })
+  })
+
+  it("rounds an exact half up, matching the database", async () => {
+    const { supabase } = roundingClient(1137.5, true)
+    const result = await commit(
+      supabase,
+      saleInput([{ method: "cash", amount: 1140, tendered: 1140 }]),
+    )
+    expect(result).toEqual({ ok: true, saleId: 901 })
   })
 })

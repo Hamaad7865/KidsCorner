@@ -79,18 +79,6 @@ class PrinterSettings(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_BEEP, value).apply()
 
     /**
-     * Round cash to the nearest Rs 5.
-     *
-     * Off by default and deliberately so: it changes what a customer pays, and
-     * a till that quietly rounds without the shop having chosen to is a till
-     * that is wrong. Mauritius has 5c upward in circulation, so this is a
-     * convenience some shops want and others must not have.
-     */
-    var roundCash: Boolean
-        get() = prefs.getBoolean(KEY_ROUND_CASH, false)
-        set(value) = prefs.edit().putBoolean(KEY_ROUND_CASH, value).apply()
-
-    /**
      * Builds the transport this device is configured for.
      *
      * Returns `NoPrinter` rather than null when nothing is set up, so callers
@@ -120,6 +108,5 @@ class PrinterSettings(context: Context) {
         const val KEY_DRAWER_CASH = "drawer_on_cash"
         const val KEY_DRAWER_CARD = "drawer_on_card"
         const val KEY_BEEP = "beep_on_scan"
-        const val KEY_ROUND_CASH = "round_cash"
     }
 }

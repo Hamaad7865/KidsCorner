@@ -105,6 +105,12 @@ export type SaleDetail = {
   vatAmount: number
   total: number
   /**
+   * Cash-rounding adjustment booked on all-cash sales while the shop has it
+   * switched on (migration 049): total = subtotal − discount + rounding.
+   * Zero everywhere else — the receipt prints the line only when non-zero.
+   */
+  rounding: number
+  /**
    * The VAT policy this sale was frozen under — the whole point of the toggle.
    *
    * A receipt reads `vatEnabled` to decide whether it is a VAT Invoice (with the
@@ -193,19 +199,19 @@ export async function getSaleDetail(
     .from("sales")
     .select(
       `id, sale_no, sale_date, status, subtotal, discount, vat_amount, total,
-       vat_policy_id, vat_enabled, vat_rate, vat_number,
-       customer_id,
-       profiles ( full_name ),
-       customers ( full_name ),
-       sale_items ( id, qty, unit_price, discount, line_total, description,
-         product_variants ( sku, barcode,
-           products ( name ), sizes ( label, sort_order ),
-           colours ( name, hex_code ) ) ),
-       sale_payments ( id, method, amount, tendered ),
-       sale_discounts ( label, kind, value, amount, approved_by ),
-       credit_notes!credit_notes_sale_id_fkey
-         ( id, credit_no, created_at, total, reason, refund_method ),
-       receipt_prints ( id, printed_at, printed_by )`,
+       vat_policy_id, vat_enabled, vat_rate, vat_number, rounding,
+      customer_id,
+      profiles ( full_name ),
+      customers ( full_name ),
+      sale_items ( id, qty, unit_price, discount, line_total, description,
+        product_variants ( sku, barcode,
+          products ( name ), sizes ( label, sort_order ),
+          colours ( name, hex_code ) ) ),
+      sale_payments ( id, method, amount, tendered ),
+      sale_discounts ( label, kind, value, amount, approved_by ),
+      credit_notes!credit_notes_sale_id_fkey
+        ( id, credit_no, created_at, total, reason, refund_method ),
+      receipt_prints ( id, printed_at, printed_by )`,
     )
     .eq("id", saleId)
     .maybeSingle(),
@@ -288,6 +294,9 @@ export async function getSaleDetail(
     discount: Number(data.discount),
     vatAmount: Number(data.vat_amount),
     total: Number(data.total),
+    // Never null live (NOT NULL DEFAULT 0 backfills at migration 049), but
+    // a caller selecting without the column must not print Rs NaN.
+    rounding: Number(data.rounding ?? 0),
     vatPolicyId: data.vat_policy_id,
     // Explicit, not inferred: an enabled zero-total sale is still a VAT invoice.
     vatEnabled: data.vat_enabled,

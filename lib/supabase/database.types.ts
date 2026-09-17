@@ -1390,6 +1390,7 @@ export type Database = {
           discount: number
           id: number
           idempotency_key: string | null
+          rounding: number
           sale_date: string
           sale_no: string
           shift_id: number | null
@@ -1409,6 +1410,7 @@ export type Database = {
           discount?: number
           id?: number
           idempotency_key?: string | null
+          rounding?: number
           sale_date?: string
           sale_no: string
           shift_id?: number | null
@@ -1428,6 +1430,7 @@ export type Database = {
           discount?: number
           id?: number
           idempotency_key?: string | null
+          rounding?: number
           sale_date?: string
           sale_no?: string
           shift_id?: number | null

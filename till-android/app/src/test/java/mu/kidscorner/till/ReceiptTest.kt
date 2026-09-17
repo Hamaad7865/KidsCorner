@@ -569,4 +569,30 @@ class ReceiptTest {
         val text = buildReceipt(sale(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
         assertTrue(text.contains("VAT INVOICE"))
     }
+
+    @Test
+    fun `a rounded sale names its rounding and nothing else gains a line`() {
+        // subtotal − discount + rounding = total must read on the paper, or a
+        // rounded cash total looks like an arithmetic mistake at the counter.
+        val rounded = sale().copy(subtotal = 1131.42, total = 1129.42, rounding = -2.0)
+        for (width in PaperWidth.entries) {
+            val text = buildReceipt(rounded, shop, width).toPlainText(width)
+            assertTrue("no Rounding line on ${width.label}", text.contains("Rounding"))
+            assertTrue("figure missing on ${width.label}", text.contains("-2.00"))
+            for (line in text.lines()) {
+                assertTrue(
+                    "\"$line\" is ${line.length} chars on ${width.label} (${width.columns})",
+                    line.length <= width.columns,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an unrounded sale prints no rounding line`() {
+        // Zero is the common case — the fixture's own default — so the line
+        // must be conditional, not merely zero-valued.
+        val text = buildReceipt(sale(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
+        assertFalse(text.contains("Rounding"))
+    }
 }

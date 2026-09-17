@@ -1,4 +1,5 @@
 import {
+  Barcode,
   Boxes,
   ChartColumn,
   HandCoins,
@@ -38,6 +39,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Catalogue",
     items: [
       { href: "/products", label: "Products", icon: Shirt },
+      { href: "/print-labels", label: "Print labels", icon: Barcode },
       { href: "/import", label: "Excel import", icon: FileSpreadsheet },
     ],
   },

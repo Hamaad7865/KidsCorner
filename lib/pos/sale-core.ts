@@ -8,7 +8,7 @@ import {
   discountBaseFor,
   type DiscountRule,
 } from "@/lib/discounts/rules"
-import { round2, formatRs, shopToday } from "@/lib/format"
+import { round2, round5, formatRs, shopToday } from "@/lib/format"
 import { deviceVerifierMatches, mintDeviceVerifier } from "@/lib/pos/device-verifier"
 import { PIN_PATTERN, verifyPin } from "@/lib/pos/pin"
 import { assertShiftOpenFor } from "@/lib/pos/shift-core"
@@ -1064,16 +1064,39 @@ export async function commitSale(
   const discount = settled.total
   const total = round2(basket - discount)
 
+  /**
+   * Cash rounding to the nearest Rs 5 (migration 049, settings.round_cash).
+   *
+   * All-cash sales only, and only while the shop has it switched on: a mixed
+   * tender stays exact because the card rail settles to the cent, and so do
+   * credit sales. The RPC applies the identical rule from the same setting,
+   * so a replay, a queued offline sale and a direct call all book the same
+   * figure — what is validated below is the rounded total, which is what the
+   * payments sum to. A zero total never rounds.
+   */
+  const allCash =
+    input.payments.length > 0 && input.payments.every((p) => p.method === "cash")
+  let rounding = 0
+  if (allCash && total > 0) {
+    const { data: roundingSetting } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "round_cash")
+      .maybeSingle()
+    if (roundingSetting?.value === true) rounding = round2(round5(total) - total)
+  }
+  const finalTotal = round2(total + rounding)
+
   // Sum of the STORED values: commitSale forwards round2(amount) per row and
   // sale_payments.amount is held to 2dp, so the ledger keeps the rounded
   // figures. Summing the raw floats first can sit 1c above or below the stored
   // sum (33.333 + 33.333 rounds to 66.67 raw but stores 33.33 + 33.33 =
   // 66.66), refusing a correctly-paid sale — or accepting a short one.
   const paid = round2(input.payments.reduce((sum, p) => sum + round2(p.amount), 0))
-  if (paid + 0.001 < total) {
+  if (paid + 0.001 < finalTotal) {
     return {
       ok: false,
-      error: `Payments total ${paid.toFixed(2)} but the sale is ${total.toFixed(2)}.`,
+      error: `Payments total ${paid.toFixed(2)} but the sale is ${finalTotal.toFixed(2)}.`,
     }
   }
 
@@ -1091,11 +1114,11 @@ export async function commitSale(
    * A cent of slack, matching the under-payment side, so a legitimate rounding
    * difference is not treated as tampering.
    */
-  if (paid > total + 0.001) {
+  if (paid > finalTotal + 0.001) {
     return {
       ok: false,
       error:
-        `Payments total ${paid.toFixed(2)} but the sale is ${total.toFixed(2)}. ` +
+        `Payments total ${paid.toFixed(2)} but the sale is ${finalTotal.toFixed(2)}. ` +
         `Cash over the price belongs in the tendered figure, not the amount.`,
     }
   }

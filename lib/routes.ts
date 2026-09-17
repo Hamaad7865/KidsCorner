@@ -22,6 +22,7 @@ export const ADMIN_PATHS = [
   "/dashboard",
   "/point-of-sale",
   "/products",
+  "/print-labels",
   "/import",
   "/stock",
   "/purchases",

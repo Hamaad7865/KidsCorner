@@ -58,8 +58,10 @@ import mu.kidscorner.till.ui.theme.Handoff
  * That was written about the peripherals and was quietly untrue of the
  * switches beside them. All six flipped, persisted across restarts, and were
  * read by nothing. Two of them now work — "Print receipt automatically" and
- * "Beep on scan". The two drawer switches and cash rounding say on the row
- * why they cannot be used. "Ask print / email / none" is gone: the complete
+ * "Beep on scan" — and the drawer switches gate on the printer. Cash rounding
+ * left this screen entirely: one shop, one rule, owned by the back office
+ * (migration 049) — a per-till switch would book different totals for
+ * identical baskets. "Ask print / email / none" is gone: the complete
  * screen always offers Print and Gift receipt, and the till cannot email.
  */
 @Composable
@@ -71,7 +73,6 @@ fun SettingsScreen(
     drawerOnCash: Boolean,
     drawerOnCard: Boolean,
     beepOnScan: Boolean,
-    roundCash: Boolean,
     onBack: () -> Unit,
     onOpenPrinter: () -> Unit,
     onTestPrint: () -> Unit,
@@ -257,11 +258,6 @@ fun SettingsScreen(
                             "Off for card-only tills", drawerOnCard,
                             blockedBecause =
                                 if (printerConfigured) null else "Set up the receipt printer first",
-                        ),
-                        Pref(
-                            "roundCash", "Round cash to nearest Rs 5",
-                            "Coins under Rs 5 are scarce", roundCash,
-                            blockedBecause = "Not built yet — it would change what customers pay",
                         ),
                     )
 

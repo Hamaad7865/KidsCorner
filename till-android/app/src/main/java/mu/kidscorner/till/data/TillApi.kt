@@ -108,6 +108,15 @@ data class Bootstrap(
     /** The immutable policy id the till stamps on each sale. Null on a legacy cache. */
     val vatPolicyId: Long? = null,
     val paymentMethods: List<String>,
+    /**
+     * Whether all-cash sales book the nearest Rs 5 (migration 049).
+     *
+     * Default false is mandatory, like vatEnabled's: a bootstrap cached by an
+     * older build has no such key, and decoding it must mean "exact", never a
+     * rounding nobody switched on. The server books the figure either way —
+     * this only drives the till's tender display.
+     */
+    val roundCash: Boolean = false,
     val shift: OpenShift? = null,
     val cashiers: List<Cashier> = emptyList(),
     /**

@@ -4,6 +4,7 @@ import { requireTillSession } from "@/lib/api/till-session"
 import { getLatestAndroidRelease } from "@/lib/pos/app-update"
 import { listCashiersForDevice } from "@/lib/pos/sale-core"
 import {
+  getCashRounding,
   getOpenShift,
   getPaymentMethods,
   getShopIdentity,
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
     deviceId = typeof data === "number" ? data : null
   }
 
-  const [shopName, vatPolicy, paymentMethods, shift, cashiers, identity, latestRelease] =
+  const [shopName, vatPolicy, paymentMethods, shift, cashiers, identity, latestRelease, cashRounding] =
     await Promise.all([
       getShopName(supabase),
       // The current VAT policy the till caches and stamps on each sale. The rate
@@ -68,6 +69,11 @@ export async function GET(request: Request) {
       // Never blocks bootstrap: null when there is nothing newer, GitHub is
       // unreachable, or the repo carries no matching release yet.
       getLatestAndroidRelease({ bypassCache: freshCheck }),
+      // Whether all-cash sales book the nearest Rs 5 (migration 049). Read
+      // here rather than cached anywhere: a toggle mid-shift must reach the
+      // next basket, and the till mirrors it for tender display only — the
+      // receipt and the ledger always come from the sale row.
+      getCashRounding(supabase),
     ])
 
   return NextResponse.json({
@@ -98,6 +104,9 @@ export async function GET(request: Request) {
     vatNumber: vatPolicy.vatNumber,
     vatPolicyId: vatPolicy.id,
     paymentMethods: paymentMethods.length > 0 ? paymentMethods : ["cash"],
+    // Cash rounding switch (migration 049): the till shows rounded tender
+    // targets for all-cash sales; the server books the figure.
+    roundCash: cashRounding,
     shift,
     /**
      * Who may be picked on the lock screen, and — for a tablet only — the

@@ -82,6 +82,7 @@ import mu.kidscorner.till.data.cartTotals
 import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.isNetworkish
 import mu.kidscorner.till.data.round2
+import mu.kidscorner.till.data.round5
 import mu.kidscorner.till.print.AccountPaymentSlipDoc
 import mu.kidscorner.till.print.AccountPaymentDueLine
 import mu.kidscorner.till.print.Align
@@ -373,7 +374,7 @@ data class TillState(
     val previewSaleId: Int? = null,
     val printerConfigured: Boolean = false,
     val printerDescribe: String = "",
-    /** The six switches on the settings screen, mirrored out of SharedPreferences. */
+    /** The till-behaviour switches on the settings screen, mirrored out of SharedPreferences. */
     val prefs: Map<String, Boolean> = emptyMap(),
     val paper: PaperWidth = PaperWidth.Mm80,
     val printerTestResult: String? = null,
@@ -741,9 +742,14 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun reconnect() = viewModelScope.launch {
         if (_state.value.reconnecting) return@launch
         _state.update { it.copy(reconnecting = true, error = null) }
+        // The queue is money waiting: a tap on the pill pushes it NOW, not at
+        // the next heartbeat. Drain first — if the line is back the sales go
+        // out immediately (with an OFF → S toast each); if not, the drain
+        // fails fast and the roster attempt below reports the outage as usual.
         // Manual tap, so the roster pull doubles as an explicit update check:
         // a just-published release is offered in seconds, not at the next
         // heartbeat or cache expiry.
+        drainQueue().join()
         refreshRoster(manual = true)
         // Whatever came back, the catalogue is worth having too — a till that
         // has just found the shop should not still be selling this morning's
@@ -1987,6 +1993,15 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         val discountLines = s.discount?.let {
             listOf(OfflineReceiptDiscountSnapshot(it.label, it.amount, null))
         } ?: emptyList()
+        // The same rule the server books (migration 049): all-cash sales
+        // while the shop rounds. The charged total and the VAT contained in
+        // it are frozen here, so the provisional paper matches the final
+        // invoice even after a price or policy move mid-queue.
+        val roundingApplies = (shop?.roundCash == true) && totals.total > 0 &&
+            payments.all { it.method == "cash" }
+        val rounding = if (roundingApplies) round2(round5(totals.total) - totals.total) else 0.0
+        val docTotal = round2(totals.total + rounding)
+        val rate = shop?.resolvedVatRate ?: 0.15
         return OfflineReceiptDoc(
             provisionalRef = provisionalRef,
             saleKey = saleKey,
@@ -2011,8 +2026,9 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             },
             discounts = discountLines,
             subtotal = round2(totals.subtotal),
-            total = round2(totals.total),
-            vatAmount = round2(totals.vat),
+            total = docTotal,
+            rounding = rounding,
+            vatAmount = round2(docTotal - docTotal / (1 + rate)),
             change = round2(change),
             vatEnabled = shop?.vatEnabled ?: true,
             vatNumber = shop?.vatNumber,
@@ -2462,10 +2478,12 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * One setter for six switches.
+     * One setter for the till-behaviour switches.
      *
-     * Keyed rather than six functions because the screen already lists them by
-     * key, and a seventh switch should mean one line in two places, not four.
+     * Keyed rather than one function each because the screen already lists
+     * them by key. Cash rounding is deliberately absent: one shop, one rule,
+     * owned by the back office (migration 049) — a per-till switch would book
+     * different totals for identical baskets.
      */
     fun setPref(key: String, on: Boolean) {
         // The settings screen's own key names, not the SharedPreferences ones —
@@ -2475,7 +2493,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             "drawerOnCash" -> printerSettings.drawerOnCash = on
             "drawerOnCard" -> printerSettings.drawerOnCard = on
             "beep" -> printerSettings.beepOnScan = on
-            "roundCash" -> printerSettings.roundCash = on
             else -> return
         }
         refreshPrinterState()
@@ -2492,7 +2509,6 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                 "drawerOnCash" to printerSettings.drawerOnCash,
                 "drawerOnCard" to printerSettings.drawerOnCard,
                 "beep" to printerSettings.beepOnScan,
-                "roundCash" to printerSettings.roundCash,
             ),
         )
     }

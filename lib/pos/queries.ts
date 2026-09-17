@@ -331,6 +331,25 @@ export async function getRefundRequiresManager(client?: TillClient): Promise<boo
   return data?.value === true
 }
 
+/**
+ * Does this shop round all-cash sales to the nearest Rs 5?
+ *
+ * Off unless switched on (migration 049). The database enforces the booked
+ * figure either way — this read is only so the till can show the rounded
+ * tender target before the sale commits, rather than quoting exact and
+ * correcting on the receipt.
+ */
+export async function getCashRounding(client?: TillClient): Promise<boolean> {
+  const supabase = await clientFor(client)
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "round_cash")
+    .maybeSingle()
+
+  return data?.value === true
+}
+
 /** VAT rate from settings, falling back to the spec's 15%. */
 export async function getVatRate(client?: TillClient): Promise<number> {
   const supabase = await clientFor(client)

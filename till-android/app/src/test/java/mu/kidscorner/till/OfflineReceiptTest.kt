@@ -117,4 +117,28 @@ class OfflineReceiptTest {
         assertTrue(text.contains("[QR: OFF-07-260914-012]"))
         assertTrue(text.lines().any { it.trim() == "OFF-07-260914-012" })
     }
+
+    @Test
+    fun `a rounded offline sale names its rounding`() {
+        // The provisional paper must foot the same way the final invoice will:
+        // subtotal − discount + rounding = total, frozen at checkout.
+        val rounded = doc().copy(subtotal = 1131.42, total = 1129.42, rounding = -2.0)
+        for (width in PaperWidth.entries) {
+            val text = buildOfflineReceipt(rounded, shop, width).toPlainText(width)
+            assertTrue("no Rounding line on ${width.label}", text.contains("Rounding"))
+            assertTrue("figure missing on ${width.label}", text.contains("-2.00"))
+            for (line in text.lines()) {
+                assertTrue(
+                    "\"$line\" is ${line.length} chars on ${width.label} (${width.columns})",
+                    line.length <= width.columns,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an unrounded offline sale prints no rounding line`() {
+        val text = buildOfflineReceipt(doc(), shop, PaperWidth.Mm80).toPlainText(PaperWidth.Mm80)
+        assertFalse(text.contains("Rounding"))
+    }
 }

@@ -61,6 +61,7 @@ import mu.kidscorner.till.data.formatAmount
 import mu.kidscorner.till.data.formatQty
 import mu.kidscorner.till.data.formatRs
 import mu.kidscorner.till.data.round2
+import mu.kidscorner.till.data.round5
 import mu.kidscorner.till.ui.theme.Handoff
 import mu.kidscorner.till.ui.theme.PlexMono
 import androidx.compose.foundation.clickable
@@ -102,6 +103,12 @@ fun PaymentScreen(
     vatEnabled: Boolean,
     /** The effective rate, for the breakdown's VAT row. Unused while disabled. */
     vatRate: Double = 0.0,
+    /**
+     * Whether all-cash sales book the nearest Rs 5 (migration 049, shop
+     * setting). The server books the figure either way — this only drives
+     * what the till shows as owed and accepts as tendered.
+     */
+    roundCash: Boolean = false,
     /** The sale-level discount applied on the sell screen, for the breakdown. */
     discount: AppliedDiscountLocal? = null,
     busy: Boolean,
@@ -131,18 +138,32 @@ fun PaymentScreen(
     val outstanding = round2(maxOf(0.0, totals.total - paid))
     val entered = entry.toDoubleOrNull() ?: 0.0
     val isCash = method == "cash"
-    val takeNow = round2(minOf(entered, outstanding))
+
+    /**
+     * What a cash tender is measured against. Normally the outstanding
+     * itself; while the shop rounds cash and every recorded row is cash, the
+     * rounded remainder instead — round5(total) minus what is already taken,
+     * so ANY split of part-payments still converges on the booked figure.
+     * Re-rounding each remainder would drift (501 + round5(636) = 1136, not
+     * the booked 1135). Non-cash and mixed flows stay exact, exactly as the
+     * server books them — a card rail settles to the cent.
+     */
+    val roundingApplies = roundCash && totals.total > 0 && isCash &&
+        payments.all { it.method == "cash" }
+    val tenderTarget = if (roundingApplies) round2(round5(totals.total) - paid) else outstanding
+    val roundingDelta = round2(tenderTarget - outstanding)
+    val takeNow = round2(minOf(entered, tenderTarget))
 
     // What was handed over beyond the cash actually owed, including the row
     // about to be taken. Non-cash never produces change, and over-tendering on
     // one row does not offset another.
     val settledChange = payments.filter { it.method == "cash" }
         .sumOf { (it.tendered ?: it.amount) - it.amount }
-    val pendingChange = if (isCash) maxOf(0.0, entered - outstanding) else 0.0
+    val pendingChange = if (isCash) maxOf(0.0, entered - tenderTarget) else 0.0
     val change = round2(maxOf(0.0, settledChange + pendingChange))
 
     val ready = entered > 0 && !busy && !frozen
-    val completes = entered >= outstanding
+    val completes = entered >= tenderTarget
 
     fun primaryTap() {
         if (takeNow <= 0) return
@@ -211,6 +232,21 @@ fun PaymentScreen(
         onConfirm(rows, round2(maxOf(0.0, splitCashTender - cashRow)))
     }
     val onAmount = padOnAmount && !isCash
+
+    /**
+     * What a split allocation must add up to. Rounded while every allocated
+     * row is cash (and at least one row exists) — an all-cash split books
+     * the rounded figure server-side, exactly like the single flow. Adding
+     * a card row flips it back to exact mid-allocation, and Record only
+     * fires on an exact allocation either way, so the screen cannot confirm
+     * a figure the server would refuse.
+     */
+    val splitAllCash = allocation.isNotEmpty() &&
+        allocation.all { (m, v) -> m == "cash" || v <= 0.0 }
+    val splitTarget =
+        if (roundCash && totals.total > 0 && splitAllCash) round2(round5(totals.total))
+        else totals.total
+    val splitRounding = round2(splitTarget - totals.total)
 
     Column(
         modifier.fillMaxSize().background(Handoff.Canvas).padding(14.dp),
@@ -424,7 +460,8 @@ fun PaymentScreen(
             if (splitMode) {
                 SplitAllocation(
                     methods = paymentMethods,
-                    total = totals.total,
+                    total = splitTarget,
+                    rounding = splitRounding,
                     allocation = allocation,
                     focus = splitFocus,
                     cashTendered = splitCashTender,
@@ -451,7 +488,7 @@ fun PaymentScreen(
                         val others = round2(
                             allocation.filterKeys { it != m }.values.sum(),
                         )
-                        val rest = round2(maxOf(0.0, totals.total - others))
+                        val rest = round2(maxOf(0.0, splitTarget - others))
                         allocation = allocation + (m to rest)
                         if (m == "cash") splitCashTender = rest
                         splitEntry = trimZeros(rest)
@@ -554,13 +591,25 @@ fun PaymentScreen(
                     Spacer(Modifier.height(6.dp))
                     MoneyRow(
                         "Balance",
-                        formatRs(outstanding),
+                        // Rounded while rounding applies: that is what the
+                        // customer owes, and what the tender below fills.
+                        formatRs(if (roundingApplies) tenderTarget else outstanding),
                         // Amber while the customer still owes, quiet once settled.
                         // Carfectionist turns this green; Kids Corner has no green
                         // — the palette is white and the logo's red, and amber is
                         // already this shop's word for money still in the air.
-                        if (outstanding > 0) Handoff.WarnText else Handoff.Muted3,
+                        if ((if (roundingApplies) tenderTarget else outstanding) > 0) Handoff.WarnText else Handoff.Muted3,
                     )
+                    // The rupees the rounding moved, named so the two figures
+                    // above it never read as a mistake.
+                    if (roundingApplies && roundingDelta != 0.0) {
+                        Text(
+                            "Cash rounding ${formatRs(roundingDelta)} applied",
+                            fontSize = 12.sp,
+                            color = Handoff.Muted3,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineSoft))
                     Spacer(Modifier.height(12.dp))
@@ -571,7 +620,7 @@ fun PaymentScreen(
                     ) {
                         DisplayCard(
                             label = "AMOUNT",
-                            value = formatRs(if (entry.isBlank()) outstanding else takeNow),
+                            value = formatRs(if (entry.isBlank()) tenderTarget else takeNow),
                             highlight = onAmount,
                             onClick = { padOnAmount = true },
                         )
@@ -583,8 +632,8 @@ fun PaymentScreen(
                                 onClick = { padOnAmount = false },
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                QuickChip("Exact") { entry = trimZeros(outstanding) }
-                                tenderChips(outstanding).forEach { note ->
+                                QuickChip("Exact") { entry = trimZeros(tenderTarget) }
+                                tenderChips(tenderTarget).forEach { note ->
                                     QuickChip(formatQty(note.toInt())) {
                                         entry = trimZeros(note)
                                     }
@@ -1269,6 +1318,8 @@ private fun FrozenActions(
 private fun RowScope.SplitAllocation(
     methods: List<String>,
     total: Double,
+    /** roundCash target minus the bill, for the caption. Zero when exact. */
+    rounding: Double = 0.0,
     allocation: Map<String, Double>,
     focus: String,
     cashTendered: Double,
@@ -1382,6 +1433,14 @@ private fun RowScope.SplitAllocation(
             .padding(18.dp),
     ) {
         MoneyRow("Total", formatRs(total), Handoff.InkFigure)
+        if (rounding != 0.0) {
+            Text(
+                "Cash rounding ${formatRs(rounding)} applied",
+                fontSize = 12.sp,
+                color = Handoff.Muted3,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
         Spacer(Modifier.height(6.dp))
         MoneyRow(
             "Left to allocate",

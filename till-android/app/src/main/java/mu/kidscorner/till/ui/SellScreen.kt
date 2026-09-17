@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -429,6 +428,7 @@ fun SellScreen(
             onSwitchCashier = onSwitchCashier,
             onLock = onLock,
             onCloseTill = onCloseTill,
+            onOpenMenu = onOpenActions,
         )
 
         // ── the scan bar: full width, and on top ────────────────────────────
@@ -520,31 +520,8 @@ fun SellScreen(
                         }
                     }
 
-                    // `width:74px;height:56px` — everything the till does that
-                    // is not ringing up a sale, kept off the selling surface.
-                    Surface(
-                        onClick = onOpenActions,
-                        shape = RoundedCornerShape(12.dp),
-                        color = Handoff.Surface,
-                        contentColor = Handoff.InkStrong,
-                        border = BorderStroke(1.dp, Handoff.Line),
-                        modifier = Modifier.size(width = 74.dp, height = 56.dp),
-                    ) {
-                        Column(
-                            Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(Icons.Default.MoreHoriz, null, Modifier.size(19.dp))
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "More",
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 0.42.sp,
-                            )
-                        }
-                    }
+                    // The burger in the chrome bar now opens the till menu —
+                    // this key's job moved left, off the selling surface.
         }
         // ── the checkout, three columns ───────────────────────────────────
         //

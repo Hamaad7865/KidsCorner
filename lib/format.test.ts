@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { shopDayOf, shopTimeOf } from "./format"
+import { round5, shopDayOf, shopTimeOf } from "./format"
 
 describe("shopDayOf", () => {
   it("files a late-night sale under the shop's day, not UTC's", () => {
@@ -31,8 +31,7 @@ describe("shopDayOf", () => {
   })
 })
 
-describe("shopTimeOf", () => {
-  it("gives the shop's wall clock, not UTC's", () => {
+describe("shopTimeOf", () => {  it("gives the shop's wall clock, not UTC's", () => {
     // 21:14 UTC is 01:14 in Mauritius. The journal CSV used to slice the ISO
     // string and print 21:14 — the day and the time both wrong on the one
     // document an accountant reads.
@@ -47,5 +46,26 @@ describe("shopTimeOf", () => {
 
   it("returns an empty string for garbage rather than throwing", () => {
     expect(shopTimeOf("not a date")).toBe("")
+  })
+})
+
+describe("round5", () => {
+  it("snaps to the nearest Rs 5 both ways", () => {
+    // 1,137 down to 1,135 and 1,138 up to 1,140 — the counter's two cases.
+    expect(round5(1137)).toBe(1135)
+    expect(round5(1138)).toBe(1140)
+  })
+
+  it("rounds an exact half up, matching SQL round() on the till's domain", () => {
+    // 1,137.50 / 5 is exactly 227.5 in float64, so Math.round sees the true
+    // half — the same answer numeric round() gives in migration 049's asserts.
+    expect(round5(1137.5)).toBe(1140)
+    expect(round5(1132.5)).toBe(1135)
+  })
+
+  it("leaves exact multiples and zero alone", () => {
+    expect(round5(1135)).toBe(1135)
+    expect(round5(0)).toBe(0)
+    expect(round5(-3)).toBe(0)
   })
 })

@@ -191,7 +191,11 @@ export default async function ProductDetailPage({
                 variant="outline"
                 render={
                   <a
-                    href={`/products/${product.id}/labels`}
+                    // The shop prints on a PUQU thermal roll, 40x30mm stickers,
+                    // so the button goes straight to roll mode. `?label=` drives
+                    // the @page size; drop it from the URL by hand for the A4
+                    // sheet layout instead.
+                    href={`/products/${product.id}/labels?label=40x30`}
                     target="_blank"
                     rel="noreferrer"
                   />

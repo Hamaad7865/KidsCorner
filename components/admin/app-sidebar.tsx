@@ -88,7 +88,7 @@ export function MobileNav({ allowed = null }: { allowed?: string[] | null }) {
 
   return (
     <nav
-      className="bg-sidebar border-sidebar-border overflow-x-auto border-b lg:hidden"
+      className="bg-sidebar border-sidebar-border overflow-x-auto border-b lg:hidden print:hidden"
       aria-label="Back office"
     >
       <div className="flex min-w-max gap-1 px-2 py-1.5">

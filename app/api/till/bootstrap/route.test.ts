@@ -35,6 +35,7 @@ vi.mock("@/lib/pos/queries", () => ({
   getPaymentMethods: async () => ["cash", "card"],
   getShopIdentity: async () => ({ address: "Curepipe", phone: "+230", vatNumber: null }),
   getShopName: async () => "Kids Corner",
+  getCashRounding: async () => false,
 }))
 vi.mock("@/lib/vat/policy", () => ({
   getCurrentVatPolicy: async () => currentPolicy,

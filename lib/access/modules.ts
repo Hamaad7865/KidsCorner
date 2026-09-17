@@ -62,6 +62,10 @@ const PATH_TO_MODULE: { prefix: string; module: ModuleKey }[] = [
   { prefix: "/api/reports", module: "reports" },
   { prefix: "/dashboard", module: "dashboard" },
   { prefix: "/products", module: "products" },
+  // Printing barcode labels is a product task, so it answers to the products
+  // permission rather than carrying a module of its own — a role that can see
+  // products can print their labels, and hiding products hides this too.
+  { prefix: "/print-labels", module: "products" },
   { prefix: "/import", module: "import" },
   { prefix: "/stock", module: "stock" },
   { prefix: "/promotions", module: "promotions" },

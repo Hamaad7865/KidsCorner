@@ -16,6 +16,7 @@ import { VatSettings } from "@/components/settings/vat-settings"
 import { StaffPins } from "@/components/settings/staff-pins"
 import { StaffLogins } from "@/components/settings/staff-logins"
 import {
+  getCashRounding,
   getPaymentMethods,
   getRefundRequiresManager,
   getShopIdentity,
@@ -42,6 +43,7 @@ export default async function SettingsPage() {
     vatPolicy,
     paymentMethods,
     refundRequiresManager,
+    cashRounding,
     accessGrid,
     locations,
     barcodeSettings,
@@ -56,6 +58,7 @@ export default async function SettingsPage() {
     getCurrentVatPolicy(),
     getPaymentMethods(),
     getRefundRequiresManager(),
+    getCashRounding(),
     getAccessGrid(),
     listLocations(),
     readBarcodeSettings(),
@@ -82,6 +85,7 @@ export default async function SettingsPage() {
           shopPhone={identity.phone ?? ""}
           paymentMethods={paymentMethods}
           refundRequiresManager={refundRequiresManager}
+          cashRounding={cashRounding}
           canManage={profile.role === "owner"}
         />
       </div>

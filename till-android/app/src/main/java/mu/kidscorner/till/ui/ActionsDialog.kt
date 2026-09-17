@@ -1,5 +1,9 @@
 package mu.kidscorner.till.ui
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,12 +18,16 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -30,18 +38,22 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StickyNote2
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,13 +63,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import mu.kidscorner.till.ui.theme.Handoff
 
+private val DrawerWidth = 360.dp
+
 /**
- * `modalActions` — a 660px card behind the sell screen's "More" key.
+ * The till menu — a left slide-in behind the sell screen's burger key.
  *
- * `repeat(2,1fr); gap:9px` of 74px rows, each a tinted icon well beside a label
- * and a sub-line. Everything a till does that is not ringing up a sale lives
- * here rather than on the sell screen, which is the design keeping the selling
- * surface for selling.
+ * Was `modalActions`, a 660px centred card behind a "More" key. Same nine
+ * actions, new shape: a full-height 360dp rail that slides in from the left
+ * over a fading scrim, grouped under small-caps sections so a cashier scans
+ * it the way they scan a shop menu. The selling surface keeps nothing but
+ * selling; everything else lives here.
  */
 @Composable
 fun ActionsDialog(
@@ -76,145 +91,209 @@ fun ActionsDialog(
     onTakeDeposit: () -> Unit,
     canTakeDeposit: Boolean,
     onDismiss: () -> Unit,
+    /** Shown in the drawer header — the shop and who is on the till. */
+    shopName: String? = null,
+    cashierName: String? = null,
 ) {
     val noRipple = remember { MutableInteractionSource() }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Handoff.Scrim)
-            .clickable(interactionSource = noRipple, indication = null, onClick = onDismiss),
-        Alignment.Center,
-    ) {
+    // Enter choreography: the panel slides home on a soft spring while the
+    // scrim fades in underneath. Exit is instant (the overlay is removed),
+    // so only the open needs to feel expensive — which is the one the
+    // cashier sees several times an hour.
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    val slide by animateDpAsState(
+        targetValue = if (visible) 0.dp else -DrawerWidth,
+        animationSpec = spring(stiffness = 320f, dampingRatio = 0.92f),
+        label = "menuSlide",
+    )
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = 0.9f),
+        label = "menuScrim",
+    )
+
+    Box(Modifier.fillMaxSize(), Alignment.CenterStart) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .alpha(scrimAlpha)
+                .background(Handoff.Scrim)
+                .clickable(interactionSource = noRipple, indication = null, onClick = onDismiss),
+        )
         Surface(
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp),
             color = Handoff.Surface,
+            shadowElevation = 16.dp,
             modifier = Modifier
-                .width(660.dp)
+                .offset(x = slide)
+                .width(DrawerWidth)
+                .fillMaxHeight()
+                .shadow(16.dp, RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp))
                 .clickable(interactionSource = noRipple, indication = null, onClick = {}),
         ) {
-            Column {
+            Column(Modifier.fillMaxSize()) {
+                // ── header ────────────────────────────────────────────────
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 17.dp, bottom = 13.dp),
+                        .padding(start = 20.dp, end = 14.dp, top = 18.dp, bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        "Till actions",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = (-0.36).sp,
-                        color = Handoff.Ink,
-                        modifier = Modifier.weight(1f),
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Menu",
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = (-0.42).sp,
+                            color = Handoff.Ink,
+                        )
+                        Text(
+                            when {
+                                shopName != null && cashierName != null -> "$shopName · $cashierName"
+                                shopName != null -> shopName
+                                cashierName != null -> cashierName
+                                else -> "Everything beyond the sale"
+                            },
+                            fontSize = 12.sp,
+                            color = Handoff.Muted3,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
                     Surface(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(12.dp),
                         color = Handoff.Well,
                         contentColor = Handoff.Muted,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(44.dp),
                     ) {
                         Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
+                            Icon(Icons.Default.Close, "Close menu", Modifier.size(19.dp))
                         }
                     }
                 }
+                HorizontalDivider(color = Handoff.LineFaint, thickness = 1.dp)
 
-                val actions = listOf(
-                    Action(
-                        "Reprint last ticket",
-                        lastReceiptNo?.let { "Receipt $it" } ?: "Nothing rung up yet",
-                        Icons.Default.Print,
-                        Handoff.AccentTint,
-                        Handoff.AccentText,
-                        enabled = lastReceiptNo != null,
-                        onClick = onReprintLast,
-                    ),
-                    Action(
-                        "Today's sales & returns",
-                        "Search, reprint, refund",
-                        Icons.Default.ReceiptLong,
-                        Color(0xFFE7F0FA),
-                        Color(0xFF2E5F8A),
-                        onClick = onOpenHistory,
-                    ),
-                    Action(
-                        "Open cash drawer",
-                        "Logged as a no-sale",
-                        Icons.Default.Inbox,
-                        Color(0xFFFFF3DF),
-                        Color(0xFF8A5A12),
-                        onClick = onOpenDrawer,
-                    ),
-                    Action(
-                        "Payment on account",
-                        "A customer paying their tab",
-                        Icons.Default.AccountBalanceWallet,
-                        Color(0xFFE7F0FA),
-                        Color(0xFF2E5F8A),
-                        onClick = onAccountPayment,
-                    ),
-                    Action(
-                        "Take deposit",
-                        if (canTakeDeposit) {
-                            "Hold this basket for money down"
-                        } else {
-                            "Needs items and a customer"
-                        },
-                        Icons.Default.Savings,
-                        Color(0xFFE6F4EA),
-                        Color(0xFF2E6B45),
-                        enabled = canTakeDeposit,
-                        onClick = onTakeDeposit,
-                    ),
-                    Action(
-                        "Deposits",
-                        "Layaways, top-ups, pickups",
-                        Icons.Default.Inventory2,
-                        Color(0xFFE6F4EA),
-                        Color(0xFF2E6B45),
-                        onClick = onOpenDeposits,
-                    ),
-                    Action(
-                        "Custom item",
-                        "Wrap, alteration, no-label stock",
-                        Icons.Default.Add,
-                        Color(0xFFFDECE6),
-                        Color(0xFFB4552F),
-                        onClick = onCustomItem,
-                    ),
-                    Action(
-                        "Sale note",
-                        "Prints on the receipt",
-                        Icons.Default.StickyNote2,
-                        Handoff.Well,
-                        Handoff.Muted,
-                        onClick = onSaleNote,
-                    ),
-                    Action(
-                        "Till settings",
-                        "Printer, drawer, scanner, terminal",
-                        Icons.Default.Settings,
-                        Color(0xFFEEEAFA),
-                        Color(0xFF5B4B9E),
-                        onClick = onSettings,
-                    ),
-                )
+                // ── grouped actions ───────────────────────────────────────
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    DrawerSection("Sales")
+                    DrawerRow(
+                        Action(
+                            "Reprint last ticket",
+                            lastReceiptNo?.let { "Receipt $it" } ?: "Nothing rung up yet",
+                            Icons.Default.Print,
+                            Handoff.AccentTint,
+                            Handoff.AccentText,
+                            enabled = lastReceiptNo != null,
+                            onClick = onReprintLast,
+                        ),
+                    )
+                    DrawerRow(
+                        Action(
+                            "Today's sales & returns",
+                            "Search, reprint, refund",
+                            Icons.Default.ReceiptLong,
+                            Color(0xFFE7F0FA),
+                            Color(0xFF2E5F8A),
+                            onClick = onOpenHistory,
+                        ),
+                    )
 
-                Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-                    actions.chunked(2).forEach { pair ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(bottom = 9.dp),
-                            horizontalArrangement = Arrangement.spacedBy(9.dp),
-                        ) {
-                            pair.forEach { action ->
-                                ActionKey(action, Modifier.weight(1f))
-                            }
-                            if (pair.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
+                    DrawerSection("Money")
+                    DrawerRow(
+                        Action(
+                            "Open cash drawer",
+                            "Logged as a no-sale",
+                            Icons.Default.Inbox,
+                            Color(0xFFFFF3DF),
+                            Color(0xFF8A5A12),
+                            onClick = onOpenDrawer,
+                        ),
+                    )
+                    DrawerRow(
+                        Action(
+                            "Payment on account",
+                            "A customer paying their tab",
+                            Icons.Default.AccountBalanceWallet,
+                            Color(0xFFE7F0FA),
+                            Color(0xFF2E5F8A),
+                            onClick = onAccountPayment,
+                        ),
+                    )
+
+                    DrawerSection("Layaway")
+                    DrawerRow(
+                        Action(
+                            "Take deposit",
+                            if (canTakeDeposit) {
+                                "Hold this basket for money down"
+                            } else {
+                                "Needs items and a customer"
+                            },
+                            Icons.Default.Savings,
+                            Color(0xFFE6F4EA),
+                            Color(0xFF2E6B45),
+                            enabled = canTakeDeposit,
+                            onClick = onTakeDeposit,
+                        ),
+                    )
+                    DrawerRow(
+                        Action(
+                            "Deposits",
+                            "Layaways, top-ups, pickups",
+                            Icons.Default.Inventory2,
+                            Color(0xFFE6F4EA),
+                            Color(0xFF2E6B45),
+                            onClick = onOpenDeposits,
+                        ),
+                    )
+
+                    DrawerSection("This sale")
+                    DrawerRow(
+                        Action(
+                            "Custom item",
+                            "Wrap, alteration, no-label stock",
+                            Icons.Default.Add,
+                            Color(0xFFFDECE6),
+                            Color(0xFFB4552F),
+                            onClick = onCustomItem,
+                        ),
+                    )
+                    DrawerRow(
+                        Action(
+                            "Sale note",
+                            "Prints on the receipt",
+                            Icons.Default.StickyNote2,
+                            Handoff.Well,
+                            Handoff.Muted,
+                            onClick = onSaleNote,
+                        ),
+                    )
+                }
+
+                // ── pinned system row ─────────────────────────────────────
+                HorizontalDivider(color = Handoff.LineFaint, thickness = 1.dp)
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp)) {
+                    DrawerRow(
+                        Action(
+                            "Till settings",
+                            "Printer, drawer, scanner, terminal",
+                            Icons.Default.Settings,
+                            Color(0xFFEEEAFA),
+                            Color(0xFF5B4B9E),
+                            onClick = onSettings,
+                        ),
+                    )
                 }
             }
         }
@@ -231,30 +310,59 @@ private data class Action(
     val onClick: () -> Unit,
 )
 
-/** `height:74px; padding:0 15px; radius:13; gap:12` */
+/** A small-caps group label — the menu scans like a shop menu. */
 @Composable
-private fun ActionKey(action: Action, modifier: Modifier = Modifier) {
+private fun DrawerSection(title: String) {
+    Text(
+        title.uppercase(),
+        fontSize = 10.5.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.1.sp,
+        color = Handoff.Muted4,
+        modifier = Modifier.padding(start = 10.dp, top = 10.dp, bottom = 4.dp),
+    )
+}
+
+/**
+ * One 64dp menu row: tinted icon well, label over sub-line, faint chevron.
+ * Full-bleed rows (no card borders) so the drawer reads as one list, not
+ * nine buttons — the tinted wells carry the colour instead.
+ */
+@Composable
+private fun DrawerRow(action: Action) {
+    val content = if (action.enabled) Handoff.Ink else Handoff.Faint
     Surface(
         onClick = action.onClick,
         enabled = action.enabled,
-        shape = RoundedCornerShape(13.dp),
-        color = Handoff.Surface,
-        contentColor = if (action.enabled) Handoff.Ink else Handoff.Faint,
-        border = BorderStroke(1.dp, Handoff.LineSoft),
-        modifier = modifier.height(74.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = Color.Transparent,
+        contentColor = content,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
     ) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 15.dp),
+            Modifier.fillMaxSize().padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Box(
-                Modifier.size(40.dp).clip(RoundedCornerShape(11.dp)).background(action.tint),
+                Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (action.enabled) action.tint else Handoff.Well)
+                    .alpha(if (action.enabled) 1f else 0.6f),
                 Alignment.Center,
             ) {
-                Icon(action.icon, null, tint = action.ink, modifier = Modifier.size(20.dp))
+                Icon(
+                    action.icon,
+                    null,
+                    tint = if (action.enabled) action.ink else Handoff.Faint,
+                    modifier = Modifier.size(20.dp),
+                )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(
                     action.label,
                     fontSize = 14.5.sp,
@@ -266,11 +374,17 @@ private fun ActionKey(action: Action, modifier: Modifier = Modifier) {
                 Text(
                     action.sub,
                     fontSize = 11.5.sp,
-                    color = Handoff.Muted3,
+                    color = if (action.enabled) Handoff.Muted3 else Handoff.Faint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                null,
+                tint = Handoff.Ghost,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

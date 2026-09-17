@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["./.preview-server.mjs"],
       "port": 4321
+    },
+    {
+      "name": "next-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
     }
   ]
 }

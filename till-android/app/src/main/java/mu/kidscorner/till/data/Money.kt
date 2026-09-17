@@ -43,6 +43,22 @@ fun round2(value: Double): Double {
     return (if (rounded == 0.0) 0.0 else rounded) / 100
 }
 
+/**
+ * Nearest Rs 5 — the cash-rounding step (migration 049, settings.round_cash).
+ *
+ * `Math.round`, deliberately, for the same reason as round2 above: Kotlin's
+ * is ties-to-even, so round(112.5/5)=round(22.5) would come out 22 where the
+ * server's numeric round() and the web till's Math.round both say 23. Java's
+ * rounds ties up, matching both on the only domain this ever sees:
+ * non-negative cent values (a sale total can never go below zero —
+ * discounts clamp to the basket). Every .5 boundary there is exactly
+ * representable in binary, so no drift correction is needed.
+ */
+fun round5(value: Double): Double {
+    if (!value.isFinite() || value <= 0.0) return 0.0
+    return Math.round(value / 5.0).toDouble() * 5.0
+}
+
 private val AMOUNT = DecimalFormat("#,##0.00", DecimalFormatSymbols(Locale.UK))
 private val COUNT = DecimalFormat("#,##0", DecimalFormatSymbols(Locale.UK))
 

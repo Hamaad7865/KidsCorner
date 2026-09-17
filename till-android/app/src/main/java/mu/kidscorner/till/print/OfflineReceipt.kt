@@ -2,6 +2,7 @@ package mu.kidscorner.till.print
 
 import kotlinx.serialization.Serializable
 import mu.kidscorner.till.data.formatQty
+import kotlin.math.abs
 
 /**
  * An offline sale's printable snapshot — everything the paper needs, frozen at
@@ -62,7 +63,13 @@ data class OfflineReceiptDoc(
     val payments: List<OfflineReceiptPaymentSnapshot> = emptyList(),
     val discounts: List<OfflineReceiptDiscountSnapshot> = emptyList(),
     val subtotal: Double,
+    /** The CHARGED total: subtotal − discounts + rounding. */
     val total: Double,
+    /**
+     * Cash-rounding adjustment (migration 049), already inside [total].
+     * Non-zero only on all-cash sales while the shop has it switched on.
+     */
+    val rounding: Double = 0.0,
     val vatAmount: Double,
     val change: Double = 0.0,
     /** Frozen policy at checkout (same freeze as the queued request). */
@@ -207,6 +214,12 @@ fun buildOfflineReceipt(
             d.approvedByName?.let {
                 add(ReceiptLine.Text("    ${d.label} approved by $it"))
             }
+        }
+        // Cash rounding (migration 049): subtotal − discount + rounding =
+        // total, so a rounded cash sale shows where the rupees went.
+        if (doc.rounding != 0.0) {
+            val sign = if (doc.rounding < 0) "-" else "+"
+            add(ReceiptLine.Columns("    Rounding :", sign + plainAmount(abs(doc.rounding))))
         }
     }
     add(ReceiptLine.Text("Total: " + suffixed(doc.total, currency), Align.Centre, bold = true))

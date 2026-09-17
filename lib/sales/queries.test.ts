@@ -100,4 +100,11 @@ describe("getSaleDetail frozen VAT", () => {
     }))
     expect(detail!.vatNumber).toBeNull()
   })
+
+  it("carries the booked rounding, defaulting to zero on legacy rows", async () => {
+    const rounded = await getSaleDetail(7, clientFor({ rounding: -2 }))
+    expect(rounded!.rounding).toBe(-2)
+    const legacy = await getSaleDetail(7, clientFor({}))
+    expect(legacy!.rounding).toBe(0)
+  })
 })

@@ -471,6 +471,9 @@ private fun TillRoot(
                 cashierName = screen.cashier.fullName,
                 vatEnabled = state.shop?.vatEnabled ?: true,
                 vatRate = state.shop?.resolvedVatRate ?: 0.15,
+                // Shop-wide cash-rounding switch (migration 049): the till
+                // shows rounded tender targets; the server books the figure.
+                roundCash = state.shop?.roundCash ?: false,
                 discount = state.discount,
                 busy = state.busy,
                 error = state.error,
@@ -501,7 +504,6 @@ private fun TillRoot(
                 drawerOnCash = state.prefs["drawerOnCash"] == true,
                 drawerOnCard = state.prefs["drawerOnCard"] == true,
                 beepOnScan = state.prefs["beep"] == true,
-                roundCash = state.prefs["roundCash"] == true,
                 onBack = vm::closeSettings,
                 onOpenPrinter = { overlay = Overlay.Printer },
                 onTestPrint = vm::testPrinter,
@@ -804,6 +806,8 @@ private fun TillRoot(
             },
             canTakeDeposit = state.customer != null && state.lines.isNotEmpty(),
             onDismiss = { overlay = Overlay.None },
+            shopName = state.shop?.shopName,
+            cashierName = (state.screen as? TillScreen.Selling)?.cashier?.fullName,
         )
 
         Overlay.Custom -> CustomItemDialog(
