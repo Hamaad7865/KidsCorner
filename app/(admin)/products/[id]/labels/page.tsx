@@ -198,8 +198,10 @@ export default async function LabelsPage({
               {trimmedNote}
             </p>
             <p className="text-muted-foreground mt-1 text-xs">
-              In the print dialog: keep Scale at 100% (not “Fit to page”), and
-              set the PUQU paper size to {roll.w}×{roll.h}mm.
+              In the print dialog: keep Scale at 100% (not “Fit to page”), set
+              the PUQU paper size to {roll.w}×{roll.h}mm, and switch Headers
+              and footers off — a header on every 30mm page pushes each label
+              across a page boundary, which prints as label, blank, label.
             </p>
           </div>
           <PrintButton />
@@ -213,17 +215,24 @@ export default async function LabelsPage({
               <div
                 key={`${label.id}-${label.copy}`}
                 className="flex flex-col items-center justify-center bg-white text-center"
-                // One label is exactly one physical page, so natural pagination
-                // puts one per page with no help. A forced `break-after: page`
-                // here is what caused the blank-every-other-label bug: an element
-                // that already fills the page to its edge, told to break after,
-                // makes the browser emit an empty page before the next label.
+                // One label per physical page, by construction rather than by
+                // luck. A forced `break-after: page` is what caused the
+                // blank-every-other-label bug, so there is none — instead each
+                // label refuses to split (`break-inside: avoid`) and measures a
+                // hair under the page (`- 0.5mm`). Exactly page-sized boxes are
+                // at the mercy of sub-pixel rounding: 30mm is 113.39px, and the
+                // fraction that does not fit spills each label onto a second,
+                // blank page — which reads as print one, skip one. Half a
+                // millimetre of extra feed between stickers is invisible; a
+                // blank sticker every other label is not.
                 style={{
                   width: `${roll.w}mm`,
-                  height: `${roll.h}mm`,
+                  height: `calc(${roll.h}mm - 0.5mm)`,
                   padding: "1mm",
                   boxSizing: "border-box",
                   overflow: "hidden",
+                  breakInside: "avoid",
+                  pageBreakInside: "avoid",
                 }}
               >
                 <div className="w-full truncate text-[7px] leading-tight font-semibold text-black">
