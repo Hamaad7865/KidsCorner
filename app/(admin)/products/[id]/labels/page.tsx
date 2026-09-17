@@ -254,17 +254,18 @@ export default async function LabelsPage({
                   pageBreakInside: "avoid",
                 }}
               >
-                <div className="w-full truncate text-[7px] leading-tight font-semibold text-black">
+                <div className="w-full truncate text-[10px] leading-tight font-semibold text-black">
                   {label.productName}
                 </div>
-                <div className="text-[6px] leading-none text-neutral-600">
+                <div className="text-[8px] leading-none text-neutral-600">
                   {label.colourName} · {label.sizeLabel}
                 </div>
                 {/* Full label width: the quiet zones live inside the symbol's
                     own viewBox, so anything narrower eats the margin a scanner
-                    needs. */}
-                <Barcode code={label.barcode} height={28} className="my-0.5 w-full" />
-                <div className="text-[9px] leading-none font-bold text-black">
+                    needs. Height 26 keeps the symbol tall enough to scan at
+                    arm's length after the text grew around it. */}
+                <Barcode code={label.barcode} height={26} className="my-0.5 w-full" />
+                <div className="text-[12px] leading-none font-bold text-black">
                   {formatRs(label.sellingPrice)}
                 </div>
               </div>
