@@ -1624,6 +1624,10 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
                     _state.update {
                         it.copy(busy = false, movementError = null, movementDone = true)
                     }
+                    // Cash changed hands at the counter, so the drawer opens to
+                    // take it or give it — loud, so a missing printer explains
+                    // itself instead of reading as a dead button.
+                    popCashDrawer()
                     // The expected-cash figure has moved, so anything showing it
                     // is now stale.
                     if (_state.value.screen is TillScreen.ClosingShift) refreshShiftTotals()

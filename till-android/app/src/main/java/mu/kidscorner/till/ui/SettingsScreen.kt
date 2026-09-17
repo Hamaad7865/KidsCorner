@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -397,7 +398,13 @@ private fun PeripheralCard(
                 ) {
                     Icon(card.icon, null, tint = card.ink, modifier = Modifier.size(20.dp))
                 }
-                Column(Modifier.weight(1f)) {
+                // Fixed height, centred: a card with a model line and one
+                // without must start their action rows at the same offset,
+                // or the grid reads as misaligned.
+                Column(
+                    Modifier.weight(1f).heightIn(min = 44.dp),
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Text(
                         card.title,
                         fontSize = 14.5.sp,
@@ -454,11 +461,19 @@ private fun PeripheralCard(
             // card shows "no driver". A live card with nothing to pulse (the
             // wedge scanner) needs no second row — an empty one would read as a
             // missing button.
+            //
+            // The row is a fixed 48dp and vertically centred either way, so a
+            // card with a button and a card with one line of text end at the
+            // same height — a row of cards whose bottoms wander looks broken
+            // even when every card is individually fine.
             val hasTest = card.live && card.showTest
             if (hasTest || !card.live) {
                 Row(
-                    Modifier.padding(top = 11.dp),
+                    Modifier
+                        .padding(top = 11.dp)
+                        .heightIn(min = 48.dp),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (hasTest) {
                         Surface(
@@ -489,7 +504,6 @@ private fun PeripheralCard(
                             "No driver on this till yet.",
                             fontSize = 12.sp,
                             color = Handoff.Muted3,
-                            modifier = Modifier.padding(top = 14.dp),
                         )
                     }
                 }

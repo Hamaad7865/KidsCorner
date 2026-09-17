@@ -115,18 +115,35 @@ fun BasketDiscountDialog(
     ) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp)) {
             // ── the two tabs ────────────────────────────────────────
+            //
+            // One segmented control, not two bordered buttons: per-button
+            // selected borders rendered a stray accent line drooping off the
+            // active tab's bottom edge, and a single well with a solid
+            // segment cannot produce it.
             Row(
-                Modifier.fillMaxWidth().padding(bottom = 11.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 11.dp)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Handoff.Well)
+                    .border(1.dp, Handoff.LineField, RoundedCornerShape(12.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 listOf(true to "Percent off", false to "Rupees off").forEach { (pct, label) ->
-                    PickChip(
-                        label = label,
-                        selected = percent == pct,
-                        height = 48,
-                        fontSize = 14.sp,
-                        modifier = Modifier.weight(1f),
-                    ) { percent = pct; entry = "" }
+                    val selected = percent == pct
+                    Surface(
+                        onClick = { percent = pct; entry = "" },
+                        shape = RoundedCornerShape(9.dp),
+                        color = if (selected) Handoff.AccentSolid else Color.Transparent,
+                        contentColor = if (selected) Color.White else Handoff.InkStrong,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    ) {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
                 }
             }
 

@@ -1,5 +1,6 @@
 package mu.kidscorner.till.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Print
@@ -425,62 +427,97 @@ private fun CustomerProfilePane(
                 .fillMaxSize()
                 .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // The account card, as the server last saw it — the same figure the
-            // payment-on-account view pays against, shown read-only.
+            // Who this is, with the figures on their own band — the header
+            // above already named them, so this card leads with the avatar
+            // and lets the numbers do the talking.
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Handoff.Well2,
-                shadowElevation = 2.dp,
+                shape = RoundedCornerShape(18.dp),
+                color = Handoff.Surface,
+                border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 3.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Credit account",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Handoff.Ink,
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Avatar(
+                            customer.fullName,
+                            size = 60,
+                            tint = Handoff.AccentTint,
+                            ink = Handoff.AccentText,
                         )
-                        Text(
-                            when {
-                                !customer.creditEnabled -> "No account opened"
-                                customer.creditOnHold -> "Account on hold"
-                                balance > 0 -> "owes on their tab"
-                                balance < 0 -> "The shop is holding money for them"
-                                else -> "Nothing owed"
-                            },
-                            fontSize = 12.sp,
-                            color = Handoff.Muted3,
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                customer.fullName,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = (-0.34).sp,
+                                color = Handoff.Ink,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                customer.phone ?: "no phone number",
+                                fontSize = 12.5.sp,
+                                color = Handoff.Muted3,
+                                fontFamily = PlexMono,
+                            )
+                            ProfileStatusChip(customer = customer, balance = balance)
+                        }
+                    }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Handoff.Well)
+                            .padding(vertical = 10.dp),
+                    ) {
+                        HeroStat(
+                            value = formatRs(balance),
+                            label = "BALANCE",
+                            mono = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(Modifier.width(1.dp).height(32.dp).background(Handoff.LineSoft).align(Alignment.CenterVertically))
+                        HeroStat(
+                            value = charges.size.toString(),
+                            label = "CHARGES",
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(Modifier.width(1.dp).height(32.dp).background(Handoff.LineSoft).align(Alignment.CenterVertically))
+                        HeroStat(
+                            value = sales.size.toString(),
+                            label = "PURCHASES",
+                            modifier = Modifier.weight(1f),
                         )
                     }
-                    if (customer.creditEnabled) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                formatRs(balance),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = PlexMono,
-                                color = if (balance > 0) Handoff.AccentText else Handoff.InkStrong,
+                }
+            }
+
+            // The money card. Dark, because money is the machine — and the
+            // take-payment key lives here, where the balance it settles is.
+            if (customer.creditEnabled) {
+                DarkCard(
+                    icon = Icons.Default.AccountBalanceWallet,
+                    title = "Credit account",
+                    subtitle = when {
+                        customer.creditOnHold -> "On hold — no charges until it is lifted"
+                        balance > 0 -> "Owes on their tab"
+                        balance < 0 -> "The shop is holding money for them"
+                        else -> "Nothing owed"
+                    },
+                ) {
+                    if (balance > 0 && !customer.creditOnHold) {
+                        Row(Modifier.padding(top = 12.dp)) {
+                            HandoffButton(
+                                label = "Take payment",
+                                modifier = Modifier.weight(1f),
+                                onClick = onTakePayment,
                             )
-                            Text(
-                                "BALANCE",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp,
-                                color = Handoff.Muted3,
-                            )
-                            if (balance > 0) {
-                                HandoffButton(
-                                    label = "Take payment",
-                                    primary = false,
-                                    onClick = onTakePayment,
-                                )
-                            }
                         }
                     }
                 }
@@ -490,15 +527,18 @@ private fun CustomerProfilePane(
                 when {
                     chargesLoading -> SectionSpinner()
                     charges.isEmpty() -> SectionEmpty("Nothing outstanding.")
-                    else -> charges.forEach { charge ->
+                    else -> charges.forEachIndexed { index, charge ->
+                        if (index > 0) {
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
+                        }
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
                                     charge.saleNo ?: charge.date.take(10),
-                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold,
                                 )
                                 Text(charge.date.take(10), fontSize = 11.sp, color = Handoff.Muted3)
                             }
@@ -517,17 +557,20 @@ private fun CustomerProfilePane(
                 when {
                     salesLoading -> SectionSpinner()
                     sales.isEmpty() -> SectionEmpty("No purchases yet.")
-                    else -> sales.forEach { sale ->
+                    else -> sales.forEachIndexed { index, sale ->
                         // The whole row opens the receipt, and the key says so:
                         // a purchase here is a document, not just a figure —
                         // the customer who lost their copy needs it back, and
                         // the answer is one tap on the sale they are pointing
                         // at. The preview is the same render the printer gets.
+                        if (index > 0) {
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
+                        }
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable { onViewReceipt(sale.id) }
-                                .padding(vertical = 5.dp),
+                                .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -565,9 +608,12 @@ private fun CustomerProfilePane(
                 when {
                     depositsLoading -> SectionSpinner()
                     deposits.isEmpty() -> SectionEmpty("No deposit orders.")
-                    else -> deposits.forEach { deposit ->
+                    else -> deposits.forEachIndexed { index, deposit ->
+                        if (index > 0) {
+                            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
+                        }
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
@@ -633,14 +679,18 @@ private fun EditCustomerDialog(
 ) {
     var name by remember { mutableStateOf(customer.fullName) }
     var phone by remember { mutableStateOf(customer.phone.orEmpty()) }
-    var saveRequested by remember { mutableStateOf(false) }
-    val savedName = remember { customer.fullName }
-    val savedPhone = remember { customer.phone }
+    // What the last save asked for. The profile swap that matches THESE is
+    // the signal to close — comparing against the values the dialog opened
+    // with means an actual change never matches, and the dialog sits on
+    // "Saving…" forever after doing its job.
+    var submittedName by remember { mutableStateOf<String?>(null) }
+    var submittedPhone by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(customer) {
-        if (saveRequested &&
-            customer.fullName == savedName.trim() &&
-            customer.phone == phone.trim().ifBlank { null }
+        val wantName = submittedName
+        if (wantName != null &&
+            customer.fullName == wantName &&
+            customer.phone == submittedPhone
         ) {
             onDismiss()
         }
@@ -687,7 +737,8 @@ private fun EditCustomerDialog(
                 modifier = Modifier.weight(1f),
                 enabled = name.trim().length >= 2 && !saving,
                 onClick = {
-                    saveRequested = true
+                    submittedName = name.trim()
+                    submittedPhone = phone.trim().ifBlank { null }
                     onSave(name.trim(), phone.trim().ifBlank { null })
                 },
             )
@@ -737,20 +788,40 @@ private fun BrowseSearchField(value: String, onValueChange: (String) -> Unit) {
 
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(13.dp))
-            .background(Handoff.Well)
-            .border(1.dp, Handoff.LineSoft, RoundedCornerShape(13.dp))
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Handoff.Surface,
+        border = BorderStroke(1.dp, Handoff.LineSoft),
+        shadowElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth(),
     ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+            Text(
+                title,
+                fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
+                letterSpacing = 1.1.sp, color = Handoff.Muted4,
+            )
+            Column(Modifier.padding(top = 4.dp)) { content() }
+        }
+    }
+}
+
+@Composable
+private fun ProfileStatusChip(customer: Customer, balance: Double) {
+    val (text, tint, ink) = when {
+        !customer.creditEnabled -> Triple("NO ACCOUNT", Handoff.Well, Handoff.Muted)
+        customer.creditOnHold -> Triple("ON HOLD", Handoff.WarnTint, Handoff.WarnText)
+        balance > 0 -> Triple("OWES", Handoff.WarnTint, Handoff.WarnText)
+        balance < 0 -> Triple("IN CREDIT", Color(0xFFE6F4EA), Color(0xFF2E6B45))
+        else -> Triple("PAID UP", Handoff.AccentTint, Handoff.AccentText)
+    }
+    Surface(shape = RoundedCornerShape(7.dp), color = tint) {
         Text(
-            title,
-            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.6.sp, color = Handoff.Muted3,
+            text,
+            fontSize = 9.5.sp, fontWeight = FontWeight.Bold,
+            letterSpacing = 0.6.sp, color = ink,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
         )
-        Column(Modifier.padding(top = 6.dp)) { content() }
     }
 }
 
