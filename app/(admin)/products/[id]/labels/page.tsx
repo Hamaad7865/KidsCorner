@@ -30,6 +30,22 @@ const EXPLICIT_PER_VARIANT_LIMIT = MAX_COPIES_PER_VARIANT
 const SHEET_LIMIT = MAX_LABELS_PER_RUN
 
 /**
+ * How much shorter than the physical label the printed block is.
+ *
+ * A block sized to exactly the page height is the whole reason a roll came out
+ * one printed, one blank, forever: the usable page is always a hair shorter than
+ * its nominal size — 30mm is 113.386px at 96dpi, never a whole number, and the
+ * driver reserves an unprintable edge of its own — so an exactly-sized block
+ * spills a fraction onto a second page. `overflow: hidden` makes the block
+ * unsplittable, so that fraction becomes a whole empty page, which the printer
+ * dutifully feeds as a blank sticker.
+ *
+ * Two millimetres of headroom is invisible on the sticker and removes the entire
+ * class of problem, whatever the driver's margins turn out to be.
+ */
+const PAGE_SAFETY_MM = 2
+
+/**
  * A roll label's physical size, from `?label=WIDTHxHEIGHT` in millimetres.
  *
  * The whole point of the parameter is `@page { size }`: without it the browser
@@ -219,15 +235,18 @@ export default async function LabelsPage({
                 // luck. A forced `break-after: page` is what caused the
                 // blank-every-other-label bug, so there is none — instead each
                 // label refuses to split (`break-inside: avoid`) and measures a
-                // hair under the page (`- 0.5mm`). Exactly page-sized boxes are
-                // at the mercy of sub-pixel rounding: 30mm is 113.39px, and the
-                // fraction that does not fit spills each label onto a second,
-                // blank page — which reads as print one, skip one. Half a
-                // millimetre of extra feed between stickers is invisible; a
-                // blank sticker every other label is not.
+                // clear PAGE_SAFETY_MM under the page. Exactly page-sized boxes
+                // are at the mercy of sub-pixel rounding (30mm is 113.39px) and
+                // of whatever unprintable edge the driver reserves for itself;
+                // the fraction that does not fit spills each label onto a
+                // second, blank page, which reads as print one, skip one. Half a
+                // millimetre covered the rounding but not the driver's margin,
+                // so the headroom is a full two — invisible on the sticker, and
+                // wide enough that no driver's idea of its own edge can bring
+                // the blanks back.
                 style={{
                   width: `${roll.w}mm`,
-                  height: `calc(${roll.h}mm - 0.5mm)`,
+                  height: `calc(${roll.h}mm - ${PAGE_SAFETY_MM}mm)`,
                   padding: "1mm",
                   boxSizing: "border-box",
                   overflow: "hidden",
