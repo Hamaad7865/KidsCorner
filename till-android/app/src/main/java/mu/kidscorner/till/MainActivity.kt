@@ -58,12 +58,15 @@ import mu.kidscorner.till.ui.MovementDialog
 import mu.kidscorner.till.ui.OfflineScreen
 import mu.kidscorner.till.ui.OpenShiftScreen
 import mu.kidscorner.till.ui.PaymentScreen
+import mu.kidscorner.till.ui.LabelPrinterDialog
 import mu.kidscorner.till.ui.PrinterSettingsDialog
 import mu.kidscorner.till.ui.ReceiptPreviewDialog
 import mu.kidscorner.till.ui.RefundDoneDialog
 import mu.kidscorner.till.ui.RefundScreen
 import mu.kidscorner.till.ui.SaleCompleteScreen
 import mu.kidscorner.till.ui.SaleNoteDialog
+import mu.kidscorner.till.ui.ProductDetailScreen
+import mu.kidscorner.till.ui.ProductsScreen
 import mu.kidscorner.till.ui.SellScreen
 import mu.kidscorner.till.ui.SettingsScreen
 import mu.kidscorner.till.ui.StartingScreen
@@ -178,7 +181,7 @@ class MainActivity : ComponentActivity() {
 }
 
 /** Which overlay is up, if any. One at a time — a till is not a desktop. */
-private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, DepositCreate, Printer, Actions, Note, Custom, Txns, Update }
+private enum class Overlay { None, Customer, Held, Discount, Approval, Movement, AccountPayment, DepositCreate, Printer, LabelPrinter, Actions, Note, Custom, Txns, Update }
 
 @Composable
 private fun TillRoot(
@@ -499,6 +502,8 @@ private fun TillRoot(
             is TillScreen.Settings -> SettingsScreen(
                 printerConfigured = state.printerConfigured,
                 printerLabel = state.printerDescribe,
+                labelPrinterConfigured = state.labelPrinterConfigured,
+                labelPrinterLabel = state.labelPrinterDescribe,
                 paper = state.paper,
                 autoPrint = state.prefs["autoPrint"] == true,
                 drawerOnCash = state.prefs["drawerOnCash"] == true,
@@ -506,12 +511,47 @@ private fun TillRoot(
                 beepOnScan = state.prefs["beep"] == true,
                 onBack = vm::closeSettings,
                 onOpenPrinter = { overlay = Overlay.Printer },
+                onOpenLabelPrinter = { overlay = Overlay.LabelPrinter },
                 onTestPrint = vm::testPrinter,
+                onTestLabelPrint = vm::testLabelPrinter,
                 onTestDrawer = vm::openCashDrawer,
                 drawerReady = state.printerConfigured,
                 onSetPaper = vm::setPaper,
                 onSetPref = vm::setPref,
                 onShareDiagnostics = vm::shareDiagnostics,
+            )
+
+            is TillScreen.Products -> ProductsScreen(
+                query = state.productsQuery,
+                rows = state.productRows,
+                loading = state.productsLoading,
+                hasMore = state.productsHasMore,
+                error = state.productsError,
+                online = state.online,
+                cashierName = screen.cashier.fullName,
+                onQuery = vm::searchProducts,
+                onOpen = vm::openProductDetail,
+                onBack = vm::closeProducts,
+                onDismissError = { vm.clearProductsError() },
+            )
+
+            is TillScreen.ProductDetail -> ProductDetailScreen(
+                product = state.selectedProduct,
+                loading = state.productDetailLoading,
+                error = state.productDetailError,
+                saving = state.productSaving,
+                canSeeCost = vm.canSeeCost(),
+                labelPrinterLine = if (state.labelPrinterConfigured) {
+                    state.labelPrinterDescribe.ifBlank { "Label printer" }
+                } else {
+                    "Receipt printer"
+                },
+                onBack = vm::closeProductDetail,
+                onSaveVariant = vm::saveVariant,
+                onSaveProduct = vm::saveProductHeader,
+                onGenerate = vm::generateBarcodes,
+                onPrintLabel = vm::printLabel,
+                onDismissError = { vm.clearProductDetailError() },
             )
 
             is TillScreen.Refunding -> {
@@ -691,6 +731,32 @@ private fun TillRoot(
             },
         )
 
+        Overlay.LabelPrinter -> LabelPrinterDialog(
+            settings = vm.printer,
+            describe = state.labelPrinterDescribe,
+            busy = state.printing,
+            testResult = state.printerTestResult,
+            onSave = { kind, address, name ->
+                vm.saveLabelPrinter(kind, address, name)
+                if (kind == PrinterSettings.Kind.Bluetooth && !hasBluetoothPermission(context)) {
+                    bluetoothPermission.launch(
+                        arrayOf(
+                            Manifest.permission.BLUETOOTH_CONNECT,
+                            Manifest.permission.BLUETOOTH_SCAN,
+                        ),
+                    )
+                }
+                if (kind == PrinterSettings.Kind.Usb) {
+                    requestUsbPermission(context, address)
+                }
+            },
+            onTest = vm::testLabelPrinter,
+            onDismiss = {
+                overlay = Overlay.None
+                vm.clearPrinterTest()
+            },
+        )
+
         Overlay.Update -> state.updateVersionName?.let { versionName ->
             UpdateDialog(
                 versionName = versionName,
@@ -808,6 +874,7 @@ private fun TillRoot(
             onDismiss = { overlay = Overlay.None },
             shopName = state.shop?.shopName,
             cashierName = (state.screen as? TillScreen.Selling)?.cashier?.fullName,
+            onOpenProducts = { overlay = Overlay.None; vm.openProducts() },
         )
 
         Overlay.Custom -> CustomItemDialog(
@@ -906,6 +973,12 @@ private fun TillRoot(
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.StockCheck) {
         vm.closeStockCheck()
+    }
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Products) {
+        vm.closeProducts()
+    }
+    BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.ProductDetail) {
+        vm.closeProductDetail()
     }
     BackHandler(enabled = overlay == Overlay.None && state.screen is TillScreen.Deposits) {
         vm.closeDeposits()

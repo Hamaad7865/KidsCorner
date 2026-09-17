@@ -86,7 +86,8 @@ fun DepositsScreen(
 ) {
     var dialog by remember { mutableStateOf<DepositDialog>(DepositDialog.None) }
 
-    Box(Modifier.fillMaxSize().background(Handoff.Surface)) {
+    TillGround {
+        Box(Modifier.fillMaxSize()) {
         if (selected?.deposit != null) {
             DepositDetailPane(
                 detail = selected,
@@ -119,6 +120,7 @@ fun DepositsScreen(
                 modifier = Modifier.align(Alignment.BottomStart),
                 onDismiss = onDismissError,
             )
+        }
         }
     }
 
@@ -280,10 +282,11 @@ private fun DepositListPane(
 private fun DepositRow(row: DepositSummaryRow, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(13.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Handoff.Surface,
         contentColor = Handoff.Ink,
         border = androidx.compose.foundation.BorderStroke(1.dp, Handoff.LineSoft),
+        shadowElevation = 2.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(

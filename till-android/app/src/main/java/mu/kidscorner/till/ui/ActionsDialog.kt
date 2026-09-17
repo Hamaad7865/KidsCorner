@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StickyNote2
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -94,6 +95,8 @@ fun ActionsDialog(
     /** Shown in the drawer header — the shop and who is on the till. */
     shopName: String? = null,
     cashierName: String? = null,
+    /** Product management: prices, barcodes, labels. */
+    onOpenProducts: () -> Unit = {},
 ) {
     val noRipple = remember { MutableInteractionSource() }
 
@@ -135,6 +138,11 @@ fun ActionsDialog(
         ) {
             Column(Modifier.fillMaxSize()) {
                 // ── header ────────────────────────────────────────────────
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(Handoff.AccentTint),
+                ) {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -175,6 +183,7 @@ fun ActionsDialog(
                             Icon(Icons.Default.Close, "Close menu", Modifier.size(19.dp))
                         }
                     }
+                }
                 }
                 HorizontalDivider(color = Handoff.LineFaint, thickness = 1.dp)
 
@@ -255,6 +264,18 @@ fun ActionsDialog(
                             Color(0xFFE6F4EA),
                             Color(0xFF2E6B45),
                             onClick = onOpenDeposits,
+                        ),
+                    )
+
+                    DrawerSection("Catalogue")
+                    DrawerRow(
+                        Action(
+                            "Products",
+                            "Prices, barcodes, labels",
+                            Icons.Default.Storefront,
+                            Color(0xFFE7F0FA),
+                            Color(0xFF2E5F8A),
+                            onClick = onOpenProducts,
                         ),
                     )
 

@@ -75,10 +75,16 @@ fun HandoffDialog(
                 .clickable(interactionSource = noRipple, indication = null, onClick = {}),
         ) {
             Column {
-                Row(
+                Box(
                     Modifier
                         .fillMaxWidth()
-                        .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 14.dp),
+                        .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                        .background(Handoff.AccentTint),
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -109,6 +115,7 @@ fun HandoffDialog(
                         Box(Modifier.fillMaxSize(), Alignment.Center) {
                             Icon(Icons.Default.Close, "Close", Modifier.size(20.dp))
                         }
+                    }
                     }
                 }
 

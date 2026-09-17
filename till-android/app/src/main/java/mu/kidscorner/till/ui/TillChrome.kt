@@ -94,7 +94,7 @@ fun TillChrome(
                 Surface(
                     onClick = onOpenMenu,
                     shape = RoundedCornerShape(11.dp),
-                    color = Handoff.Surface,
+                    color = Handoff.Well,
                     contentColor = Handoff.InkStrong,
                     border = BorderStroke(1.dp, Handoff.Line),
                     modifier = Modifier.size(44.dp),

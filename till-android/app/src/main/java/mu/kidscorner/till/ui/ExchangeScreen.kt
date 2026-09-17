@@ -152,7 +152,8 @@ fun ExchangeScreen(
         }.take(6)
     }
 
-    Row(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+        Row(modifier.fillMaxSize()) {
 
         // ══════════════════════════════ coming back · going out ═════════════
         Column(
@@ -200,6 +201,7 @@ fun ExchangeScreen(
                 shape = RoundedCornerShape(13.dp),
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
@@ -314,6 +316,7 @@ fun ExchangeScreen(
                 shape = RoundedCornerShape(13.dp),
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp)) {
@@ -572,6 +575,7 @@ fun ExchangeScreen(
                     }
                 }
             }
+        }
         }
     }
 }

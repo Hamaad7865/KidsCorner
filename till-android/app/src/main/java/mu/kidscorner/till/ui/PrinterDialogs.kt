@@ -124,11 +124,82 @@ fun PrinterSettingsDialog(
     onTest: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    PrinterForm(
+        title = "Receipt printer",
+        subtitle = "Currently: $describe",
+        kind0 = settings.kind,
+        address0 = settings.address,
+        name0 = settings.name,
+        namePlaceholder = "Counter printer",
+        showPaper = true,
+        paper0 = settings.paper,
+        busy = busy,
+        testResult = testResult,
+        onSave = onSave,
+        onTest = onTest,
+        onDismiss = onDismiss,
+    )
+}
+
+/**
+ * The sticker machine's own pairing.
+ *
+ * Same transports as the receipt printer, own slot. Labels print here when
+ * it is paired, else they fall back to the receipt printer — so leaving this
+ * empty is a supported state, not a gap.
+ */
+@Composable
+fun LabelPrinterDialog(
+    settings: PrinterSettings,
+    describe: String,
+    busy: Boolean,
+    testResult: String?,
+    onSave: (PrinterSettings.Kind, String, String) -> Unit,
+    onTest: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    PrinterForm(
+        title = "Label printer",
+        subtitle = if (describe.isBlank()) {
+            "Empty — labels print on the receipt printer."
+        } else {
+            "Currently: $describe"
+        },
+        kind0 = settings.labelKind,
+        address0 = settings.labelAddress,
+        name0 = settings.labelName,
+        namePlaceholder = "puqu",
+        showPaper = false,
+        paper0 = settings.paper,
+        busy = busy,
+        testResult = testResult,
+        onSave = { kind, address, name, _ -> onSave(kind, address, name) },
+        onTest = onTest,
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun PrinterForm(
+    title: String,
+    subtitle: String,
+    kind0: PrinterSettings.Kind,
+    address0: String,
+    name0: String,
+    namePlaceholder: String,
+    showPaper: Boolean,
+    paper0: PaperWidth,
+    busy: Boolean,
+    testResult: String?,
+    onSave: (PrinterSettings.Kind, String, String, PaperWidth) -> Unit,
+    onTest: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
-    var kind by remember { mutableStateOf(settings.kind) }
-    var address by remember { mutableStateOf(settings.address) }
-    var name by remember { mutableStateOf(settings.name) }
-    var paper by remember { mutableStateOf(settings.paper) }
+    var kind by remember { mutableStateOf(kind0) }
+    var address by remember { mutableStateOf(address0) }
+    var name by remember { mutableStateOf(name0) }
+    var paper by remember { mutableStateOf(paper0) }
     // Only what a scan turned up: USB devices come and go with the cable, so an
     // empty list means "nothing attached", not "none exist".
     var usbDevices by remember { mutableStateOf(emptyList<UsbCandidate>()) }
@@ -136,8 +207,8 @@ fun PrinterSettingsDialog(
     val configured = kind != PrinterSettings.Kind.None
 
     HandoffDialog(
-        title = "Receipt printer",
-        subtitle = "Currently: $describe",
+        title = title,
+        subtitle = subtitle,
         width = 620,
         maxHeight = 700,
         onDismiss = onDismiss,
@@ -241,26 +312,28 @@ fun PrinterSettingsDialog(
                 HandoffField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = "Counter printer",
+                    placeholder = namePlaceholder,
                 )
             }
 
-            Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
+            if (showPaper) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Handoff.LineFaint))
 
-            FieldLabel("Paper width")
-            Text(
-                "Getting this wrong does not show an error — the receipt wraps " +
-                    "mid-figure, so a total prints across two lines.",
-                fontSize = 11.5.sp,
-                color = Handoff.Muted3,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PaperWidth.entries.forEach { option ->
-                    Choice(
-                        label = "${option.label} · ${option.columns} chars",
-                        selected = paper == option,
-                        modifier = Modifier.weight(1f),
-                    ) { paper = option }
+                FieldLabel("Paper width")
+                Text(
+                    "Getting this wrong does not show an error — the receipt wraps " +
+                        "mid-figure, so a total prints across two lines.",
+                    fontSize = 11.5.sp,
+                    color = Handoff.Muted3,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PaperWidth.entries.forEach { option ->
+                        Choice(
+                            label = "${option.label} · ${option.columns} chars",
+                            selected = paper == option,
+                            modifier = Modifier.weight(1f),
+                        ) { paper = option }
+                    }
                 }
             }
 

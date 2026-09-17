@@ -75,7 +75,8 @@ fun SaleCompleteScreen(
     onNewSale: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().background(Handoff.Canvas), Alignment.Center) {
+    TillGround {
+        Box(modifier.fillMaxSize(), Alignment.Center) {
         Row(
             Modifier
                 .width(1020.dp)
@@ -343,6 +344,7 @@ fun SaleCompleteScreen(
                     }
                 }
             }
+        }
         }
     }
 }

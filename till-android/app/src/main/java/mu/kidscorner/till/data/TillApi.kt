@@ -591,6 +591,42 @@ class TillApi(private val http: HttpClient) {
     suspend fun recordPrint(token: String, saleId: Int): PrintResponse =
         http.post("$origin/api/till/sales/$saleId/print") { bearer(token) }.decode()
 
+    // ── products — browse, edit, barcode, online only ────────────────────
+    //
+    // Never queued: a price or a barcode is accepted against state only the
+    // server knows, exactly as with account settlements. The answers carry
+    // the updated product, so the screen applies them without a refetch.
+
+    suspend fun tillProducts(token: String, search: String): TillProductsResponse =
+        http.get("$origin/api/till/products") {
+            bearer(token)
+            if (search.isNotBlank()) parameter("search", search)
+        }.decode()
+
+    suspend fun tillProduct(token: String, productId: Int): TillProductResponse =
+        http.get("$origin/api/till/products/$productId") { bearer(token) }.decode()
+
+    suspend fun patchTillVariant(token: String, productId: Int, body: VariantPatchRequest): TillProductResponse =
+        http.patch("$origin/api/till/products/$productId/variants") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
+    suspend fun patchTillProduct(token: String, productId: Int, body: ProductPatchRequest): TillProductResponse =
+        http.patch("$origin/api/till/products/$productId") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
+    suspend fun generateTillBarcodes(token: String, productId: Int, body: GenerateBarcodesRequest): GenerateBarcodesResponse =
+        http.post("$origin/api/till/products/$productId/barcodes") {
+            bearer(token)
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }.decode()
+
     suspend fun sendDiagnostics(token: String, request: DiagnosticsRequest): DiagnosticsResponse =
         http.post("$origin/api/till/diagnostics") {
             bearer(token)

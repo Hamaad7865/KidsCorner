@@ -99,7 +99,8 @@ fun CustomersScreen(
     onBack: () -> Unit,
     onDismissError: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize().background(Handoff.Surface)) {
+    TillGround {
+        Box(Modifier.fillMaxSize()) {
         if (profile != null) {
             CustomerProfilePane(
                 customer = profile,
@@ -140,6 +141,7 @@ fun CustomersScreen(
                 modifier = Modifier.align(Alignment.BottomStart),
                 onDismiss = onDismissError,
             )
+        }
         }
     }
 }
@@ -428,8 +430,9 @@ private fun CustomerProfilePane(
             // The account card, as the server last saw it — the same figure the
             // payment-on-account view pays against, shown read-only.
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 color = Handoff.Well2,
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(

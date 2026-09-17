@@ -126,7 +126,8 @@ fun RefundScreen(
     val originally = sale.payments.map { methodLabel(it.method) }.distinct().joinToString(" + ")
     val ready = total > 0 && reason != null && !busy
 
-    Row(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+        Row(modifier.fillMaxSize()) {
 
         // ═══════════════════════════════════════════════ what is coming back ══
         Column(
@@ -176,6 +177,7 @@ fun RefundScreen(
                 shape = RoundedCornerShape(13.dp),
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
@@ -281,6 +283,7 @@ fun RefundScreen(
                 shape = RoundedCornerShape(13.dp),
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             ) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {
@@ -496,6 +499,7 @@ fun RefundScreen(
                     }
                 }
             }
+        }
         }
     }
 }

@@ -88,10 +88,11 @@ fun OpenShiftScreen(
     val amount = entry.toDoubleOrNull() ?: 0.0
     val stamp = remember { nowDayAndClock() }
 
-    Box(
-        modifier.fillMaxSize().background(Handoff.Canvas).padding(14.dp),
-        Alignment.Center,
-    ) {
+    TillGround {
+        Box(
+            modifier.fillMaxSize().padding(14.dp),
+            Alignment.Center,
+        ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = Handoff.Surface,
@@ -261,6 +262,7 @@ fun OpenShiftScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -324,7 +326,8 @@ fun CloseShiftScreen(
     val opened = clockOf(openedAt)
     val salesTotal = totals?.salesTotal ?: 0.0
 
-    Row(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+        Row(modifier.fillMaxSize()) {
 
         // ═══════════════════════════════════════════════ the reading ═══════
         Column(
@@ -416,6 +419,7 @@ fun CloseShiftScreen(
                     shape = RoundedCornerShape(12.dp),
                     color = Handoff.Surface,
                     border = BorderStroke(1.dp, Handoff.LineSoft),
+                    shadowElevation = 2.dp,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 8.dp)) {
@@ -454,6 +458,7 @@ fun CloseShiftScreen(
                         shape = RoundedCornerShape(12.dp),
                         color = Handoff.Surface,
                         border = BorderStroke(1.dp, Handoff.LineSoft),
+                        shadowElevation = 2.dp,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 14.dp)) {
@@ -646,6 +651,7 @@ fun CloseShiftScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -666,10 +672,11 @@ private fun CloseSummary(
 ) {
     val balanced = summary.variance == 0.0
 
-    Box(
-        modifier.fillMaxSize().background(Handoff.Canvas).padding(20.dp),
-        Alignment.Center,
-    ) {
+    TillGround {
+        Box(
+            modifier.fillMaxSize().padding(20.dp),
+            Alignment.Center,
+        ) {
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = Handoff.Surface,
@@ -768,6 +775,7 @@ private fun CloseSummary(
                 }
             }
         }
+        }
     }
 }
 
@@ -842,6 +850,7 @@ private fun StatCard(
         shape = RoundedCornerShape(12.dp),
         color = Handoff.Surface,
         border = BorderStroke(1.dp, Handoff.LineSoft),
+        shadowElevation = 2.dp,
         modifier = modifier,
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {

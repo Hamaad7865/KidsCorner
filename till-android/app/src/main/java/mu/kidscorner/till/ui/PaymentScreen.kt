@@ -248,9 +248,10 @@ fun PaymentScreen(
         else totals.total
     val splitRounding = round2(splitTarget - totals.total)
 
-    Column(
-        modifier.fillMaxSize().background(Handoff.Canvas).padding(14.dp),
-    ) {
+    TillGround {
+        Column(
+            modifier.fillMaxSize().padding(14.dp),
+        ) {
         // ═══════════════════════════════════════════════════════ the header ══
         Row(
             Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -724,6 +725,7 @@ fun PaymentScreen(
                     }
                 }
             }
+        }
         }
     }
 }

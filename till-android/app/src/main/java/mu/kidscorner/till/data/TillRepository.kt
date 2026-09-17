@@ -267,6 +267,23 @@ class TillRepository(
 
     suspend fun recordPrint(saleId: Int): Result<PrintResponse> = authed { api.recordPrint(it, saleId) }
 
+    // ── products — browse, edit, barcode, online only ────────────────────
+
+    suspend fun tillProducts(search: String): Result<TillProductsResponse> =
+        authed { api.tillProducts(it, search) }
+
+    suspend fun tillProduct(productId: Int): Result<TillProductResponse> =
+        authed { api.tillProduct(it, productId) }
+
+    suspend fun patchTillVariant(productId: Int, body: VariantPatchRequest): Result<TillProductResponse> =
+        authed { api.patchTillVariant(it, productId, body) }
+
+    suspend fun patchTillProduct(productId: Int, body: ProductPatchRequest): Result<TillProductResponse> =
+        authed { api.patchTillProduct(it, productId, body) }
+
+    suspend fun generateTillBarcodes(productId: Int, variantIds: List<Int>): Result<GenerateBarcodesResponse> =
+        authed { api.generateTillBarcodes(it, productId, GenerateBarcodesRequest(variantIds)) }
+
     /** Sends the device's own log to the shop's records. Never queued: diagnostics can wait for the line. */
     suspend fun sendDiagnostics(request: DiagnosticsRequest): Result<DiagnosticsResponse> =
         authed { api.sendDiagnostics(it, request) }

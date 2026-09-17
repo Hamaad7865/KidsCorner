@@ -71,8 +71,13 @@ import mu.kidscorner.till.data.SessionStore
 import mu.kidscorner.till.data.SettleCreditRequest
 import mu.kidscorner.till.data.ShiftTotals
 import mu.kidscorner.till.data.StockCheckLocation
+import mu.kidscorner.till.data.ProductPatchRequest
 import mu.kidscorner.till.data.TillApi
+import mu.kidscorner.till.data.TillProductDetail
+import mu.kidscorner.till.data.TillProductRow
+import mu.kidscorner.till.data.TillProductVariant
 import mu.kidscorner.till.data.UpdateCustomerRequest
+import mu.kidscorner.till.data.VariantPatchRequest
 import mu.kidscorner.till.data.ZTotals
 import mu.kidscorner.till.data.TillDatabase
 import mu.kidscorner.till.data.TillRepository
@@ -87,6 +92,7 @@ import mu.kidscorner.till.print.AccountPaymentSlipDoc
 import mu.kidscorner.till.print.AccountPaymentDueLine
 import mu.kidscorner.till.print.Align
 import mu.kidscorner.till.print.EscPos
+import mu.kidscorner.till.print.NoPrinter
 import mu.kidscorner.till.print.PaperWidth
 import mu.kidscorner.till.print.PrintResult
 import mu.kidscorner.till.print.PrinterSettings
@@ -106,6 +112,8 @@ import mu.kidscorner.till.print.buildDepositRefundSlip
 import mu.kidscorner.till.print.buildDepositSlip
 import mu.kidscorner.till.print.buildDepositTopUpSlip
 import mu.kidscorner.till.print.buildExchangeReceipt
+import mu.kidscorner.till.print.buildLabel
+import mu.kidscorner.till.print.buildLabelTest
 import mu.kidscorner.till.print.buildOfflineReceipt
 import mu.kidscorner.till.print.buildReceipt
 import mu.kidscorner.till.print.buildZReport
@@ -142,6 +150,12 @@ sealed interface TillScreen {
 
     /** Looking up live stock without changing the active sale. */
     data class StockCheck(val cashier: Cashier) : TillScreen
+
+    /** The product browser: search the catalogue, open a product. */
+    data class Products(val cashier: Cashier) : TillScreen
+
+    /** One product: edit fields, variants, barcodes, print labels. */
+    data class ProductDetail(val cashier: Cashier, val productId: Int) : TillScreen
 
     /** Layaways: what is held for whom, and the money against it. */
     data class Deposits(val cashier: Cashier) : TillScreen
@@ -331,6 +345,25 @@ data class TillState(
     val saleDetailLoading: Boolean = false,
     val printing: Boolean = false,
     val historyError: String? = null,
+
+    /**
+     * Product management. The browser answers from the server (search needs
+     * the whole catalogue, not the sellable slice in the local cache), and
+     * the detail carries the updated product back on every save — so the
+     * screen applies it without a refetch, and the local catalogue refreshes
+     * quietly behind it for the sell screen.
+     */
+    val productRows: List<TillProductRow> = emptyList(),
+    val productsLoading: Boolean = false,
+    val productsQuery: String = "",
+    val productsHasMore: Boolean = false,
+    val productsError: String? = null,
+    val selectedProduct: TillProductDetail? = null,
+    val productDetailLoading: Boolean = false,
+    val productDetailError: String? = null,
+    val productSaving: Boolean = false,
+    val labelPrinterConfigured: Boolean = false,
+    val labelPrinterDescribe: String = "",
 
     /**
      * The design's toast: one line, bottom-left, gone in 2.2 seconds.
@@ -1039,6 +1072,328 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(
                 screen = TillScreen.Selling(screen.cashier),
                 stockCheck = StockCheckUiState(),
+            )
+        }
+    }
+
+    // -------------------------------------------------------------- products
+
+    fun openProducts() {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.Products(cashier),
+                productRows = emptyList(),
+                productsQuery = "",
+                productsHasMore = false,
+                productsError = null,
+            )
+        }
+        searchProducts("")
+    }
+
+    fun closeProducts() {
+        val screen = _state.value.screen as? TillScreen.Products ?: return
+        _state.update { it.copy(screen = TillScreen.Selling(screen.cashier)) }
+    }
+
+    private var productSearchJob: Job? = null
+
+    /**
+     * Searches the catalogue on the server, debounced.
+     *
+     * The local cache holds only the sellable slice, so a product retired in
+     * the back office — exactly what this screen may be about to revive —
+     * would never be found in it.
+     */
+    fun searchProducts(query: String) {
+        _state.update { it.copy(productsQuery = query) }
+        productSearchJob?.cancel()
+        productSearchJob = viewModelScope.launch {
+            delay(350)
+            _state.update { it.copy(productsLoading = true, productsError = null) }
+            repo.tillProducts(query.trim())
+                .onSuccess { response ->
+                    if (!response.ok) {
+                        _state.update {
+                            it.copy(
+                                productsLoading = false,
+                                productsError = response.error ?: "Products could not be loaded.",
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                productsLoading = false,
+                                productRows = response.rows,
+                                productsHasMore = response.hasMore,
+                                productsError = null,
+                            )
+                        }
+                    }
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            productsLoading = false,
+                            productsError = if (cause.message.isNetworkish()) {
+                                "Could not reach the shop. Check the connection and try again."
+                            } else {
+                                cause.message ?: "Products could not be loaded."
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
+    fun openProductDetail(productId: Int) {
+        val cashier = cashierOf(_state.value.screen) ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.ProductDetail(cashier, productId),
+                selectedProduct = null,
+                productDetailLoading = true,
+                productDetailError = null,
+            )
+        }
+        viewModelScope.launch {
+            repo.tillProduct(productId)
+                .onSuccess { response ->
+                    if (response.ok && response.product != null) {
+                        _state.update {
+                            it.copy(
+                                productDetailLoading = false,
+                                selectedProduct = response.product,
+                                productDetailError = null,
+                            )
+                        }
+                    } else {
+                        _state.update {
+                            it.copy(
+                                productDetailLoading = false,
+                                productDetailError = response.error ?: "Product could not be loaded.",
+                            )
+                        }
+                    }
+                }
+                .onFailure { cause ->
+                    _state.update {
+                        it.copy(
+                            productDetailLoading = false,
+                            productDetailError = if (cause.message.isNetworkish()) {
+                                "Could not reach the shop. Check the connection and try again."
+                            } else {
+                                cause.message ?: "Product could not be loaded."
+                            },
+                        )
+                    }
+                }
+        }
+    }
+
+    fun closeProductDetail() {
+        val screen = _state.value.screen as? TillScreen.ProductDetail ?: return
+        _state.update {
+            it.copy(
+                screen = TillScreen.Products(screen.cashier),
+                selectedProduct = null,
+                productDetailError = null,
+            )
+        }
+        searchProducts(_state.value.productsQuery)
+    }
+
+    fun clearProductsError() = _state.update { it.copy(productsError = null) }
+
+    fun clearProductDetailError() = _state.update { it.copy(productDetailError = null) }
+
+    /** Whether the signed-in cashier may see and change cost prices. */
+    fun canSeeCost(): Boolean {
+        val role = cashierOf(_state.value.screen)?.role
+        return role == "owner" || role == "manager"
+    }
+
+    fun saveVariant(body: VariantPatchRequest) = viewModelScope.launch {
+        val detail = _state.value.selectedProduct ?: return@launch
+        _state.update { it.copy(productSaving = true, productDetailError = null) }
+        repo.patchTillVariant(detail.id, body)
+            .onSuccess { response ->
+                if (response.ok && response.product != null) {
+                    _state.update {
+                        it.copy(
+                            productSaving = false,
+                            selectedProduct = response.product,
+                            productDetailError = null,
+                        )
+                    }
+                    toast("Variant saved")
+                    refreshCatalog()
+                } else {
+                    _state.update {
+                        it.copy(
+                            productSaving = false,
+                            productDetailError = response.error ?: "Variant could not be saved.",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        productSaving = false,
+                        productDetailError = cause.message ?: "Variant could not be saved.",
+                    )
+                }
+            }
+    }
+
+    fun saveProductHeader(body: ProductPatchRequest) = viewModelScope.launch {
+        val detail = _state.value.selectedProduct ?: return@launch
+        _state.update { it.copy(productSaving = true, productDetailError = null) }
+        repo.patchTillProduct(detail.id, body)
+            .onSuccess { response ->
+                if (response.ok && response.product != null) {
+                    _state.update {
+                        it.copy(
+                            productSaving = false,
+                            selectedProduct = response.product,
+                            productDetailError = null,
+                        )
+                    }
+                    toast("Product saved")
+                    refreshCatalog()
+                } else {
+                    _state.update {
+                        it.copy(
+                            productSaving = false,
+                            productDetailError = response.error ?: "Product could not be saved.",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        productSaving = false,
+                        productDetailError = cause.message ?: "Product could not be saved.",
+                    )
+                }
+            }
+    }
+
+    /**
+     * Issues codes to variants that have none or an invalid one.
+     *
+     * Variants already carrying a valid code are never sent: the server
+     * counts them back as skipped, and the toast says so — a code on a
+     * printed sticker must not move.
+     */
+    fun generateBarcodes(variantIds: List<Int>) = viewModelScope.launch {
+        val detail = _state.value.selectedProduct ?: return@launch
+        if (variantIds.isEmpty()) return@launch
+        _state.update { it.copy(productSaving = true, productDetailError = null) }
+        repo.generateTillBarcodes(detail.id, variantIds)
+            .onSuccess { response ->
+                if (response.ok) {
+                    response.product?.let { product ->
+                        _state.update { it.copy(selectedProduct = product) }
+                    }
+                    _state.update { it.copy(productSaving = false) }
+                    toast(
+                        when {
+                            response.written > 0 && response.skippedValid > 0 ->
+                                "${response.written} barcodes issued · ${response.skippedValid} already had one"
+                            response.written > 0 ->
+                                if (response.written == 1) "1 barcode issued" else "${response.written} barcodes issued"
+                            else -> "Those variants already have barcodes"
+                        },
+                    )
+                    if (response.written > 0) refreshCatalog()
+                } else {
+                    _state.update {
+                        it.copy(
+                            productSaving = false,
+                            productDetailError = response.error ?: "No barcodes issued.",
+                        )
+                    }
+                }
+            }
+            .onFailure { cause ->
+                _state.update {
+                    it.copy(
+                        productSaving = false,
+                        productDetailError = cause.message ?: "No barcodes issued.",
+                    )
+                }
+            }
+    }
+
+    /**
+     * Prints shelf labels: one sticker per copy on the label printer, or the
+     * receipt printer where no label printer is paired. Refuses an
+     * unscannable code rather than printing a sticker that beeps at nobody.
+     */
+    fun printLabel(variant: TillProductVariant, copies: Int) = viewModelScope.launch {
+        val detail = _state.value.selectedProduct ?: return@launch
+        val barcode = variant.barcode
+        if (barcode.isNullOrBlank() || !variant.barcodeValid) {
+            _state.update {
+                it.copy(productDetailError = "Issue a valid barcode first — an unscannable sticker helps nobody.")
+            }
+            return@launch
+        }
+        val app = getApplication<Application>()
+        val transport = printerSettings.transportLabel(app)
+        if (transport is NoPrinter) {
+            _state.update {
+                it.copy(productDetailError = "No printer on this till yet — set one up in Till settings.")
+            }
+            return@launch
+        }
+        _state.update { it.copy(productSaving = true, productDetailError = null) }
+        toast(if (copies == 1) "Printing label" else "Printing $copies labels")
+        val lines = buildLabel(
+            productName = detail.name,
+            variantLabel = variant.variantLabel,
+            price = variant.sellingPrice,
+            barcode = barcode,
+            width = printerSettings.paper,
+        )
+        val job = java.io.ByteArrayOutputStream()
+        repeat(copies.coerceIn(1, 50)) { job.write(EscPos.encode(lines, printerSettings.paper)) }
+        val result = transport.send(job.toByteArray())
+        _state.update { it.copy(productSaving = false) }
+        if (result is PrintResult.Failed) {
+            _state.update { it.copy(productDetailError = result.reason) }
+        }
+    }
+
+    fun saveLabelPrinter(kind: PrinterSettings.Kind, address: String, name: String) {
+        printerSettings.labelKind = kind
+        printerSettings.labelAddress = address
+        printerSettings.labelName = name
+        _state.update { it.copy(labelPrinterDescribe = describeLabelPrinter()) }
+    }
+
+    private fun describeLabelPrinter(): String =
+        if (!printerSettings.hasLabelPrinter) ""
+        else printerSettings.transportLabel(getApplication()).describe
+
+    fun testLabelPrinter() = viewModelScope.launch {
+        _state.update { it.copy(printing = true, printerTestResult = null) }
+        val result = printerSettings
+            .transportLabel(getApplication())
+            .send(EscPos.encode(buildLabelTest(printerSettings.paper), printerSettings.paper))
+        _state.update {
+            it.copy(
+                printing = false,
+                printerTestResult = when (result) {
+                    is PrintResult.Sent ->
+                        "Sent. If nothing came out, the printer took the bytes but did " +
+                            "not print — check paper and power."
+                    is PrintResult.Failed -> result.reason
+                },
             )
         }
     }
@@ -2503,6 +2858,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         it.copy(
             printerConfigured = printerSettings.kind != PrinterSettings.Kind.None,
             printerDescribe = describePrinter(),
+            labelPrinterConfigured = printerSettings.hasLabelPrinter,
+            labelPrinterDescribe = describeLabelPrinter(),
             paper = printerSettings.paper,
             prefs = mapOf(
                 "autoPrint" to printerSettings.autoPrint,
@@ -3238,6 +3595,8 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
         is TillScreen.OpeningShift -> screen.cashier
         is TillScreen.Selling -> screen.cashier
         is TillScreen.StockCheck -> screen.cashier
+        is TillScreen.Products -> screen.cashier
+        is TillScreen.ProductDetail -> screen.cashier
         is TillScreen.Deposits -> screen.cashier
         is TillScreen.Customers -> screen.cashier
         is TillScreen.Paying -> screen.cashier

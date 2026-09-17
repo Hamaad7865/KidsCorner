@@ -85,7 +85,43 @@ class PrinterSettings(context: Context) {
      * cannot accidentally no-op their way past an unconfigured printer and
      * leave a cashier waiting for paper that was never coming.
      */
-    fun transport(context: Context): PrinterTransport = when (kind) {
+    fun transport(context: Context): PrinterTransport = transportFor(context, kind, address, name)
+
+    // ── the label printer ───────────────────────────────────────────────
+    //
+    // A second slot beside the receipt printer: barcode stickers want a
+    // dedicated machine (puqu, or whatever the shop pairs), not the receipt
+    // roll. Same transports, own keys. Labels fall back to the receipt
+    // printer when this is empty — a sticker on receipt paper still scans —
+    // and callers check [hasLabelPrinter] to say which one is answering.
+
+    var labelKind: Kind
+        get() = runCatching { Kind.valueOf(prefs.getString(KEY_LABEL_KIND, null) ?: "None") }
+            .getOrDefault(Kind.None)
+        set(value) = prefs.edit().putString(KEY_LABEL_KIND, value.name).apply()
+
+    var labelAddress: String
+        get() = prefs.getString(KEY_LABEL_ADDRESS, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_LABEL_ADDRESS, value.trim()).apply()
+
+    var labelName: String
+        get() = prefs.getString(KEY_LABEL_NAME, "").orEmpty()
+        set(value) = prefs.edit().putString(KEY_LABEL_NAME, value.trim()).apply()
+
+    val hasLabelPrinter: Boolean get() = labelKind != Kind.None && labelAddress.isNotBlank()
+
+    /** Labels print here: the label printer, or the receipt printer as fallback. */
+    fun transportLabel(context: Context): PrinterTransport {
+        val dedicated = transportFor(context, labelKind, labelAddress, labelName.ifBlank { "Label printer" })
+        return if (dedicated is NoPrinter) transport(context) else dedicated
+    }
+
+    private fun transportFor(
+        context: Context,
+        kind: Kind,
+        address: String,
+        name: String,
+    ): PrinterTransport = when (kind) {
         Kind.None -> NoPrinter
         Kind.Bluetooth ->
             if (address.isBlank()) NoPrinter
@@ -102,6 +138,9 @@ class PrinterSettings(context: Context) {
         const val KEY_KIND = "kind"
         const val KEY_ADDRESS = "address"
         const val KEY_NAME = "name"
+        const val KEY_LABEL_KIND = "label_kind"
+        const val KEY_LABEL_ADDRESS = "label_address"
+        const val KEY_LABEL_NAME = "label_name"
         const val KEY_PORT = "port"
         const val KEY_PAPER = "paper"
         const val KEY_AUTO_PRINT = "auto_print"

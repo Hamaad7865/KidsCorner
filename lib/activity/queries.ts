@@ -428,6 +428,7 @@ export async function getActivity(filters: ActivityFilters): Promise<ActivityDat
 const TITLES: Record<string, string> = {
   "price.changed": "Price changed",
   "cost.changed": "Cost changed",
+  "product.changed": "Product changed",
   "staff.role_changed": "Role changed",
   "staff.pin_changed": "PIN changed",
   "staff.active_changed": "Staff account changed",

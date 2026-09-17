@@ -40,6 +40,16 @@ sealed interface ReceiptLine {
     data class Barcode(val code: String) : ReceiptLine
 
     /**
+     * A product barcode in EAN-13, for shelf labels.
+     *
+     * Separate from [Barcode] on purpose: that one is CODE39 for sale
+     * numbers (alphanumeric with a hyphen, which EAN-13 cannot express),
+     * and this one is EAN-13 for catalogue codes (twelve digits whose
+     * check digit the printer computes itself).
+     */
+    data class Ean13(val code: String) : ReceiptLine
+
+    /**
      * A QR symbol rendered by the printer — the receipt-recall code. Scanning
      * it at the till pulls the sale back up for a reprint or a refund.
      */
@@ -102,6 +112,8 @@ internal fun renderLine(line: ReceiptLine, columns: Int): String = when (line) {
     is ReceiptLine.Feed -> "\n".repeat((line.lines - 1).coerceAtLeast(0))
 
     is ReceiptLine.Barcode -> line.code
+
+    is ReceiptLine.Ean13 -> "[EAN13: ${line.code}]"
 
     // The preview cannot draw a real symbol, so it says where the QR sits.
     // Same payload the printer encodes — nothing about the receipt differs.

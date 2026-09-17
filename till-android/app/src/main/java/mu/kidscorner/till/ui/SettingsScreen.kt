@@ -76,6 +76,10 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPrinter: () -> Unit,
     onTestPrint: () -> Unit,
+    labelPrinterConfigured: Boolean = false,
+    labelPrinterLabel: String = "",
+    onOpenLabelPrinter: () -> Unit = {},
+    onTestLabelPrint: () -> Unit = {},
     onTestDrawer: () -> Unit = {},
     /** The drawer fires through the printer, so it is ready exactly when the printer is. */
     drawerReady: Boolean = false,
@@ -84,7 +88,8 @@ fun SettingsScreen(
     onShareDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+        Column(modifier.fillMaxSize()) {
 
         // ── header: `padding:13px 18px 8px; gap:12px` ───────────────────────
         Row(
@@ -194,7 +199,24 @@ fun SettingsScreen(
                 ),
                 Periph("Card terminal", Icons.Default.CreditCard, Color(0xFFEEEAFA), Color(0xFF5B4B9E)),
                 Periph("Customer display", Icons.Default.Monitor, Handoff.Well, Handoff.Muted),
-                Periph("Label printer", Icons.Default.Label, Color(0xFFFDECE6), Color(0xFFB4552F)),
+                // The sticker machine (puqu): labels print here when paired,
+                // else they fall back to the receipt printer.
+                Periph(
+                    "Label printer",
+                    Icons.Default.Label,
+                    Color(0xFFFDECE6),
+                    Color(0xFFB4552F),
+                    live = true,
+                    on = labelPrinterConfigured,
+                    model = if (labelPrinterConfigured) {
+                        labelPrinterLabel.ifBlank { "Paired" }
+                    } else {
+                        "Receipt printer prints labels"
+                    },
+                    testLabel = "Test label",
+                    toggleOverride = onOpenLabelPrinter,
+                    testOverride = onTestLabelPrint,
+                ),
             )
 
             cards.chunked(2).forEach { pair ->
@@ -221,6 +243,7 @@ fun SettingsScreen(
                 shape = RoundedCornerShape(13.dp),
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
+                shadowElevation = 2.dp,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
@@ -309,6 +332,7 @@ fun SettingsScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -322,6 +346,8 @@ private data class Periph(
     val on: Boolean = false,
     val model: String = "",
     val testLabel: String = "",
+    /** When set, the card's toggle opens this instead of the receipt printer dialog. */
+    val toggleOverride: (() -> Unit)? = null,
     /** When set, the card's test key runs this instead of the shared printer test. */
     val testOverride: (() -> Unit)? = null,
     /** False where there is nothing to pulse — the wedge scanner just types. */
@@ -360,6 +386,7 @@ private fun PeripheralCard(
         shape = RoundedCornerShape(13.dp),
         color = Handoff.Surface,
         border = BorderStroke(1.dp, Handoff.LineSoft),
+        shadowElevation = 2.dp,
         modifier = modifier,
     ) {
         Column(Modifier.padding(start = 15.dp, end = 15.dp, top = 14.dp, bottom = 12.dp)) {
@@ -416,7 +443,11 @@ private fun PeripheralCard(
                         }
                     }
                 }
-                Toggle(on = card.live && card.on, enabled = card.live, onClick = onToggle)
+                Toggle(
+                    on = card.live && card.on,
+                    enabled = card.live,
+                    onClick = { card.toggleOverride?.invoke() ?: onToggle() },
+                )
             }
 
             // A live card with a test to pulse shows the test row; an offline

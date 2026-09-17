@@ -101,7 +101,8 @@ fun StockCheckScreen(
         }
     }
 
-    Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+        Column(modifier.fillMaxSize()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -218,6 +219,7 @@ fun StockCheckScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -246,9 +248,10 @@ private fun MatchList(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Handoff.Surface,
         border = BorderStroke(1.dp, Handoff.Line),
+        shadowElevation = 2.dp,
     ) {
         when {
             query.isBlank() -> EmptyMessage(
@@ -309,9 +312,10 @@ private fun StockDetails(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = Handoff.Surface,
         border = BorderStroke(1.dp, Handoff.Line),
+        shadowElevation = 2.dp,
     ) {
         if (product == null) {
             EmptyMessage(

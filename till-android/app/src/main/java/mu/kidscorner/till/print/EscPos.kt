@@ -96,6 +96,33 @@ object EscPos {
     private const val CODE39_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%"
 
     /**
+     * GS k 67 — EAN-13, for product shelf labels.
+     *
+     * Twelve digits in, the printer computes the check digit itself, so a
+     * thirteen-digit code is sent as its first twelve (which recompute to the
+     * same check) and anything shorter is dropped — a short symbol scans as a
+     * different product, which is worse than no symbol.
+     */
+    fun ean13(code: String): ByteArray {
+        val digits = code.filter { it.isDigit() }
+        val payload = when (digits.length) {
+            12 -> digits
+            13 -> digits.take(12)
+            else -> return ByteArray(0)
+        }
+
+        return ByteArrayOutputStream().apply {
+            write(byteArrayOf(GS, 0x68, 80))          // GS h — taller than receipts: labels scan at arm's length
+            write(byteArrayOf(GS, 0x77, 3))           // GS w — module width
+            write(byteArrayOf(GS, 0x48, 2))           // GS H — print the digits below
+            write(byteArrayOf(GS, 0x6B, 67))          // GS k 67 — EAN-13, length-prefixed
+            write(payload.length)
+            write(payload.toByteArray(Charsets.US_ASCII))
+            write(LF.toInt())
+        }.toByteArray()
+    }
+
+    /**
      * GS ( k — a QR symbol, for the receipt-recall code.
      *
      * Four commands against the printer's symbol storage: store the payload,
@@ -146,6 +173,12 @@ object EscPos {
                 is ReceiptLine.Barcode -> {
                     out.write(align(1))
                     out.write(barcode(line.code))
+                    out.write(align(0))
+                }
+
+                is ReceiptLine.Ean13 -> {
+                    out.write(align(1))
+                    out.write(ean13(line.code))
                     out.write(align(0))
                 }
 

@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.focusProperties
@@ -412,7 +413,8 @@ fun SellScreen(
         sellScans?.collect { submitCode(it, fromScanner = true) }
     }
 
-    Column(modifier.fillMaxSize().background(Handoff.Canvas)) {
+    TillGround {
+    Column(modifier.fillMaxSize()) {
         TillChrome(
             shopName = shopName,
             cashier = cashier,
@@ -585,6 +587,7 @@ fun SellScreen(
                 Modifier
                     .weight(54f)
                     .fillMaxHeight()
+                    .shadow(2.dp, RoundedCornerShape(16.dp))
                     .clip(RoundedCornerShape(16.dp))
                     .background(Handoff.Surface)
                     .border(1.dp, Handoff.Line, RoundedCornerShape(16.dp)),
@@ -631,6 +634,7 @@ fun SellScreen(
             }
         }
 
+    }
     }
 
     picker?.let { group ->
