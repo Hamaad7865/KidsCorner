@@ -69,9 +69,26 @@ fun StockCheckScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** A typed or gun-scanned code resolved against the catalogue. */
+    onFindBarcode: (String) -> CatalogVariant? = { null },
+    /** A gun burst that matched nothing — the till toasts, since scan mode shows no field. */
+    onUnknownBarcode: (String) -> Unit = {},
+    /**
+     * Scan mode, armed from the same shared switch as the sell screen: the
+     * search field is swapped for a status pill and gun bursts arrive on
+     * [stockCheckScans], assembled below focus — no field, no focus, no keyboard.
+     */
+    scanArmed: Boolean = false,
+    onScanArmedChange: (Boolean) -> Unit = {},
+    /** Finished gun bursts, one code per emission. Null in previews. */
+    stockCheckScans: kotlinx.coroutines.flow.SharedFlow<String>? = null,
 ) {
     var query by remember { mutableStateOf("") }
     var showingResults by remember { mutableStateOf(false) }
+    /** Last product a scan found, flashed in the pill so it is seen to land. */
+    var lastScan by remember { mutableStateOf<String?>(null) }
+    /** Last code a scan could not match, flashed red in the pill. */
+    var scanError by remember { mutableStateOf<String?>(null) }
     // Strict IME rule, same as the sell screen: focus gains must never summon
     // the keyboard, so the field suppresses show-on-focus and summons it
     // explicitly on a tap. Scanner input still lands whenever it holds focus.
@@ -79,6 +96,12 @@ fun StockCheckScreen(
     val taps = remember { MutableInteractionSource() }
     LaunchedEffect(taps) {
         taps.interactions.collect { if (it is PressInteraction.Press) keyboard?.show() }
+    }
+    LaunchedEffect(lastScan) {
+        if (lastScan != null) { kotlinx.coroutines.delay(1_600); lastScan = null }
+    }
+    LaunchedEffect(scanError) {
+        if (scanError != null) { kotlinx.coroutines.delay(2_200); scanError = null }
     }
     val matches = remember(query, catalog) { stockCheckMatches(query, catalog) }
     val selected = remember(state.productId, catalog) {
@@ -99,6 +122,24 @@ fun StockCheckScreen(
         } else {
             showingResults = true
         }
+    }
+
+    /** A finished gun burst: an exact barcode match opens the product. */
+    fun submitScan(raw: String) {
+        val found = onFindBarcode(raw.trim())
+        if (found != null) {
+            productFrom(found.productId, catalog)?.let { choose(it) }
+            lastScan = found.productName
+            scanError = null
+        } else {
+            onUnknownBarcode(raw)
+            scanError = raw
+            lastScan = null
+        }
+    }
+
+    LaunchedEffect(stockCheckScans) {
+        stockCheckScans?.collect { submitScan(it) }
     }
 
     TillGround {
@@ -144,35 +185,41 @@ fun StockCheckScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = {
-                    query = it
-                    showingResults = it.isNotBlank()
-                },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                interactionSource = taps,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                placeholder = { Text("Product name, code or barcode") },
-                keyboardOptions = KeyboardOptions(
-                    imeAction = ImeAction.Search,
-                    showKeyboardOnFocus = false,
-                ),
-                keyboardActions = KeyboardActions(onSearch = { submit() }),
+            ScanModeToggle(
+                active = scanArmed,
+                onToggle = { onScanArmedChange(!scanArmed) },
             )
-            Button(onClick = ::submit, modifier = Modifier.height(56.dp)) {
-                Icon(Icons.Default.Search, contentDescription = null)
-                Spacer(Modifier.width(7.dp))
-                Text("Search")
-            }
-            OutlinedButton(
-                onClick = { if (query.isNotBlank()) submit() },
-                modifier = Modifier.height(56.dp),
-            ) {
-                Icon(Icons.Default.QrCodeScanner, contentDescription = null)
-                Spacer(Modifier.width(7.dp))
-                Text("Scan")
+            if (scanArmed) {
+                ScanModePill(
+                    lastScan = lastScan,
+                    error = scanError,
+                    okPrefix = "Found",
+                    idleText = "Scan a barcode",
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = {
+                        query = it
+                        showingResults = it.isNotBlank()
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    interactionSource = taps,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    placeholder = { Text("Product name, code or barcode") },
+                    keyboardOptions = KeyboardOptions(
+                        imeAction = ImeAction.Search,
+                        showKeyboardOnFocus = false,
+                    ),
+                    keyboardActions = KeyboardActions(onSearch = { submit() }),
+                )
+                Button(onClick = ::submit, modifier = Modifier.height(56.dp)) {
+                    Icon(Icons.Default.Search, contentDescription = null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Search")
+                }
             }
         }
 

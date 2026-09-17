@@ -763,69 +763,6 @@ private fun ScanButton(onClick: () -> Unit) {
 }
 
 /**
- * The scan-mode toggle: the same 56px key, lit accent while scan mode owns
- * the gun. Off, it is quiet — search/type is the till's default face.
- */
-@Composable
-private fun ScanModeToggle(active: Boolean, onToggle: () -> Unit) {
-    Surface(
-        onClick = onToggle,
-        shape = RoundedCornerShape(12.dp),
-        color = if (active) Handoff.AccentSolid else Handoff.Surface,
-        contentColor = if (active) Color.White else Handoff.InkStrong,
-        border = BorderStroke(1.dp, if (active) Handoff.AccentSolid else Handoff.Line),
-        modifier = Modifier.size(56.dp),
-    ) {
-        Box(Modifier.fillMaxSize(), Alignment.Center) {
-            Icon(Icons.Default.QrCodeScanner, "Scan mode", Modifier.size(22.dp))
-        }
-    }
-}
-
-/**
- * What the search field becomes in scan mode: a status pill, never a textbox.
- * Ready, the last product a scan landed, or the code that matched nothing —
- * the gun's whole conversation with the cashier, with nothing typed on screen.
- */
-@Composable
-private fun ScanModePill(
-    lastScan: String?,
-    error: String?,
-    modifier: Modifier = Modifier,
-) {
-    val(err,msg) = when {
-        error != null -> true to "No match — $error"
-        lastScan != null -> false to "Added · $lastScan"
-        else -> false to "Scan mode · ready"
-    }
-    Row(
-        modifier
-            .height(56.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (err) Handoff.DangerTint else Handoff.FieldWell)
-            .border(1.dp, if (err) Handoff.Danger else Handoff.Line, RoundedCornerShape(12.dp))
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(if (err) Handoff.Danger else Success),
-        )
-        Text(
-            msg,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (err) Handoff.Danger else Handoff.Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/**
  * The handoff's own barcode mark: six bars of varying weight.
  *
  * The tint comes from `LocalContentColor`, which is what `Surface(contentColor)`

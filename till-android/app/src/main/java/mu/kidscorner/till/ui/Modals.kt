@@ -39,9 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -120,7 +122,9 @@ fun CustomerDialog(
         onDismiss = onDismiss,
     ) {
         if (!adding) {
-            Box(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+            // Top padding to clear the header band: without it the field sits
+            // hard against the tint and reads as part of the header.
+            Box(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp)) {
                 HandoffField(
                     value = query,
                     onValueChange = { query = it },
@@ -217,7 +221,7 @@ fun CustomerDialog(
             }
         } else {
             Column(
-                Modifier.padding(horizontal = 20.dp),
+                Modifier.padding(horizontal = 20.dp).padding(top = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 FieldLabel("Name")
@@ -576,6 +580,12 @@ fun MovementDialog(
     LaunchedEffect(done) { if (done) onDismiss() }
 
     val value = amount.toDoubleOrNull() ?: 0.0
+    val focus = LocalFocusManager.current
+    // One submit path for the key and the keyboard: Enter on the reason
+    // records exactly what the button would, and only when it would.
+    fun submit() {
+        if (!busy && value > 0 && reason.trim().length >= 3) onRecord(value, payIn, reason.trim())
+    }
 
     HandoffDialog(title = "Cash in or out", width = 580, maxHeight = 600, onDismiss = onDismiss) {
         Column(
@@ -618,6 +628,8 @@ fun MovementDialog(
                 keyboard = KeyboardType.Decimal,
                 mono = true,
                 enabled = !busy,
+                imeAction = ImeAction.Next,
+                onImeAction = { focus.moveFocus(FocusDirection.Down) },
             )
 
             FieldLabel("Reason")
@@ -626,6 +638,8 @@ fun MovementDialog(
                 onValueChange = { if (it.length <= 200) reason = it },
                 placeholder = "e.g. paid the bread supplier",
                 enabled = !busy,
+                imeAction = ImeAction.Done,
+                onImeAction = ::submit,
             )
 
             error?.let { Text(it, fontSize = 12.5.sp, color = Handoff.Danger) }

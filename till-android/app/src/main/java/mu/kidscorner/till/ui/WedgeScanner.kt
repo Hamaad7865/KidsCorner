@@ -13,6 +13,9 @@ sealed interface ScanRoute {
 
     /** Past sales is open: the code recalls a receipt. */
     data object Recall : ScanRoute
+
+    /** Stock check is showing: the code looks the product up. */
+    data object StockCheck : ScanRoute
 }
 
 /**

@@ -3983,8 +3983,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
      * Throw the drawer open.
      *
      * Fired as a cash sale completes — and always when change is due, whatever
-     * the switch says, because the coins the cashier owes live in it. Also on
-     * the Actions screen's manual button, for payouts and no-sale opens.
+     * the switch says, because the coins the cashier owes live in it.
      *
      * Failures are swallowed. A shop with no drawer wired to the printer must
      * not get an error every time it takes cash.
@@ -3992,6 +3991,25 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
     fun openCashDrawer() = viewModelScope.launch {
         runCatching {
             printerSettings.transport(getApplication()).send(EscPos.openDrawer())
+        }
+    }
+
+    /**
+     * The same pulse, asked for by a person — the menu key, the payment
+     * screen, the settings test.
+     *
+     * Loud, unlike the automatic pop: a button that silently does nothing
+     * reads as broken, and on an emulator with no printer that is exactly
+     * what the silent version does. Success gets a toast too, so a drawer
+     * that still sits shut after "popped" points at its own cable, not the app.
+     */
+    fun popCashDrawer() = viewModelScope.launch {
+        val result = runCatching {
+            printerSettings.transport(getApplication()).send(EscPos.openDrawer())
+        }.getOrElse { PrintResult.Failed("Could not reach the printer.") }
+        when (result) {
+            is PrintResult.Sent -> toast("Cash drawer popped")
+            is PrintResult.Failed -> toast(result.reason)
         }
     }
 

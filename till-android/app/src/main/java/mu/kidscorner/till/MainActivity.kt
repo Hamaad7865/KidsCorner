@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
     private val wedge = WedgeScanner()
     internal val sellScans = MutableSharedFlow<String>(extraBufferCapacity = 64)
     internal val recallScans = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    internal val stockCheckScans = MutableSharedFlow<String>(extraBufferCapacity = 64)
 
     /**
      * Where the next finished burst goes. Written from composition as the
@@ -119,6 +120,7 @@ class MainActivity : ComponentActivity() {
                         when (route) {
                             ScanRoute.Sell -> sellScans.tryEmit(code)
                             ScanRoute.Recall -> recallScans.tryEmit(code)
+                            ScanRoute.StockCheck -> stockCheckScans.tryEmit(code)
                             ScanRoute.None -> Unit
                         }
                     } else {
@@ -211,6 +213,7 @@ private fun TillRoot(
             !scanArmed -> ScanRoute.None
             overlay == Overlay.Txns -> ScanRoute.Recall
             overlay == Overlay.None && state.screen is TillScreen.Selling -> ScanRoute.Sell
+            overlay == Overlay.None && state.screen is TillScreen.StockCheck -> ScanRoute.StockCheck
             else -> ScanRoute.None
         }
     }
@@ -394,6 +397,11 @@ private fun TillRoot(
                 onSelectProduct = vm::selectStockProduct,
                 onRetry = vm::retryStockCheck,
                 onBack = vm::closeStockCheck,
+                onFindBarcode = vm::findByBarcode,
+                onUnknownBarcode = { vm.toast("Unknown barcode — not in catalogue") },
+                scanArmed = scanArmed,
+                onScanArmedChange = { scanArmed = it },
+                stockCheckScans = activity.stockCheckScans,
             )
 
             is TillScreen.Deposits -> DepositsScreen(
@@ -495,7 +503,7 @@ private fun TillRoot(
                 // ringing up a second sale.
                 onRetry = { vm.retryFrozenSale() },
                 onPark = vm::parkFrozenSale,
-                onOpenDrawer = vm::openCashDrawer,
+                onOpenDrawer = vm::popCashDrawer,
                 onCancel = vm::cancelPayment,
             )
 
@@ -514,7 +522,7 @@ private fun TillRoot(
                 onOpenLabelPrinter = { overlay = Overlay.LabelPrinter },
                 onTestPrint = vm::testPrinter,
                 onTestLabelPrint = vm::testLabelPrinter,
-                onTestDrawer = vm::openCashDrawer,
+                onTestDrawer = vm::popCashDrawer,
                 drawerReady = state.printerConfigured,
                 onSetPaper = vm::setPaper,
                 onSetPref = vm::setPref,
@@ -854,7 +862,7 @@ private fun TillRoot(
                 overlay = Overlay.Txns
                 vm.searchHistory("")
             },
-            onOpenDrawer = { overlay = Overlay.None; vm.openCashDrawer() },
+            onOpenDrawer = { overlay = Overlay.None; vm.popCashDrawer() },
             onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },
