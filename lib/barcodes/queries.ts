@@ -131,27 +131,37 @@ export async function listLabelRows(variantIds: number[]): Promise<LabelRow[]> {
 /** As many products as the label picker lists before asking for a search. */
 const PRINTABLE_LIMIT = 500
 
+export type PrintableVariant = {
+  variantId: number
+  colourName: string
+  sizeLabel: string
+  barcode: string
+  /** Units at the chosen location — the default label count for this variant. */
+  stock: number
+}
+
 export type PrintableProductRow = {
   productId: number
   name: string
   categoryName: string | null
   brandName: string | null
-  /** Variant ids with a valid barcode — printable now. */
-  barcodedVariantIds: number[]
-  /** Variant ids with no barcode or an invalid one — what "Generate" fixes. */
-  barcodelessVariantIds: number[]
-  /** Units of the barcoded variants at the chosen location: the label count. */
+  /** Printable variants (valid barcode only), each with its stock at the location. */
+  variants: PrintableVariant[]
+  /** How many variants still need a code — missing or invalid — for "Generate". */
+  barcodelessCount: number
+  /** Sum of the printable variants' stock: the default total for the product. */
   unitsAtLocation: number
 }
 
 /**
- * The products the label picker shows, each with what it needs to print or to
- * generate: which variants already carry a barcode, which do not, and how many
- * units of the barcoded ones sit at the chosen location.
+ * The products the label picker shows, each with its printable variants (the
+ * ones carrying a valid barcode, with stock at the chosen location) and a count
+ * of those still needing a code, so a row can be expanded to set per-variant
+ * quantities or offered a Generate button.
  *
  * Three reads merged in memory rather than one clever join: the products, their
- * variants split by whether a barcode exists, and the per-location balances for
- * the barcoded ones. Bounded to {@link PRINTABLE_LIMIT} products, with a search
+ * variants (with colour, size and barcode), and the per-location balances for
+ * the printable ones. Bounded to {@link PRINTABLE_LIMIT} products, with a search
  * to narrow past that — the same shape as the products list.
  */
 export async function listPrintableProducts(
@@ -181,26 +191,50 @@ export async function listPrintableProducts(
 
   const { data: variants, error: variantError } = await supabase
     .from("product_variants")
-    .select("id, product_id, barcode")
+    .select("id, product_id, barcode, sizes ( label, sort_order ), colours ( name )")
     .in("product_id", productIds)
 
   if (variantError) throw variantError
 
-  const barcoded = new Map<number, number[]>()
-  const barcodeless = new Map<number, number[]>()
+  type RawVariant = {
+    id: number
+    sizeLabel: string
+    sizeSort: number
+    colourName: string
+  }
+  const printableByProduct = new Map<number, RawVariant[]>()
+  const barcodelessCount = new Map<number, number>()
   const allBarcodedIds: number[] = []
 
   for (const variant of variants ?? []) {
     if (variant.product_id === null) continue
-    // A present-but-invalid barcode (wrong check digit, mistyped or imported)
-    // is not printable — it renders as "Invalid barcode" and never scans — so it
-    // counts as needing a code, not as barcoded. Generate then reissues it.
+    // A present-but-invalid barcode (wrong check digit, mistyped or imported) is
+    // not printable — it renders as "Invalid barcode" and never scans — so it
+    // counts as needing a code, not as printable. Generate then reissues it.
     const printable = variant.barcode !== null && isValidEan13(variant.barcode)
-    const bucket = printable ? barcoded : barcodeless
-    const list = bucket.get(variant.product_id) ?? []
-    list.push(variant.id)
-    bucket.set(variant.product_id, list)
-    if (printable) allBarcodedIds.push(variant.id)
+    if (printable) {
+      const list = printableByProduct.get(variant.product_id) ?? []
+      list.push({
+        id: variant.id,
+        sizeLabel: variant.sizes?.label ?? "—",
+        sizeSort: variant.sizes?.sort_order ?? 0,
+        colourName: variant.colours?.name ?? "—",
+      })
+      printableByProduct.set(variant.product_id, list)
+      allBarcodedIds.push(variant.id)
+    } else {
+      barcodelessCount.set(
+        variant.product_id,
+        (barcodelessCount.get(variant.product_id) ?? 0) + 1,
+      )
+    }
+  }
+
+  // The barcode text keyed by id, so each printable variant can carry its own
+  // code for the label without a second lookup.
+  const barcodeById = new Map<number, string>()
+  for (const variant of variants ?? []) {
+    if (variant.barcode) barcodeById.set(variant.id, variant.barcode)
   }
 
   // Location undefined (no locations set up) means no stock rows to ask for, so
@@ -211,18 +245,27 @@ export async function listPrintableProducts(
       : await stockForVariantsAtLocation(allBarcodedIds, locationId)
 
   const rows = shown.map((product) => {
-    const barcodedIds = barcoded.get(product.id) ?? []
+    const raw = printableByProduct.get(product.id) ?? []
+    // Size order then colour, the way the variant matrix reads.
+    raw.sort(
+      (a, b) => a.sizeSort - b.sizeSort || a.colourName.localeCompare(b.colourName),
+    )
+    const printableVariants: PrintableVariant[] = raw.map((variant) => ({
+      variantId: variant.id,
+      colourName: variant.colourName,
+      sizeLabel: variant.sizeLabel,
+      barcode: barcodeById.get(variant.id) ?? "",
+      stock: stock.get(variant.id) ?? 0,
+    }))
+
     return {
       productId: product.id,
       name: product.name,
       categoryName: product.categories?.name ?? null,
       brandName: product.brands?.name ?? null,
-      barcodedVariantIds: barcodedIds,
-      barcodelessVariantIds: barcodeless.get(product.id) ?? [],
-      unitsAtLocation: barcodedIds.reduce(
-        (sum, id) => sum + (stock.get(id) ?? 0),
-        0,
-      ),
+      variants: printableVariants,
+      barcodelessCount: barcodelessCount.get(product.id) ?? 0,
+      unitsAtLocation: printableVariants.reduce((sum, v) => sum + v.stock, 0),
     }
   })
 

@@ -4,11 +4,9 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
 import { isValidEan13, prefixProblem } from "@/lib/barcodes/ean13"
-import { MAX_COPIES_PER_VARIANT } from "@/lib/barcodes/labels"
 import { allocateBarcodes, getBarcodeSettings } from "@/lib/barcodes/settings"
 import { canManageCatalog } from "@/lib/auth/roles"
 import { getSessionProfile } from "@/lib/auth/session"
-import { stockForVariantsAtLocation } from "@/lib/stock/queries"
 import {
   boolOf,
   fieldErrorsOf,
@@ -282,71 +280,4 @@ export async function generateBarcodesForProduct(
     ok: true,
     message: problems.length > 0 ? `${issued}, ${problems.length} failed.` : `${issued}.`,
   }
-}
-
-/**
- * Build the roll-label URL that prints every barcoded variant of the selected
- * products at its stock count for one location.
- *
- * The counts are read here, server-side, not trusted from the browser: the
- * table shows a number but a print run must reflect the ledger, and a tampered
- * count could otherwise spool the roll. Returns null with a reason when there is
- * nothing to print, so the picker can say why rather than open a blank sheet.
- */
-export async function batchLabelHref(
-  productIds: number[],
-  locationId: number,
-): Promise<{ href: string | null; message?: string }> {
-  const profile = await getSessionProfile()
-  if (!profile || !profile.isActive) {
-    return { href: null, message: "Your session has expired." }
-  }
-  if (!canManageCatalog(profile.role)) {
-    return { href: null, message: "Only an owner or manager can print labels." }
-  }
-
-  const ids = productIds.filter((id) => Number.isInteger(id) && id > 0)
-  if (ids.length === 0) return { href: null, message: "Pick at least one product." }
-  if (!Number.isInteger(locationId) || locationId <= 0) {
-    return { href: null, message: "Pick a location first." }
-  }
-
-  const supabase = await createClient()
-  const { data: variants, error } = await supabase
-    .from("product_variants")
-    .select("id, barcode")
-    .in("product_id", ids)
-    .not("barcode", "is", null)
-
-  if (error) return { href: null, message: error.message }
-
-  // Valid codes only: an invalid barcode would print as "Invalid barcode" on a
-  // sticker, so it is excluded here exactly as the picker excludes it from the
-  // printable count.
-  const variantIds = (variants ?? [])
-    .filter((row) => row.barcode !== null && isValidEan13(row.barcode))
-    .map((row) => row.id)
-  if (variantIds.length === 0) {
-    return {
-      href: null,
-      message: "None of the selected products has a valid barcode yet. Generate them first.",
-    }
-  }
-
-  const stock = await stockForVariantsAtLocation(variantIds, locationId)
-  const pairs = variantIds
-    .map((id) => [id, Math.min(stock.get(id) ?? 0, MAX_COPIES_PER_VARIANT)] as const)
-    .filter(([, count]) => count > 0)
-
-  if (pairs.length === 0) {
-    return {
-      href: null,
-      message: "Nothing in stock at this location for the selected products.",
-    }
-  }
-
-  // The anchor product only names the route; the copies carry variants across
-  // all the selected products, which the sheet prints as given.
-  const copies = pairs.map(([id, count]) => `${id}:${count}`).join(",")
-  return { href: `/products/${ids[0]}/labels?label=40x30&copies=${copies}` }
 }

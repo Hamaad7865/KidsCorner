@@ -84,8 +84,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
         <MobileNav allowed={allowed} />
 
-        {/* The only scrolling element. Everything else is chrome and stays. */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6 print:overflow-visible">
+        {/* The only scrolling element. Everything else is chrome and stays.
+            `print:p-0` so a label sheet starts at the page's top-left corner —
+            the screen padding here otherwise offsets every 40x30 label and
+            pushes each one across a page boundary. */}
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6 print:overflow-visible print:p-0">
           {children}
         </main>
       </div>

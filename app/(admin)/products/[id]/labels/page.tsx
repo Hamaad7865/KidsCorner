@@ -209,20 +209,21 @@ export default async function LabelsPage({
           emptyState
         ) : (
           <div className="mx-auto bg-white" style={{ width: `${roll.w}mm` }}>
-            {sheet.map((label, index) => (
+            {sheet.map((label) => (
               <div
                 key={`${label.id}-${label.copy}`}
                 className="flex flex-col items-center justify-center bg-white text-center"
-                // One label filling one physical page. break-after on every
-                // label but the last: a trailing page break ejects one blank
-                // sticker per job, wasted forever on a roll.
+                // One label is exactly one physical page, so natural pagination
+                // puts one per page with no help. A forced `break-after: page`
+                // here is what caused the blank-every-other-label bug: an element
+                // that already fills the page to its edge, told to break after,
+                // makes the browser emit an empty page before the next label.
                 style={{
                   width: `${roll.w}mm`,
                   height: `${roll.h}mm`,
                   padding: "1mm",
                   boxSizing: "border-box",
                   overflow: "hidden",
-                  breakAfter: index < sheet.length - 1 ? "page" : undefined,
                 }}
               >
                 <div className="w-full truncate text-[7px] leading-tight font-semibold text-black">

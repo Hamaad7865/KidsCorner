@@ -138,7 +138,9 @@ export default async function PrintLabelsPage({
             {q ? ` matching “${q}”` : ""}
             {truncated ? " — search to narrow the list." : ""}
           </p>
-          <PrintLabelsTable rows={rows} locationId={locationId} />
+          {/* Keyed by location so a switch resets edited quantities to that
+              location's stock defaults rather than carrying the old ones over. */}
+          <PrintLabelsTable key={locationId} rows={rows} />
         </div>
       )}
     </div>
