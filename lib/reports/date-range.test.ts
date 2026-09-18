@@ -8,6 +8,7 @@ import {
   monthMatrix,
   orderRange,
   presets,
+  yearBlock,
   ymd,
 } from "./date-range"
 
@@ -85,5 +86,24 @@ describe("range helpers", () => {
     expect(formatRange("2026-09-04", "2026-09-04")).toBe("4/9/2026")
     expect(formatRange("2026-09-04", "2026-09-14")).toBe("4/9/2026 – 14/9/2026")
     expect(ymd(2026, 8, 1)).toBe("2026-09-01")
+  })
+})
+
+describe("yearBlock", () => {
+  it("covers twelve aligned years containing the viewed one", () => {
+    // 2026 sits in the 2016–2027 block (2026 − 2026 % 12).
+    expect(yearBlock(2026)).toEqual({
+      start: 2016,
+      years: [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027],
+    })
+  })
+
+  it("holds the block steady while stepping inside it", () => {
+    // Month/year chevrons must not reshuffle the grid under the cursor —
+    // only crossing an edge moves it.
+    expect(yearBlock(2016).start).toBe(2016)
+    expect(yearBlock(2027).start).toBe(2016)
+    expect(yearBlock(2028).start).toBe(2028)
+    expect(yearBlock(2015).start).toBe(2004)
   })
 })

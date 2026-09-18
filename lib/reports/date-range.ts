@@ -54,6 +54,20 @@ export function addMonths(
   return { year: Math.floor(total / 12), month0: ((total % 12) + 12) % 12 }
 }
 
+/**
+ * The twelve years the picker's year level shows as one block.
+ *
+ * Aligned to multiples of twelve from the viewed year, so stepping months or
+ * single years never reshuffles the block under the cursor — only crossing a
+ * block edge (or the chevrons) moves it.
+ */
+export const YEAR_BLOCK = 12
+
+export function yearBlock(year: number): { start: number; years: number[] } {
+  const start = year - (((year % YEAR_BLOCK) + YEAR_BLOCK) % YEAR_BLOCK)
+  return { start, years: Array.from({ length: YEAR_BLOCK }, (_, i) => start + i) }
+}
+
 /** d/m/yyyy — Mauritius reads dates day-first. */
 export function formatYmd(iso: Ymd): string {
   const { year, month0, day } = parseYmd(iso)

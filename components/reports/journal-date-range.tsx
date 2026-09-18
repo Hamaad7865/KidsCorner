@@ -7,6 +7,7 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react"
 import {
   MONTHS,
   WEEKDAYS,
+  YEAR_BLOCK,
   addMonths,
   formatRange,
   inRange,
@@ -14,6 +15,7 @@ import {
   orderRange,
   parseYmd,
   presets,
+  yearBlock,
   type Ymd,
 } from "@/lib/reports/date-range"
 import { cn } from "@/lib/utils"
@@ -40,7 +42,10 @@ export function JournalDateRange({
   const router = useRouter()
   const box = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  const [level, setLevel] = useState<"day" | "month">("day")
+  // Drilling: day ⇄ month ⇄ year. The title steps up a level, picking a
+  // year or a month steps back down — the way every native date picker
+  // works, so a 2024 report is three taps away instead of twenty chevrons.
+  const [level, setLevel] = useState<"day" | "month" | "year">("day")
   const [view, setView] = useState(() => {
     const p = parseYmd(to)
     return { year: p.year, month0: p.month0 }
@@ -91,10 +96,31 @@ export function JournalDateRange({
   }
 
   const weeks = monthMatrix(view.year, view.month0)
+  const block = yearBlock(view.year)
   const step = (delta: number) =>
     setView((v) => addMonths(v.year, v.month0, delta))
   const stepYear = (delta: number) =>
     setView((v) => ({ ...v, year: v.year + delta }))
+  const stepBlock = (delta: number) =>
+    setView((v) => ({ ...v, year: v.year + delta * YEAR_BLOCK }))
+  const levelUp = () =>
+    setLevel((l) => (l === "day" ? "month" : l === "month" ? "year" : "day"))
+  const stepBack = () => {
+    if (level === "year") stepBlock(-1)
+    else if (level === "month") stepYear(-1)
+    else step(-1)
+  }
+  const stepForward = () => {
+    if (level === "year") stepBlock(1)
+    else if (level === "month") stepYear(1)
+    else step(1)
+  }
+  const title =
+    level === "day"
+      ? `${MONTHS[view.month0]} ${view.year}`
+      : level === "month"
+        ? `${view.year}`
+        : `${block.start} – ${block.start + YEAR_BLOCK - 1}`
 
   const headClass =
     "text-muted-foreground flex size-9 items-center justify-center rounded-md hover:bg-muted"
@@ -146,26 +172,35 @@ export function JournalDateRange({
             <div className="mb-1 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setLevel(level === "day" ? "month" : "day")}
+                onClick={levelUp}
+                title={
+                  level === "day"
+                    ? "Choose a month"
+                    : level === "month"
+                      ? "Choose a year"
+                      : "Back to days"
+                }
                 className="hover:bg-muted rounded-md px-2 py-1 text-sm font-semibold"
               >
-                {level === "day"
-                  ? `${MONTHS[view.month0]} ${view.year}`
-                  : view.year}
+                {title}
               </button>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  aria-label="Previous"
-                  onClick={() => (level === "day" ? step(-1) : stepYear(-1))}
+                  aria-label={
+                    level === "day" ? "Previous month" : level === "month" ? "Previous year" : "Previous years"
+                  }
+                  onClick={stepBack}
                   className={headClass}
                 >
                   <ChevronLeft aria-hidden className="size-4" />
                 </button>
                 <button
                   type="button"
-                  aria-label="Next"
-                  onClick={() => (level === "day" ? step(1) : stepYear(1))}
+                  aria-label={
+                    level === "day" ? "Next month" : level === "month" ? "Next year" : "Next years"
+                  }
+                  onClick={stepForward}
                   className={headClass}
                 >
                   <ChevronRight aria-hidden className="size-4" />
@@ -173,7 +208,26 @@ export function JournalDateRange({
               </div>
             </div>
 
-            {level === "month" ? (
+            {level === "year" ? (
+              <div className="grid grid-cols-4 gap-1">
+                {block.years.map((y) => (
+                  <button
+                    key={y}
+                    type="button"
+                    onClick={() => {
+                      setView((v) => ({ ...v, year: y }))
+                      setLevel("month")
+                    }}
+                    className={cn(
+                      "rounded-md py-3 text-sm tabular-nums hover:bg-muted",
+                      y === view.year && "bg-primary text-primary-foreground",
+                    )}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+            ) : level === "month" ? (
               <div className="grid grid-cols-4 gap-1">
                 {MONTHS.map((label, m) => (
                   <button
