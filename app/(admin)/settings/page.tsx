@@ -120,6 +120,7 @@ export default async function SettingsPage() {
             staff={logins.staff}
             canCreate={logins.canCreate}
             currentUserId={profile.id}
+            directoryOk={logins.directoryOk}
           />
         </div>
       ) : null}

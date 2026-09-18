@@ -70,10 +70,17 @@ export function StaffLogins({
   staff,
   canCreate,
   currentUserId,
+  /**
+   * False when the sign-in directory itself could not be read. Every address
+   * then shows as unknown — which must not read as "this person has no
+   * email", or an owner will retype addresses that were never lost.
+   */
+  directoryOk = true,
 }: {
   staff: StaffLogin[]
   canCreate: boolean
   currentUserId: string
+  directoryOk?: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -105,6 +112,18 @@ export function StaffLogins({
             the server (it is server-only and must never start with
             NEXT_PUBLIC_). Until then, accounts can only be made in the Supabase
             dashboard.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {canCreate && !directoryOk ? (
+        <Alert>
+          <AlertCircle aria-hidden />
+          <AlertDescription>
+            The sign-in directory didn&apos;t load, so addresses below are
+            unknown rather than empty — nobody lost their email. Name, role and
+            access still save; if an email or password change fails, refresh
+            and try again.
           </AlertDescription>
         </Alert>
       ) : null}

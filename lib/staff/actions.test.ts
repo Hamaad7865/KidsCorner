@@ -14,8 +14,9 @@ const mocks = vi.hoisted(() => ({
   serviceConfigured: true,
   admin: {
     createUser: vi.fn(),
+    updateUserById: vi.fn(),
     deleteUser: vi.fn(async () => ({ data: {}, error: null })),
-    listUsers: vi.fn(async () => ({
+    listUsers: vi.fn(async (): Promise<any> => ({
       data: { users: [{ id: "u-1", email: "a@x.mu" }] },
       error: null,
     })),
@@ -48,13 +49,24 @@ const profilesResult = {
 
 const insertError = { current: null as { message: string } | null }
 const updateError = { current: null as { message: string } | null }
+const targetRow = {
+  current: { full_name: "Diksha Bhewa", role: "owner" } as Record<string, string> | null,
+}
+const updateSelectRows = { current: [{ id: "u-9" }] as { id: string }[] | null }
 
 const profilesTable = {
   // Self-returning so select().order() chains; results come from profilesResult.
   select: vi.fn(() => profilesTable),
   order: vi.fn(async () => profilesResult),
+  // Shared by the target lookup (.eq().maybeSingle()) and the profile write
+  // (.update().eq().select()). Awaiting the bare .eq() object (setStaffActive)
+  // resolves to something without an error, i.e. success.
+  eq: vi.fn(() => ({
+    maybeSingle: async () => ({ data: targetRow.current, error: null }),
+    select: async () => ({ data: updateSelectRows.current, error: updateError.current }),
+  })),
   insert: vi.fn(() => ({ error: insertError.current })),
-  update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: updateError.current })) })),
+  update: vi.fn(() => profilesTable),
 }
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -65,7 +77,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { IDLE_STATE } from "@/lib/forms"
 
-import { createStaffLogin, listStaffLogins, setStaffActive } from "./actions"
+import { createStaffLogin, listStaffLogins, setStaffActive, updateStaffLogin } from "./actions"
 
 function form(fields: Record<string, string>): FormData {
   const fd = new FormData()
@@ -88,8 +100,18 @@ beforeEach(() => {
   profilesResult.error = null
   insertError.current = null
   updateError.current = null
+  targetRow.current = { full_name: "Diksha Bhewa", role: "owner" }
+  updateSelectRows.current = [{ id: "u-9" }]
   mocks.admin.createUser.mockResolvedValue({
     data: { user: { id: "new-1" } },
+    error: null,
+  })
+  mocks.admin.updateUserById.mockResolvedValue({
+    data: { user: { id: "u-9" } },
+    error: null,
+  })
+  mocks.admin.listUsers.mockResolvedValue({
+    data: { users: [{ id: "u-1", email: "a@x.mu" }] },
     error: null,
   })
 })
@@ -188,5 +210,113 @@ describe("setStaffActive", () => {
     const result = await setStaffActive("u-2", false)
     expect(result.ok).toBe(true)
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/settings")
+  })
+})
+
+describe("updateStaffLogin", () => {
+  const edit = (over: Record<string, string> = {}) =>
+    form({
+      profileId: "u-9",
+      originalEmail: "",
+      fullName: "Diksha Bhewa",
+      email: "diksha@kidscorner.mu",
+      password: "",
+      role: "owner",
+      ...over,
+    })
+
+  it("reports a blank email on the field, not the form", async () => {
+    const result = await updateStaffLogin(IDLE_STATE, edit({ email: "" }))
+    expect(result.status).toBe("error")
+    expect(result.error).toBeNull()
+    expect(result.fieldErrors.email).toContain("valid email")
+    expect(mocks.admin.updateUserById).not.toHaveBeenCalled()
+  })
+
+  it("still requires a valid email even when it is unchanged", async () => {
+    const result = await updateStaffLogin(
+      IDLE_STATE,
+      edit({ email: "", originalEmail: "" }),
+    )
+    // Blank email is still invalid even when unchanged — the schema cannot
+    // tell "unknown, leave it" from "cleared". The field error says so.
+    expect(result.fieldErrors.email).toBeTruthy()
+  })
+
+  it("updates the sign-in when the email changed", async () => {
+    const result = await updateStaffLogin(IDLE_STATE, edit())
+    expect(result.status).toBe("success")
+    expect(mocks.admin.updateUserById).toHaveBeenCalledWith(
+      "u-9",
+      expect.objectContaining({ email: "diksha@kidscorner.mu" }),
+    )
+  })
+
+  it("translates a taken address into something to do", async () => {
+    mocks.admin.updateUserById.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: "Email address already exists" },
+    })
+    const result = await updateStaffLogin(IDLE_STATE, edit())
+    expect(result.error).toContain("already belongs to another login")
+  })
+
+  /**
+   * The "{}" regression: GoTrue can fail with a message-less body (a 500 with
+   * an empty error object — poisoned auth rows did exactly this), and
+   * supabase-js then reports the message as JSON.stringify(body), i.e. the
+   * literal string "{}". The dialog rendered it verbatim. Anything without a
+   * readable message now becomes a sentence that also states nothing changed.
+   */
+  it.each([
+    ["a missing message", {}],
+    ["a literal {}", { message: "{}" }],
+    ["a blank message", { message: "   " }],
+  ])("never renders %s as the error", async (_label, error) => {
+    mocks.admin.updateUserById.mockResolvedValueOnce({ data: { user: null }, error })
+    const result = await updateStaffLogin(IDLE_STATE, edit())
+    expect(result.status).toBe("error")
+    expect(result.error).not.toBe("{}")
+    expect(result.error).toContain("nothing was changed")
+  })
+
+  it("refuses cleanly when Auth itself is unreachable", async () => {
+    mocks.admin.updateUserById.mockRejectedValueOnce(new TypeError("fetch failed"))
+    const result = await updateStaffLogin(IDLE_STATE, edit())
+    expect(result.status).toBe("error")
+    expect(result.error).toContain("nothing was changed")
+  })
+})
+
+describe("staff directory failures", () => {
+  it("still lists staff when the directory errors, flagged", async () => {
+    mocks.admin.listUsers.mockResolvedValueOnce({ data: { users: [] }, error: { message: "boom" } })
+    const { staff, canCreate, directoryOk } = await listStaffLogins()
+    expect(staff).toHaveLength(2)
+    expect(canCreate).toBe(true)
+    expect(directoryOk).toBe(false)
+    // Addresses are unknown, not empty.
+    expect(staff[0]?.email).toBeNull()
+  })
+
+  it("still lists staff when the directory throws, flagged", async () => {
+    mocks.admin.listUsers.mockRejectedValueOnce(new TypeError("fetch failed"))
+    const { directoryOk } = await listStaffLogins()
+    expect(directoryOk).toBe(false)
+  })
+
+  it("reports a message-less create failure as a sentence, not {}", async () => {
+    mocks.admin.createUser.mockResolvedValueOnce({ data: { user: null }, error: {} })
+    const result = await createStaffLogin(
+      IDLE_STATE,
+      form({
+        fullName: "Rita Appadoo",
+        email: "rita@kidscorner.mu",
+        password: "long-enough",
+        role: "cashier",
+      }),
+    )
+    expect(result.error).not.toBe("{}")
+    expect(result.error).toContain("couldn't create the login")
   })
 })

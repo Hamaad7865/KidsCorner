@@ -54,4 +54,28 @@ describe("StaffLogins", () => {
     const html = render([person({ isActive: false })])
     expect(html).toContain("inactive")
   })
+
+  it("warns when the directory failed, without hiding the list", () => {
+    // Addresses are unknown, not empty: the warning must say so, or an owner
+    // retypes addresses that were never lost.
+    const html = renderToStaticMarkup(
+      createElement(StaffLogins, {
+        staff: [person({ email: null })],
+        canCreate: true,
+        currentUserId: "owner-1",
+        directoryOk: false,
+      }),
+    )
+    expect(html).toContain("didn")
+    expect(html).toContain("Rita Appadoo")
+    const quiet = renderToStaticMarkup(
+      createElement(StaffLogins, {
+        staff: [person({ email: null })],
+        canCreate: true,
+        currentUserId: "owner-1",
+        directoryOk: true,
+      }),
+    )
+    expect(quiet).not.toContain("didn")
+  })
 })

@@ -48,10 +48,18 @@ export type StaffLogin = {
 export async function listStaffLogins(): Promise<{
   staff: StaffLogin[]
   canCreate: boolean
+  /**
+   * False when the service key is set but the user directory itself could not
+   * be read (rate limit, rotated key, a poisoned auth row). The panel then
+   * says addresses are unavailable instead of showing a column of dashes the
+   * owner might "fix" by retyping every address — a re-save that would fail
+   * the same way the listing did.
+   */
+  directoryOk: boolean
 }> {
   const profile = await getSessionProfile()
   if (!profile || !profile.isActive || profile.role !== "owner") {
-    return { staff: [], canCreate: false }
+    return { staff: [], canCreate: false, directoryOk: true }
   }
 
   const supabase = await createClient()
@@ -60,21 +68,25 @@ export async function listStaffLogins(): Promise<{
     .select("id, full_name, role, is_active")
     .order("full_name")
 
-  if (error) return { staff: [], canCreate: isServiceRoleConfigured }
+  if (error) return { staff: [], canCreate: isServiceRoleConfigured, directoryOk: true }
 
   const emails = new Map<string, string>()
+  let directoryOk = true
   if (isServiceRoleConfigured) {
     // Best-effort. A rate limit or a rotated key costs the column, not the page.
     try {
       const { data: users, error: usersError } =
         await createAdminClient().auth.admin.listUsers({ perPage: 500 })
-      if (!usersError) {
+      if (usersError) {
+        directoryOk = false
+      } else {
         for (const user of users?.users ?? []) {
           if (user.email) emails.set(user.id, user.email)
         }
       }
     } catch {
       // Left empty on purpose; the panel renders without addresses.
+      directoryOk = false
     }
   }
 
@@ -87,7 +99,29 @@ export async function listStaffLogins(): Promise<{
       isActive: row.is_active,
     })),
     canCreate: isServiceRoleConfigured,
+    directoryOk,
   }
+}
+
+/**
+ * Turns an Auth admin failure into a sentence — never "{}".
+ *
+ * supabase-js builds the message from the response body's msg / message /
+ * error_description / error fields, and falls back to JSON.stringify(body)
+ * when none is present. A GoTrue 500 with a message-less body (poisoned auth
+ * rows once did exactly this) therefore arrived as the literal string "{}",
+ * which the dialog then rendered verbatim. Anything without a readable
+ * message becomes the fallback instead — which also states the one fact the
+ * owner needs: nothing was changed.
+ */
+function adminRefusal(action: string, message: unknown): string {
+  const text = typeof message === "string" ? message.trim() : ""
+  if (text && text !== "{}") return text
+  return (
+    `The sign-in service couldn't ${action} — nothing was changed. ` +
+    `Try again, and if it keeps failing, manage the user in the Supabase ` +
+    `dashboard (Authentication → Users).`
+  )
 }
 
 const staffNameSchema = z
@@ -145,19 +179,32 @@ export async function createStaffLogin(
   const { fullName, email, password, role } = parsed.data
   const admin = createAdminClient()
 
-  const { data: created, error: authError } = await admin.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: { full_name: fullName },
-  })
+  // A refused write returns { error }; a network failure THROWS. Both leave
+  // the dialog open with a sentence — a full-page error boundary for a
+  // hiccup between the Worker and Auth helps nobody. A thrown failure is
+  // recorded as a message-less error, which adminRefusal turns into the
+  // same fallback as a message-less refusal.
+  let created: { user: { id: string } | null } | null = null
+  let authError: { message?: string } | null = null
+  try {
+    const result = await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    })
+    created = result.data
+    authError = result.error
+  } catch {
+    authError = { message: "" }
+  }
 
   if (authError || !created?.user) {
     // "already registered" is the everyday case — say what to do, not what
     // Supabase said.
     const message = /already|exists|duplicate/i.test(authError?.message ?? "")
       ? `${email} already has a login. Reset its password in Supabase Auth instead.`
-      : (authError?.message ?? "Could not create the login.")
+      : adminRefusal("create the login", authError?.message)
     return formFail(message)
   }
 
@@ -304,17 +351,23 @@ export async function updateStaffLogin(
       )
     }
     const admin = createAdminClient()
-    const { error: authError } = await admin.auth.admin.updateUserById(
-      profileId,
-      {
-        ...(emailChanged ? { email, email_confirm: true } : {}),
-        ...(password ? { password } : {}),
-      },
-    )
+    let authError: { message?: string } | null = null
+    try {
+      const result = await admin.auth.admin.updateUserById(
+        profileId,
+        {
+          ...(emailChanged ? { email, email_confirm: true } : {}),
+          ...(password ? { password } : {}),
+        },
+      )
+      authError = result.error
+    } catch {
+      authError = { message: "" }
+    }
     if (authError) {
-      const message = /already|exists|duplicate/i.test(authError.message)
+      const message = /already|exists|duplicate/i.test(authError.message ?? "")
         ? `${email} already belongs to another login.`
-        : authError.message
+        : adminRefusal("update the sign-in", authError.message)
       return formFail(message)
     }
   }
@@ -384,12 +437,21 @@ export async function deleteStaffLogin(
 
   let authDeleted = false
   if (isServiceRoleConfigured) {
-    const { error } = await createAdminClient().auth.admin.deleteUser(targetId)
+    let error: { message?: string } | null = null
+    try {
+      error = (await createAdminClient().auth.admin.deleteUser(targetId)).error
+    } catch {
+      // A throw is a failure, not a success: recording it as an error keeps
+      // the refusal below from reporting a deletion that never happened.
+      error = { message: "" }
+    }
     if (!error) {
       authDeleted = true
-    } else if (!/not found/i.test(error.message)) {
+    } else if (!/not found/i.test(error.message ?? "")) {
       // Includes the FK refusal: Postgres names the constraint that held on.
-      return { ok: false, error: deleteRefusal(error.message) }
+      // Message-less admin failures become the fallback first, so "{}" can
+      // never reach the toast.
+      return { ok: false, error: deleteRefusal(adminRefusal("remove the sign-in", error.message)) }
     }
     // "not found" means there was never an auth user behind this profile —
     // seeded by hand in an emergency, perhaps. The profile row is still ours
