@@ -247,7 +247,10 @@ fun buildReceipt(
                 }
                 add(ReceiptLine.Text(text, bold = true))
             }
-        val change = sale.payments.sumOf { (it.tendered ?: it.amount) - it.amount }
+        // Per row, floored at zero — the web till and the Z measure change the
+        // same way, so an under-tendered row can never cancel another row's
+        // note the way a signed sum would let it.
+        val change = sale.payments.sumOf { maxOf(0.0, (it.tendered ?: it.amount) - it.amount) }
         if (change > 0) {
             add(ReceiptLine.Columns("    Change :", plainAmount(change)))
         }
@@ -278,6 +281,16 @@ fun buildReceipt(
         for (note in sale.creditNotes) {
             add(ReceiptLine.Columns("Credited ${note.creditNo}", "-${plainAmount(note.total)}"))
         }
+        add(ReceiptLine.Rule)
+    }
+
+    // The sale note, where the offline receipt already puts it: after the
+    // money, before the policy wording. Centred and wrapped, never blank —
+    // the server stores null for none, and a "Note:" line with nothing after
+    // it would read as a printer fault. Gift receipts skip it with everything
+    // else past the items: a note can name a figure the gift must not show.
+    sale.note?.takeIf { it.isNotBlank() }?.let { note ->
+        wrapText("Note: $note", w).forEach { add(ReceiptLine.Text(it, Align.Centre)) }
         add(ReceiptLine.Rule)
     }
 

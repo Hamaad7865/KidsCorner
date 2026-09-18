@@ -24,7 +24,12 @@ import { verifyApproval } from "@/lib/pos/sale-core"
  */
 const bodySchema = z.object({
   saleId: z.number().int().positive(),
-  shiftId: z.number().int().positive().nullish().transform((v) => v ?? null),
+  /**
+   * The drawer both documents land in — always named by a till. Required:
+   * an exchange books a NEW SALE, and a shiftless sale is invisible to every
+   * Z while still moving stock.
+   */
+  shiftId: z.number().int().positive(),
   deviceId: z.number().int().positive().nullish(),
   paymentMethod: z.enum(["cash", "card", "juice", "myt_money", "bank"]),
   /** Cash handed over for the gap; change given from it. Cash only. */
@@ -90,21 +95,21 @@ export async function POST(request: Request) {
   /**
    * The drawer, checked before anything else — same reason as refunds: the
    * RPC inserts whatever shift id it is handed with no openness check of its
-   * own, and both documents land in THIS drawer's shift.
+   * own, and both documents land in THIS drawer's shift. Required by the
+   * schema above, because the second document is a sale and sales belong to
+   * shifts.
    */
-  if (shiftId !== null) {
-    const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
-      role: session.user.role,
-      deviceId: deviceId ?? null,
-    })
-    if (!reachable.ok) return apiError(reachable.error, 403)
-  }
+  const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
+    role: session.user.role,
+    deviceId: deviceId ?? null,
+  })
+  if (!reachable.ok) return apiError(reachable.error, 403)
 
   /** Past the window, a manager's PIN — verified exactly as refunds verify one. */
   let approvedBy: string | null = null
   const ageDays = await saleAgeDays(session.supabase, saleId)
   if (ageDays !== null && ageDays > 7) {
-    const verified = await verifyApproval(session.supabase, approval, "exchange" as "return")
+    const verified = await verifyApproval(session.supabase, approval, "exchange")
     if ("error" in verified) {
       return NextResponse.json({ ok: false, error: verified.error, needsApproval: true })
     }

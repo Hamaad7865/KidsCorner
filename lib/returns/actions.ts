@@ -67,6 +67,13 @@ const creditNoteSchema = z.object({
       }),
     )
     .min(1, "Pick at least one item to return."),
+}).refine((v) => v.refundMethod !== "cash" || v.shiftId !== null, {
+  // The form warns about this; the server enforces it. A card or bank refund
+  // moves on the rail and needs no drawer, but cash leaving with no shift
+  // attached is netted into no Z's expected-cash figure — the drawer comes up
+  // short at close with nothing on any slip to explain it.
+  message: "A cash refund needs an open till — open the till first.",
+  path: ["shiftId"],
 })
 
 export async function createCreditNote(

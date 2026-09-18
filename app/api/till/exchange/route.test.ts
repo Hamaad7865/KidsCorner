@@ -153,3 +153,14 @@ describe("manager approval, unchanged", () => {
     expect(session.supabase.rpc).not.toHaveBeenCalled()
   })
 })
+
+describe("the drawer it books into", () => {
+  it("refuses an exchange that names no shift", async () => {
+    // An exchange books a NEW SALE alongside the credit note, and a shiftless
+    // sale is invisible to every Z while still moving stock. A till always
+    // trades on an open shift, so naming it is not optional.
+    const json = await post(body({ shiftId: undefined }))
+    expect(json.ok).toBe(false)
+    expect(session.supabase.rpc).not.toHaveBeenCalled()
+  })
+})

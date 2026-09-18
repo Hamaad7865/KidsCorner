@@ -497,6 +497,11 @@ describe("verifyApproval for a return", () => {
     const result = await verifyApproval(approverClient("manager", null), null)
     expect(result).toEqual({ error: "A manager needs to approve this discount." })
   })
+
+  it("names an exchange as one, not as a return", async () => {
+    const result = await verifyApproval(approverClient("manager", null), null, "exchange")
+    expect(result).toEqual({ error: "A manager needs to approve this exchange." })
+  })
 })
 
 // ─────────────────────────────── checkout policy snapshot
@@ -609,6 +614,49 @@ describe("commitSale VAT policy handoff", () => {
         }),
       ],
     ])
+  })
+})
+
+describe("commitSale sale note", () => {
+  function noteInput(note: string | null) {
+    return {
+      shiftId: 1,
+      customerId: null,
+      cashierId: "7691c64f-c80c-44a8-9777-f0adccd43753",
+      discounts: [],
+      items: [{ variantId: 101, qty: 1, discount: 0 }],
+      payments: [{ method: "cash", amount: 115, tendered: 115 }],
+      idempotencyKey: "sale-note-1",
+      vatPolicyId: 42,
+      checkedOutAt: "2026-08-18T08:30:00.000Z",
+      note,
+    }
+  }
+
+  async function committedNote(note: string | null): Promise<unknown> {
+    const rpc = vi.fn().mockResolvedValue({ data: 802, error: null })
+    await commitSale(
+      saleCommitClient(rpc),
+      { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
+      noteInput(note),
+      { role: "owner", deviceId: null },
+    )
+    return rpc.mock.calls[0]?.[1]
+  }
+
+  it("forwards a note trimmed, for the receipt", async () => {
+    const args = (await committedNote("  Coming back Saturday  ")) as Record<string, unknown>
+    expect(args.p_note).toBe("Coming back Saturday")
+  })
+
+  it("sends null for a blank note, so no empty note line prints", async () => {
+    const args = (await committedNote("   ")) as Record<string, unknown>
+    expect(args.p_note).toBeNull()
+  })
+
+  it("sends null when the client sends none", async () => {
+    const args = (await committedNote(null)) as Record<string, unknown>
+    expect(args.p_note).toBeNull()
   })
 })
 
@@ -753,5 +801,77 @@ describe("commitSale cash rounding", () => {
       saleInput([{ method: "cash", amount: 1140, tendered: 1140 }]),
     )
     expect(result).toEqual({ ok: true, saleId: 901 })
+  })
+})
+
+/**
+ * An all-custom sale (gift wrap and an alteration, nothing scanned).
+ *
+ * There are no catalogue ids to look up, so `priceItems` must not query at
+ * all: `.in("id", [])` sends `id=in.()`, which PostgREST refuses with a parse
+ * error — and that used to surface at the till as a refusal no retry could
+ * clear. The stub's lookup throws if it is reached, so this fails loudly if
+ * the guard ever goes missing.
+ */
+describe("commitSale with only custom lines", () => {
+  it("prices posted custom lines without touching the catalogue", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: 902, error: null })
+    const supabase = {
+      from(table: string) {
+        if (table === "shifts") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: { id: 1, device_id: null, closed_at: null },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === "settings") {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: { value: false }, error: null }),
+              }),
+            }),
+          }
+        }
+        throw new Error(`unexpected table ${table}`)
+      },
+      rpc,
+    } as unknown as TillClient
+
+    const result = await commitSale(
+      supabase,
+      { id: "7691c64f-c80c-44a8-9777-f0adccd43753", name: "Marie" },
+      {
+        shiftId: 1,
+        customerId: null,
+        cashierId: "7691c64f-c80c-44a8-9777-f0adccd43753",
+        discounts: [],
+        items: [
+          { variantId: null, qty: 1, discount: 0, description: "Gift wrap", unitPrice: 50 },
+          { variantId: null, qty: 2, discount: 0, description: "Trouser hem", unitPrice: 75 },
+        ],
+        payments: [{ method: "cash", amount: 200, tendered: 200 }],
+        idempotencyKey: "custom-only-902",
+      },
+      { role: "owner", deviceId: null },
+    )
+
+    expect(result).toEqual({ ok: true, saleId: 902 })
+    expect(rpc).toHaveBeenCalledOnce()
+    expect(rpc.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        p_discount: 0,
+        p_items: [
+          { variant_id: null, description: "Gift wrap", qty: 1, unit_price: 50, discount: 0 },
+          { variant_id: null, description: "Trouser hem", qty: 2, unit_price: 75, discount: 0 },
+        ],
+      }),
+    )
   })
 })

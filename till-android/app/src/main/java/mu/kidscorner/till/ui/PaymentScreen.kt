@@ -158,7 +158,7 @@ fun PaymentScreen(
     // about to be taken. Non-cash never produces change, and over-tendering on
     // one row does not offset another.
     val settledChange = payments.filter { it.method == "cash" }
-        .sumOf { (it.tendered ?: it.amount) - it.amount }
+        .sumOf { maxOf(0.0, (it.tendered ?: it.amount) - it.amount) }
     val pendingChange = if (isCash) maxOf(0.0, entered - tenderTarget) else 0.0
     val change = round2(maxOf(0.0, settledChange + pendingChange))
 

@@ -69,10 +69,10 @@ export function withPayment<M extends string>(
  * note, owe Rs 500 change — totalling first would net the first row's amount
  * against the second row's note and answer zero.
  *
- * NOTE for the Android till (left to its owner): ReceiptBuilder.kt still
- * measures change cash-only per row. Any card/juice row carrying a tendered
- * figure above its amount will read higher here and on the Z than on the
- * tablet's paper until it adopts this definition.
+ * NOTE for the Android till (left to its owner): ReceiptBuilder.kt and the
+ * payment panel now floor each row at zero the same way, so paper, Z and this
+ * agree. If either ever sums signed differences again, an under-tendered row
+ * will silently cancel another row's note on that surface only.
  */
 export function changeDue(payments: Payment<string>[]): number {
   const given = payments.reduce(

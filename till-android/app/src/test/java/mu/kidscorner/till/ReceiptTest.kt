@@ -86,6 +86,20 @@ class ReceiptTest {
     }
 
     @Test
+    fun `a sale note prints centred, wrapped, and never blank`() {
+        for (width in PaperWidth.entries) {
+            val with = buildReceipt(sale().copy(note = "Coming back Saturday for the second pair"), shop, width)
+                .toPlainText(width)
+            assertTrue(with.contains("Note: Coming back Saturday"))
+            for (line in with.lines()) {
+                assertTrue(line.length <= width.columns)
+            }
+            val without = buildReceipt(sale(), shop, width).toPlainText(width)
+            assertTrue(!without.contains("Note:"))
+        }
+    }
+
+    @Test
     fun `a double-height line is laid out against half the width`() {
         // Double height is also double width on ESC/POS. Laid out against the
         // full column count, a long shop name would silently wrap.
@@ -272,6 +286,26 @@ class ReceiptTest {
             PaperWidth.Mm80,
         ).toPlainText(PaperWidth.Mm80)
         assertTrue(!text.contains("CHANGE"))
+    }
+
+    @Test
+    fun `an under-tendered row never cancels another row's change`() {
+        // Change is measured per row, floored at zero — the web till and the
+        // Z measure it the same way. A signed sum would net the short row
+        // against the note and print 168.58 instead of 200.00.
+        val text = buildReceipt(
+            sale(
+                payments = listOf(
+                    SaleDetailPayment(id = 1, method = "cash", amount = 1000.0, tendered = 1200.0),
+                    SaleDetailPayment(id = 2, method = "cash", amount = 131.42, tendered = 100.0),
+                ),
+            ),
+            shop,
+            PaperWidth.Mm80,
+        ).toPlainText(PaperWidth.Mm80)
+        assertTrue(text.contains("Change :"))
+        assertTrue(text.contains("200.00"))
+        assertTrue(!text.contains("168.58"))
     }
 
     @Test

@@ -318,7 +318,7 @@ export async function listCashiersForDevice(
 export async function verifyApproval(
   supabase: TillClient,
   approval: { managerId: string; pin: string } | null | undefined,
-  what: "discount" | "return" | "credit" = "discount",
+  what: "discount" | "return" | "credit" | "exchange" = "discount",
 ): Promise<{ managerId: string } | { error: string }> {
   if (!approval) {
     return { error: `A manager needs to approve this ${what}.` }
@@ -402,10 +402,17 @@ async function priceItems(
   // lookup entirely and priced from what was posted, below.
   const ids = [...new Set(items.map((i) => i.variantId).filter((id): id is number => id !== null))]
 
-  const { data, error } = await supabase
-    .from("product_variants")
-    .select("id, selling_price, qty_on_hand, is_active, products ( name, category_id )")
-    .in("id", ids)
+  // An all-custom sale (gift wrap and an alteration, nothing scanned) has no
+  // ids at all, and there is nothing to look up. Querying `.in("id", [])`
+  // anyway sends `id=in.()`, which PostgREST refuses with a parse error —
+  // surfacing at the till as a cryptic refusal no retry could clear.
+  const { data, error } =
+    ids.length > 0
+      ? await supabase
+          .from("product_variants")
+          .select("id, selling_price, qty_on_hand, is_active, products ( name, category_id )")
+          .in("id", ids)
+      : { data: [], error: null }
 
   if (error) return { error: error.message }
 
@@ -920,6 +927,12 @@ export const completeSaleSchema = z.object({
    * shift exists and is open.
    */
   deviceId: z.number().int().positive().nullish(),
+  /**
+   * Prints on the receipt. Blank arrives as null: an empty note is not a
+   * note, and the receipt must not draw a "Note:" line with nothing after
+   * it. The tablet caps entry at 200; the RPC backstops at 500.
+   */
+  note: z.string().trim().max(200, "Sale note is too long.").nullish(),
 })
 
 export type CompleteSaleInput = z.input<typeof completeSaleSchema>
@@ -945,6 +958,8 @@ export type CommitSaleInput = {
   checkedOutAt?: string | null
   /** The posting till's registry id, when the client knows it. */
   deviceId?: number | null
+  /** Prints on the receipt; blank means none. */
+  note?: string | null
 }
 
 /**
@@ -1180,6 +1195,7 @@ export async function commitSale(
     })) as Json,
     p_vat_policy_id: input.vatPolicyId ?? null,
     p_checked_out_at: input.checkedOutAt ?? null,
+    p_note: input.note?.trim() ? input.note.trim() : null,
   }
 
   // The distinct policy-aware name avoids PostgREST's overloaded-function

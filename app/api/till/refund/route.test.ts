@@ -229,6 +229,15 @@ describe("the payload it accepts", () => {
     expect(json.ok).toBe(false)
     expect(session.supabase.rpc).not.toHaveBeenCalled()
   })
+
+  it("refuses a return that names no shift", async () => {
+    // The Z nets cash refunds strictly per shift, so a shiftless refund would
+    // leave the drawer short at close with nothing on any slip to explain it.
+    // A till always trades on an open shift, so naming it is not optional.
+    const json = await post(body({ shiftId: undefined }))
+    expect(json.ok).toBe(false)
+    expect(session.supabase.rpc).not.toHaveBeenCalled()
+  })
 })
 
 describe("after the refund RPC commits", () => {

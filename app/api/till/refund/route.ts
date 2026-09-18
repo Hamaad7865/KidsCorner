@@ -23,7 +23,13 @@ import { verifyApproval } from "@/lib/pos/sale-core"
  */
 const bodySchema = z.object({
   saleId: z.number().int().positive(),
-  shiftId: z.number().int().positive().nullish().transform((v) => v ?? null),
+  /**
+   * The drawer this return is booked into — always named by a till, which
+   * cannot trade without an open shift. Required, not optional: the Z nets
+   * cash refunds strictly per shift, so a shiftless cash refund would leave
+   * the drawer short at close with nothing on any slip to explain it.
+   */
+  shiftId: z.number().int().positive(),
   reason: z.string().trim().min(1, "Pick a reason for the return."),
   refundMethod: z.enum(["cash", "card", "juice", "myt_money", "bank", "exchange"]),
   restock: z.boolean().default(true),
@@ -84,15 +90,15 @@ export async function POST(request: Request) {
    * `create_credit_note` inserts whatever shift id it is handed with no
    * openness check of its own, so without this a till could book its refunds
    * into another drawer's shift — or one already counted and closed — and that
-   * drawer's Z would come out wrong for no visible reason.
+   * drawer's Z would come out wrong for no visible reason. The id is required
+   * by the schema above: a till always trades on an open shift, and a cash
+   * refund with no drawer would never be netted into any expected-cash figure.
    */
-  if (shiftId !== null) {
-    const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
-      role: session.user.role,
-      deviceId: parsed.data.deviceId ?? null,
-    })
-    if (!reachable.ok) return apiError(reachable.error, 403)
-  }
+  const reachable = await assertShiftOpenFor(session.supabase, shiftId, {
+    role: session.user.role,
+    deviceId: parsed.data.deviceId ?? null,
+  })
+  if (!reachable.ok) return apiError(reachable.error, 403)
 
   /**
    * The manager, when this shop wants one (migration 036).
