@@ -347,6 +347,9 @@ private fun TillRoot(
                         onSwitchCashier = vm::switchCashier,
                         onReconnect = vm::reconnect,
                         onOfferUpdate = { overlay = Overlay.Update },
+                        onShowUpdateWaiting = {
+                            vm.toast("Update is ready — it installs once the basket is empty")
+                        },
                         customer = state.customer,
                         discount = state.discount,
                         heldCount = state.held.size,
@@ -863,7 +866,6 @@ private fun TillRoot(
                 vm.searchHistory("")
             },
             onOpenDrawer = { overlay = Overlay.None; vm.popCashDrawer() },
-            onCustomItem = { overlay = Overlay.None },
             onSaleNote = { overlay = Overlay.Note },
             onSettings = { overlay = Overlay.None; vm.openSettings() },
             onAccountPayment = {

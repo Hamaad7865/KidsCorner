@@ -245,7 +245,7 @@ fun SettingsScreen(
                 color = Handoff.Surface,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
                 shadowElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 11.dp),
             ) {
                 Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp)) {
                     Text(
@@ -309,7 +309,8 @@ fun SettingsScreen(
                 color = Handoff.Surface,
                 contentColor = Handoff.InkStrong,
                 border = BorderStroke(1.dp, Handoff.LineSoft),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 11.dp),
+                shadowElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 14.dp),

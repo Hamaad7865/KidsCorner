@@ -103,6 +103,12 @@ data class SaleDetail(
      */
     val rounding: Double = 0.0,
     /**
+     * Prints on the receipt. Null when rung up without one — and on every
+     * sale from before the note travelled with the request. Defaulted so
+     * older servers decode.
+     */
+    val note: String? = null,
+    /**
      * The sale's frozen VAT policy. A reprint reads these, never today's shop
      * setting, so a receipt is a VAT invoice or a plain receipt exactly as it
      * was on the day.

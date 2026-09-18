@@ -219,7 +219,6 @@ class GalleryActivity : ComponentActivity() {
                             onReprintLast = {},
                             onOpenHistory = {},
                             onOpenDrawer = {},
-                            onCustomItem = {},
                             onSaleNote = { showing = "note" },
                             onSettings = {},
                             onAccountPayment = {},

@@ -29,7 +29,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Inventory2
@@ -81,7 +80,6 @@ fun ActionsDialog(
     onReprintLast: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenDrawer: () -> Unit,
-    onCustomItem: () -> Unit,
     onSaleNote: () -> Unit,
     onSettings: () -> Unit,
     /** A customer settling their account at the counter. */
@@ -280,16 +278,9 @@ fun ActionsDialog(
                     )
 
                     DrawerSection("This sale")
-                    DrawerRow(
-                        Action(
-                            "Custom item",
-                            "Wrap, alteration, no-label stock",
-                            Icons.Default.Add,
-                            Color(0xFFFDECE6),
-                            Color(0xFFB4552F),
-                            onClick = onCustomItem,
-                        ),
-                    )
+                    // No custom-item row: the scan bar carries its own Custom
+                    // key, and this one only closed the drawer — a button
+                    // that closes a menu reads as broken.
                     DrawerRow(
                         Action(
                             "Sale note",

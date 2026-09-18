@@ -234,6 +234,7 @@ fun SellScreen(
     onSwitchCashier: () -> Unit,
     onReconnect: () -> Unit = {},
     onOfferUpdate: () -> Unit = {},
+    onShowUpdateWaiting: () -> Unit = {},
     onAdd: (CatalogVariant) -> Unit,
     /** The same, for a line that arrived from a barcode — see TillViewModel.addScanned. */
     onAddScanned: (CatalogVariant) -> Unit,
@@ -427,6 +428,7 @@ fun SellScreen(
             downloadReady = downloadReady,
             basketEmpty = lines.isEmpty(),
             onOfferUpdate = onOfferUpdate,
+            onShowUpdateWaiting = onShowUpdateWaiting,
             onSwitchCashier = onSwitchCashier,
             onLock = onLock,
             onCloseTill = onCloseTill,

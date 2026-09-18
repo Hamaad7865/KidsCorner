@@ -287,6 +287,11 @@ data class SaleRequest(
     /** The local checkout instant, ISO-8601. Generated once and never regenerated on retry. */
     val checkedOutAt: String? = null,
     /**
+     * Prints on the receipt. Blank means none — the server stores null and
+     * the receipt draws no note line. Defaulted so older payloads decode.
+     */
+    val note: String? = null,
+    /**
      * This till's registry id, so the server refuses a sale aimed at another
      * drawer's shift — or at one already closed and counted. Null from a build
      * that predates the registry; the server then skips only the ownership

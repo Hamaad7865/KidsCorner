@@ -75,6 +75,11 @@ fun TillChrome(
     basketEmpty: Boolean = true,
     /** Opens the "Update to vX?" confirmation. Only called when ready AND empty. */
     onOfferUpdate: () -> Unit = {},
+    /**
+     * The update is downloaded but the basket is not empty, so the pill tap
+     * cannot offer it — it must say that, not silently sync instead.
+     */
+    onShowUpdateWaiting: () -> Unit = {},
     onCloseTill: (() -> Unit)? = null,
     /** Opens the till menu drawer sliding in from the left. */
     onOpenMenu: (() -> Unit)? = null,
@@ -181,6 +186,7 @@ fun TillChrome(
                 downloadReady = downloadReady,
                 basketEmpty = basketEmpty,
                 onOfferUpdate = onOfferUpdate,
+                onShowUpdateWaiting = onShowUpdateWaiting,
             )
 
             // ── End of day: `height:40px; padding:0 13px; radius:10px` ───────
@@ -270,6 +276,7 @@ private fun ConnectionPill(
     downloadReady: Boolean,
     basketEmpty: Boolean,
     onOfferUpdate: () -> Unit,
+    onShowUpdateWaiting: () -> Unit,
 ) {
     val waiting = queuedCount > 0
     // Offered only once there is nothing to interrupt: a problem (offline,
@@ -288,7 +295,9 @@ private fun ConnectionPill(
     // the line is down, the same tap is how a cashier tells the till to go
     // and find the shop again.
     // When an update is ready and the basket is empty, the same tap instead
-    // offers to install it — the pill still has exactly one job at a time.
+    // offers to install it. Ready but mid-sale, the tap says so — syncing
+    // instead answers a question nobody asked, and "Syncing…" reads as the
+    // update starting, which it is not.
     // Disabled only while a sync is already in flight, so a double tap cannot
     // stack two.
     val tappable = Modifier
@@ -296,7 +305,11 @@ private fun ConnectionPill(
         .clip(RoundedCornerShape(8.dp))
         .clickable(
             enabled = !reconnecting,
-            onClick = if (updateReady && basketEmpty) onOfferUpdate else onReconnect,
+            onClick = when {
+                updateReady && basketEmpty -> onOfferUpdate
+                updateReady -> onShowUpdateWaiting
+                else -> onReconnect
+            },
         )
 
     if (updateReady) {

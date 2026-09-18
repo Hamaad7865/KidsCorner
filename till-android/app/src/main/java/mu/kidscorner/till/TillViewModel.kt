@@ -4734,6 +4734,7 @@ class TillViewModel(app: Application) : AndroidViewModel(app) {
             vatPolicyId = checkout.policyId,
             checkedOutAt = checkout.checkedOutAt,
             deviceId = current.deviceId,
+            note = current.note.ifBlank { null },
         )
 
         repo.completeSale(request)

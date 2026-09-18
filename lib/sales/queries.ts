@@ -110,6 +110,8 @@ export type SaleDetail = {
    * Zero everywhere else — the receipt prints the line only when non-zero.
    */
   rounding: number
+  /** Prints on the receipt. Null when the sale was rung up without one. */
+  note: string | null
   /**
    * The VAT policy this sale was frozen under — the whole point of the toggle.
    *
@@ -199,7 +201,7 @@ export async function getSaleDetail(
     .from("sales")
     .select(
       `id, sale_no, sale_date, status, subtotal, discount, vat_amount, total,
-       vat_policy_id, vat_enabled, vat_rate, vat_number, rounding,
+       vat_policy_id, vat_enabled, vat_rate, vat_number, rounding, note,
       customer_id,
       profiles ( full_name ),
       customers ( full_name ),
@@ -297,6 +299,8 @@ export async function getSaleDetail(
     // Never null live (NOT NULL DEFAULT 0 backfills at migration 049), but
     // a caller selecting without the column must not print Rs NaN.
     rounding: Number(data.rounding ?? 0),
+    note:
+      typeof data.note === "string" && data.note.trim() ? data.note.trim() : null,
     vatPolicyId: data.vat_policy_id,
     // Explicit, not inferred: an enabled zero-total sale is still a VAT invoice.
     vatEnabled: data.vat_enabled,

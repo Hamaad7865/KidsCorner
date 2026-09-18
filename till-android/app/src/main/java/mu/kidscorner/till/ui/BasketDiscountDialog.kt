@@ -5,14 +5,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -113,14 +119,18 @@ fun BasketDiscountDialog(
         maxHeight = 730,
         onDismiss = onDismiss,
     ) {
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 18.dp)) {
+        // Top breathing room so the control clears the dialog's own
+        // header band instead of sitting hard against it.
+        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 18.dp)) {
             // ── the two tabs ────────────────────────────────────────
             //
-            // One segmented control, not two bordered buttons: per-button
-            // selected borders rendered a stray accent line drooping off the
-            // active tab's bottom edge, and a single well with a solid
-            // segment cannot produce it.
-            Row(
+            // One segmented control with a sliding indicator, not two
+            // bordered buttons: per-button selected borders rendered a stray
+            // accent line drooping off the active tab's bottom edge, and a
+            // single well with one travelling segment cannot produce it.
+            // Generous inner padding for the same reason — the accent must
+            // never touch the well's own edges.
+            BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
                     .padding(bottom = 11.dp)
@@ -128,20 +138,51 @@ fun BasketDiscountDialog(
                     .clip(RoundedCornerShape(12.dp))
                     .background(Handoff.Well)
                     .border(1.dp, Handoff.LineField, RoundedCornerShape(12.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(6.dp),
             ) {
-                listOf(true to "Percent off", false to "Rupees off").forEach { (pct, label) ->
-                    val selected = percent == pct
-                    Surface(
-                        onClick = { percent = pct; entry = "" },
-                        shape = RoundedCornerShape(9.dp),
-                        color = if (selected) Handoff.AccentSolid else Color.Transparent,
-                        contentColor = if (selected) Color.White else Handoff.InkStrong,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    ) {
-                        Box(Modifier.fillMaxSize(), Alignment.Center) {
-                            Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                val gap = 4.dp
+                val segWidth = (maxWidth - gap) / 2
+                val slideX by animateDpAsState(
+                    targetValue = if (percent) 0.dp else segWidth + gap,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessMediumLow,
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                    ),
+                    label = "discountTabSlide",
+                )
+                Box(
+                    Modifier
+                        .offset(x = slideX)
+                        .width(segWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Handoff.AccentSolid),
+                )
+                Row(
+                    Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    listOf(true to "Percent off", false to "Rupees off").forEach { (pct, label) ->
+                        val selected = percent == pct
+                        val ink by animateColorAsState(
+                            targetValue = if (selected) Color.White else Handoff.InkStrong,
+                            label = "discountTabInk",
+                        )
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { percent = pct; entry = "" },
+                            Alignment.Center,
+                        ) {
+                            Text(
+                                label,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = ink,
+                                maxLines = 1,
+                            )
                         }
                     }
                 }
