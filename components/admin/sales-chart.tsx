@@ -114,8 +114,19 @@ export function SalesChart({
         </div>
 
         {/* `background:#F1F5F5; radius:7px; padding:2px` with the selected pill
-            raised on white — the design's own segmented control. */}
-        <div className="bg-muted flex shrink-0 gap-0.5 rounded-md p-0.5">
+            raised on white — the design's own segmented control. The pill is
+            one travelling segment behind two equal halves (not a background
+            swapped per button): it slides instead of blinking, and a single
+            well with one segment can never render a stray edge the way two
+            bordered buttons did on the till. */}
+        <div className="bg-muted relative flex shrink-0 rounded-md p-0.5">
+          <span
+            aria-hidden="true"
+            className={
+              "bg-background absolute top-0.5 bottom-0.5 left-0.5 w-[calc(50%-2px)] rounded-sm shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none " +
+              (view === "week" ? "translate-x-0" : "translate-x-full")
+            }
+          />
           {(["week", "month"] as const).map((option) => (
             <button
               key={option}
@@ -126,9 +137,8 @@ export function SalesChart({
               }}
               aria-pressed={view === option}
               className={
-                view === option
-                  ? "bg-background rounded-sm px-2.5 py-1 text-[11px] font-semibold shadow-sm"
-                  : "text-muted-foreground rounded-sm px-2.5 py-1 text-[11px] font-semibold"
+                "relative z-10 flex-1 rounded-sm px-2.5 py-1 text-[11px] font-semibold transition-colors " +
+                (view === option ? "text-foreground" : "text-muted-foreground")
               }
             >
               {option === "week" ? "Week" : "Month"}

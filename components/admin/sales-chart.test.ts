@@ -83,6 +83,18 @@ describe("SalesChart", () => {
     expect(render()).toContain("Rs 13,060.00")
   })
 
+  // One travelling segment behind two equal buttons — not a background
+  // swapped per button — so the pill slides instead of blinking. The parked
+  // (week) render pins it left with the transition it will travel on.
+  it("slides one segment between Week and Month", () => {
+    const html = render()
+    expect(html).toContain("Week")
+    expect(html).toContain("Month")
+    expect(html).toContain("translate-x-0")
+    expect(html).toContain("transition-transform")
+    expect(html).toContain('aria-pressed="true"')
+  })
+
   // The peak has to include the ghost, or a previous period that beat this one
   // would be drawn climbing out through the top of the panel.
   it("scales to the taller of the two series", () => {
