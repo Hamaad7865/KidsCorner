@@ -16,7 +16,10 @@ const mocks = vi.hoisted(() => ({
     createUser: vi.fn(),
     updateUserById: vi.fn(),
     deleteUser: vi.fn(async () => ({ data: {}, error: null })),
-    listUsers: vi.fn(async (): Promise<any> => ({
+    listUsers: vi.fn(async (): Promise<{
+      data: { users: { id: string; email?: string }[] } | null
+      error: { message?: string } | null
+    }> => ({
       data: { users: [{ id: "u-1", email: "a@x.mu" }] },
       error: null,
     })),
