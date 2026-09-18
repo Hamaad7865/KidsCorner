@@ -4,6 +4,7 @@ import Link from "next/link"
 import { AppSidebar, MobileNav } from "@/components/admin/app-sidebar"
 import { GlobalSearch } from "@/components/admin/global-search"
 import { LowStockPill } from "@/components/admin/low-stock-pill"
+import { NavigationProgress } from "@/components/admin/navigation-progress"
 import { SlowMoverPill } from "@/components/admin/slow-mover-pill"
 import { UserMenu } from "@/components/admin/user-menu"
 import { BrandLock } from "@/components/brand/logo"
@@ -55,6 +56,10 @@ export default async function AdminLayout({ children }: { children: ReactNode })
        scroller. `print:static` drops it back into normal flow so a barcode
        label sheet still prints every page instead of one fixed screenful. */
     <div className="fixed inset-0 flex overflow-hidden print:static print:h-auto print:overflow-visible">
+      {/* The loading hairline. Mounted once for the whole back office: the
+          layout persists across module changes, so one bar watches every
+          transition without remounting. */}
+      <NavigationProgress />
       <AppSidebar allowed={allowed} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden print:overflow-visible">
